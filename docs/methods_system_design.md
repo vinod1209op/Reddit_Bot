@@ -1,0 +1,38 @@
+# Methods & System Design
+
+## Purpose
+- Research bot to study AI-assisted, harm-reduction-oriented replies on Reddit with a mandatory human-in-the-loop.
+- Not for promotion, sales, or growth; low-volume, rule-abiding interactions only.
+
+## Safety Constraints (enforced in code/process)
+- No medical or dosing advice; no encouragement of illegal activity.
+- No links or product/brand promotion.
+- Human approval required before posting; posting disabled by default.
+- Low volume (approval cap, limited scans), respect subreddit rules and Reddit’s policies.
+- Mock mode for development without API access.
+
+## Architecture Overview
+- **Config**: `.env` provides Reddit creds; toggles: `MOCK_MODE`, `ENABLE_POSTING`, `USE_LLM`, `RUN_ID`, optional `OPENAI_API_KEY`.
+- **Auth + mock fallback**: If auth fails or `MOCK_MODE=1`, scripts use hard-coded mock posts so logic stays testable.
+- **Keyword scan**: `bot_step2_keywords.py` filters recent posts in safe subs for `KEYWORDS` and prints matches.
+- **Reply generator**: `bot_step3_replies.py` uses a deterministic safe stub; optionally an LLM (`USE_LLM=1`) with a strict safety prompt. Any LLM failure falls back to the stub.
+- **Approval gate**: CLI prompt `Post this reply? (y/n)`; approval cap per run; posting disabled unless explicitly enabled.
+- **Posting guard**: Dry-run by default. Actual posting only when `ENABLE_POSTING=1` and user approves.
+- **Logging**: `bot_step3_replies.py` appends to `bot_logs.csv` (run_id, mode, post metadata, matched keywords, reply text, approval decision, posted flag, comment_id, error).
+- **Metrics**: `bot_step4_metrics.py` reads `bot_logs.csv`, fetches posted comments, records score and replies_count to `bot_metrics.csv`.
+
+## Run Instructions (short)
+- Install deps: `pip install praw python-dotenv` (and `openai` if using LLM).
+- Set `.env`:
+  - Required: Reddit creds, `REDDIT_USER_AGENT` descriptive.
+  - Optional toggles: `MOCK_MODE=1` (offline), `ENABLE_POSTING=1` (allow replies), `USE_LLM=1` + `OPENAI_API_KEY`, `RUN_ID` (label).
+- Dry-run / mock:
+  - `python bot_step1.py` (auth check + mock posts if enabled).
+  - `python bot_step2_keywords.py` (keyword scan; mock fallback).
+  - `python bot_step3_replies.py` (matches + suggested replies + approval prompts; logs to `bot_logs.csv`).
+- Metrics:
+  - After live posts exist: `python bot_step4_metrics.py` (skips in mock mode) to append `bot_metrics.csv`.
+
+## Data Collected
+- `bot_logs.csv`: per match/reply attempt (run_id, mode, subreddit, post_id, title, matched_keywords, reply_text, approved, posted, comment_id, error).
+- `bot_metrics.csv`: per posted comment check (timestamp_checked_utc, run_id, subreddit, post_id, comment_id, title, matched_keywords, score, replies_count, error).
