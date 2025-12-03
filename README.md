@@ -1,4 +1,4 @@
-# Reddit Harm-Reduction Bot (Academic Case Study)
+# MicrodoseStudyBot (Academic Case Study)
 
 ## What this is
 - A small research bot to explore AI-assisted, harm-reduction-oriented replies on Reddit with a mandatory human-in-the-loop.

@@ -1,7 +1,7 @@
 # Ethics & Limitations
 
 ## Ethical Guardrails
-- No medical or dosing advice; no encouragement of illegal activity.
+- No medical or dosing advice; no microdosing protocols or schedules; no encouragement of illegal activity.
 - No links, product or brand promotion.
 - Human approval required before posting; posting disabled by default.
 - Low volume by design (approval cap, limited scans); respect subreddit rules and Reddit’s Responsible Builder Policy.
@@ -14,7 +14,7 @@
 
 ## Model/Content Risks
 - LLM output (when enabled) is constrained by a strict safety prompt; stub reply used as fallback.
-- Human-in-the-loop mitigates inappropriate outputs; posting guard defaults to off.
+- Explicit guard against dosing guidance/protocols and illegal encouragement; human-in-the-loop mitigates inappropriate outputs; posting guard defaults to off.
 - Keyword matching is simple; may surface irrelevant posts—requires mindful approval.
 
 ## Operational Limits

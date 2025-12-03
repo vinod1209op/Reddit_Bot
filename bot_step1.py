@@ -22,21 +22,21 @@ from dotenv import load_dotenv
 MOCK_POSTS: List[Mapping[str, str]] = [
     {
         "id": "mock1",
-        "title": "Mock post about anxiety and focus",
+        "title": "Mock post about microdosing and anxiety",
         "score": 42,
-        "body": "Sample body text about managing focus and being mindful of limits.",
+        "body": "Curious if low-dose psilocybin affects anxiety; looking for general harm-reduction info.",
     },
     {
         "id": "mock2",
-        "title": "Mock discussion on healthy study habits",
+        "title": "Mock discussion on set and setting",
         "score": 23,
-        "body": "People report that breaks, sleep, and hydration help more than supplements.",
+        "body": "People talk about mindset, environment, and taking breaks; no dosing details requested.",
     },
     {
         "id": "mock3",
-        "title": "Mock question: what is mindfulness?",
+        "title": "Mock question: how to stay safe exploring psychedelics?",
         "score": 7,
-        "body": "Mindfulness is paying attention on purpose, in the present moment, without judgment.",
+        "body": "Seeking general safety tips and resources; understand this is not medical advice.",
     },
 ]
 
@@ -100,7 +100,7 @@ def main() -> None:
     load_dotenv()
 
     forced_mock = os.getenv("MOCK_MODE") == "1"
-    subreddit_name = "learnpython"  # Safe test subreddit for read-only checks
+    subreddit_name = "test"  # Safe test subreddit for read-only checks (swap when ready)
 
     if forced_mock:
         print("MOCK_MODE is set; running with mock posts.")

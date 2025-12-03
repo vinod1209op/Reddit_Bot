@@ -17,8 +17,29 @@ import prawcore
 from dotenv import load_dotenv
 
 
-SUBREDDITS: Sequence[str] = ["learnpython"]  # Swap to wellness subs later.
-KEYWORDS: Sequence[str] = ["test", "python", "help"]  # Swap to wellness-related terms later.
+SUBREDDITS: Sequence[str] = [
+    "test",  # Keep a safe dev subreddit first
+    "microdosing",
+    "psilocybin",
+    "mentalhealth",
+    "ADHD",
+    "Psychonaut",
+]  # Swap/confirm with moderators before live use.
+KEYWORDS: Sequence[str] = [
+    "microdosing",
+    "microdose",
+    "psilocybin",
+    "shrooms",
+    "lsd",
+    "psychedelic",
+    "set and setting",
+    "harm reduction",
+    "integration",
+    "mental health",
+    "anxiety microdosing",
+    "depression microdosing",
+    "adhd microdosing",
+]  # Microdosing/psychedelic harm-reduction oriented terms; adjust per study scope.
 
 # Mock data for offline/testing mode.
 MOCK_POSTS: List[Mapping[str, str]] = [

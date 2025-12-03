@@ -33,8 +33,29 @@ except ImportError:  # Optional dependency; safe to ignore when not installed.
     openai = None
 
 
-SUBREDDITS: Sequence[str] = ["learnpython"]  # Swap to wellness subs later.
-KEYWORDS: Sequence[str] = ["test", "python", "help"]  # Swap to wellness-related terms later.
+SUBREDDITS: Sequence[str] = [
+    "test",  # Keep a safe dev subreddit first
+    "microdosing",
+    "psilocybin",
+    "mentalhealth",
+    "ADHD",
+    "Psychonaut",
+]  # Swap/confirm with moderators before live use.
+KEYWORDS: Sequence[str] = [
+    "microdosing",
+    "microdose",
+    "psilocybin",
+    "shrooms",
+    "lsd",
+    "psychedelic",
+    "set and setting",
+    "harm reduction",
+    "integration",
+    "mental health",
+    "anxiety microdosing",
+    "depression microdosing",
+    "adhd microdosing",
+]  # Microdosing/psychedelic harm-reduction oriented terms; adjust per study scope.
 LOG_PATH = Path("bot_logs.csv")
 
 # Posting is disabled by default; set ENABLE_POSTING=1 to allow replies.
@@ -52,6 +73,7 @@ Rules:
 - Do not give medical or dosing advice.
 - Do not encourage illegal activity or acquisition of substances.
 - Do not promote products, brands, or websites.
+- Do not provide microdosing protocols, schedules, or dose guidance; emphasize legal/health risks and uncertainty.
 - Keep replies short (2-5 sentences), neutral, and focus on general risks/considerations.
 - Suggest speaking with qualified professionals for personal guidance.
 - Respect community rules and be considerate in tone."""
