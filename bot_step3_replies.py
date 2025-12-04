@@ -19,6 +19,7 @@ Safety/ethics reminders:
 import csv
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, List, Mapping, Optional, Sequence, Tuple
@@ -60,8 +61,8 @@ LOG_PATH = Path("bot_logs.csv")
 
 # Posting is disabled by default; set ENABLE_POSTING=1 to allow replies.
 ENABLE_POSTING = os.getenv("ENABLE_POSTING") == "1"
-# Optional hard cap to keep volume low per run.
-MAX_APPROVED_PER_RUN = 10
+# Optional hard cap to keep volume low per run (reduced to 5 for extra caution).
+MAX_APPROVED_PER_RUN = 5
 # Optional flag to use LLM; falls back to stub if not configured/available.
 USE_LLM = os.getenv("USE_LLM") == "1"
 # Optional run identifier for grouping logs.
@@ -289,6 +290,7 @@ def main() -> None:
                             comment_id = getattr(reply, "id", "") or ""
                             posted = True
                             print("Reply posted.")
+                            time.sleep(POST_DELAY_SECONDS)  # be gentle with rate/volume
                         except Exception as exc:
                             error = f"Failed to post: {exc}"
                             print(error, file=sys.stderr)
@@ -314,3 +316,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+POST_DELAY_SECONDS = 60  # gentle delay between approved posts
