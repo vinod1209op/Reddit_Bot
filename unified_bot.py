@@ -125,9 +125,7 @@ def run_selenium_mode(config):
                 if choice == "1":
                     limit = input("How many posts to view? (default 20): ").strip()
                     limit = int(limit) if limit.isdigit() else 20
-                    include_body = (input("Include body text? (y/N): ").strip().lower() == "y")
-                    include_comments = (input("Include a few top comments? (y/N): ").strip().lower() == "y")
-                    posts = bot.search_posts(limit=limit, include_body=include_body, include_comments=include_comments)
+                    posts = bot.search_posts(limit=limit, include_body=False, include_comments=False)
                     print(f"Found {len(posts)} posts")
                     if posts:
                         for i, post in enumerate(posts[:10], 1):
@@ -143,9 +141,7 @@ def run_selenium_mode(config):
                     subreddit = input("Enter subreddit name (default 'microdosing'): ").strip() or "microdosing"
                     limit = input("How many posts? (default 15): ").strip()
                     limit = int(limit) if limit.isdigit() else 15
-                    include_body = (input("Include body text? (y/N): ").strip().lower() == "y")
-                    include_comments = (input("Include a few top comments? (y/N): ").strip().lower() == "y")
-                    posts = bot.search_posts(subreddit=subreddit, limit=limit, include_body=include_body, include_comments=include_comments)
+                    posts = bot.search_posts(subreddit=subreddit, limit=limit, include_body=False, include_comments=False)
                     print(f"Found {len(posts)} posts in r/{subreddit}")
                     if posts:
                         for i, post in enumerate(posts[:10], 1):
