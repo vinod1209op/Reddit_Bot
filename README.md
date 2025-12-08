@@ -41,7 +41,16 @@
   `python bot_step3_replies.py`
 - Step 4 (metrics; checks posted comments’ score/replies; skips in mock mode):  
   `python bot_step4_metrics.py`
+- Selenium mode (manual login, scraping, optional reply staging):  
+  `python unified_bot.py` → choose “Run Selenium Bot”, complete manual Google login, then use the menu to search posts. You can toggle body/comments capture in the prompts. Posting via Selenium is only manual: you must enter the post URL, reply text, and confirm; keep it dry-run unless you have moderator approval.
 
 ## Logs / data
 - `bot_logs.csv`: per match/reply attempt (run_id, mode, subreddit, post_id, title, matched_keywords, reply_text, approved, posted, comment_id, error).
 - `bot_metrics.csv`: per posted comment check (timestamp_checked_utc, run_id, subreddit, post_id, comment_id, title, matched_keywords, score, replies_count, error).
+
+## Repo map
+- `api/`: PRAW-based steps (auth, keyword scan, human-approved replies, metrics) with mock fallbacks.
+- `selenium_automation/`: Browser-based helper for manual Google login and subreddit scraping.
+- `shared/`: Config loader, logging, and safety utilities used by both modes.
+- `config/`: Keywords/subreddits, rate limits, and credentials template.
+- `scripts/cleanup_logs.py`: optional helper to trim old log files (keeps recent by age/count).

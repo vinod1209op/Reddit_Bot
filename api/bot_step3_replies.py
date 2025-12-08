@@ -29,9 +29,9 @@ import prawcore
 from dotenv import load_dotenv
 
 try:
-    import openai  # Optional; used only if USE_LLM=1 and OPENAI_API_KEY is set.
+    from openai import OpenAI  # Optional; used only if USE_LLM=1 and OPENAI_API_KEY is set.
 except ImportError:  # Optional dependency; safe to ignore when not installed.
-    openai = None
+    OpenAI = None
 
 
 SUBREDDITS: Sequence[str] = [
@@ -67,6 +67,8 @@ MAX_APPROVED_PER_RUN = 5
 USE_LLM = os.getenv("USE_LLM") == "1"
 # Optional run identifier for grouping logs.
 RUN_ID = os.getenv("RUN_ID") or datetime.now(timezone.utc).isoformat()
+# Gentle delay between approved posts to respect rate/volume.
+POST_DELAY_SECONDS = 60
 
 # Safety prompt for LLM calls (when enabled). Keep this strict and neutral.
 SAFETY_PROMPT = """You are an educational assistant focused on harm reduction and neutral information.
@@ -162,13 +164,13 @@ def llm_reply(info: Mapping[str, str], hits: Sequence[str]) -> Optional[str]:
     """Attempt to generate a reply via OpenAI, respecting the safety prompt. Returns None on failure."""
     if not USE_LLM:
         return None
-    if openai is None:
+    if OpenAI is None:
         return None
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         return None
 
-    openai.api_key = api_key
+    client = OpenAI(api_key=api_key)
     prompt = (
         SAFETY_PROMPT
         + "\n\n"
@@ -178,14 +180,13 @@ def llm_reply(info: Mapping[str, str], hits: Sequence[str]) -> Optional[str]:
         + "Write one short reply (2-5 sentences) that follows the rules."
     )
     try:
-        # Using completions for simplicity; adjust model/params as needed later.
-        resp = openai.Completion.create(
+        resp = client.completions.create(
             model="gpt-3.5-turbo-instruct",
             prompt=prompt,
             max_tokens=160,
             temperature=0.4,
         )
-        text = resp["choices"][0]["text"].strip()
+        text = resp.choices[0].text.strip()
         return text
     except Exception as exc:
         print(f"LLM generation failed; falling back to stub. Details: {exc}", file=sys.stderr)
@@ -316,4 +317,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-POST_DELAY_SECONDS = 60  # gentle delay between approved posts

@@ -1,0 +1,28 @@
+{
+  "comment": {
+    "max_per_hour": 12,
+    "min_interval": 300,
+    "daily_limit": 40
+  },
+  "post": {
+    "max_per_hour": 2,
+    "min_interval": 1800,
+    "daily_limit": 5
+  },
+  "message": {
+    "max_per_hour": 6,
+    "min_interval": 600,
+    "daily_limit": 20
+  },
+  "vote": {
+    "max_per_hour": 30,
+    "min_interval": 60,
+    "daily_limit": 200
+  },
+  "read": {
+    "max_per_hour": 60,
+    "min_interval": 60,
+    "daily_limit": 1000
+  },
+  "_comment": "Reddit's unofficial rate limits to avoid anti-spam detection"
+}

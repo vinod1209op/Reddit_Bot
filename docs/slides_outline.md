@@ -11,6 +11,7 @@
 3) System Design
 - Auth + mock fallback; keyword scan (microdosing/psychedelic terms); reply generator (stub/optional LLM + strict safety prompt).
 - Approval gate; posting guard (off by default); logging (bot_logs); metrics (bot_metrics).
+- Selenium path: manual Google login, scrape subreddit /new pages; optional body/comment capture; reply helper with dry-run default.
 
 4) Workflow
 - Configure .env; mock vs live; target subs/keywords.

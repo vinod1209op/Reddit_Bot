@@ -1,2 +1,17 @@
-/information
 .DS_Store
+.env
+config/credentials.env
+config/credentials.env.local
+*.env
+*.env.*
+
+# Selenium artifacts
+cookies.pkl
+manual_login_start.png
+google_login_error.png
+screenshots/
+
+# Logs and run outputs (keep locally; don't commit)
+logs/
+bot_logs.csv
+bot_metrics.csv

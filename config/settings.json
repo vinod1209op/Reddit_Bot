@@ -1,0 +1,15 @@
+{
+  "automation": {
+    "max_daily_sessions": 3,
+    "session_cooldown": 7200,
+    "headless_mode": false,
+    "human_delays": true,
+    "randomization_factor": 0.3
+  },
+  "safety": {
+    "enable_rate_limiting": true,
+    "enable_cookie_login": true,
+    "enable_activity_logging": true,
+    "max_consecutive_errors": 3
+  }
+}

@@ -26,6 +26,7 @@
 - **Posting guard**: Dry-run by default. Actual posting only when `ENABLE_POSTING=1` and user approves.
 - **Logging**: `bot_step3_replies.py` appends to `bot_logs.csv` (run_id, mode, post metadata, matched keywords, reply text, approval decision, posted flag, comment_id, error).
 - **Metrics**: `bot_step4_metrics.py` reads `bot_logs.csv`, fetches posted comments, records score and replies_count to `bot_metrics.csv`.
+- **Selenium mode (manual)**: `selenium_automation/main.py` opens a real browser for manual Google login and subreddit scraping. `search_posts(..., include_body=True, include_comments=True)` can click into posts to grab body text and a few top comments (best-effort). `reply_to_post(url, text, dry_run=True)` stages a reply but defaults to dry-run; flip only after human review and subreddit approval.
 
 ## Run Instructions (short)
 - Install deps: `pip install praw python-dotenv` (and `openai` if using LLM).
