@@ -10,12 +10,18 @@ What this script does:
 
 import os
 import sys
-from textwrap import shorten
+from pathlib import Path
 from typing import Iterable, List, Mapping
 
+# Ensure project root on path
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import praw
-import prawcore
 from dotenv import load_dotenv
+from shared.config_manager import ConfigManager
+from shared.api_utils import preview_text, fetch_posts
 
 
 # Mock data used when Reddit API is unavailable or credentials are missing.
@@ -41,14 +47,6 @@ MOCK_POSTS: List[Mapping[str, str]] = [
 ]
 
 
-def preview_text(text: str, width: int = 200) -> str:
-    """Return a single-line preview of the post body."""
-    if not text:
-        return "(no body text)"
-    sanitized = " ".join(text.split())
-    return shorten(sanitized, width=width, placeholder="...")
-
-
 def get_reddit_client() -> praw.Reddit:
     """Create a Reddit client using environment variables. Errors bubble up to be handled in main."""
     return praw.Reddit(
@@ -56,27 +54,9 @@ def get_reddit_client() -> praw.Reddit:
         client_secret=os.environ["REDDIT_CLIENT_SECRET"],
         username=os.environ["REDDIT_USERNAME"],
         password=os.environ["REDDIT_PASSWORD"],
-        user_agent=os.environ["REDDIT_USER_AGENT"],
+        user_agent=os.environ.get("REDDIT_USER_AGENT", "reddit-bot-research/1.0 (+contact)"),
+        requestor_kwargs={"timeout": 10},
     )
-
-
-def fetch_posts(reddit: praw.Reddit, subreddit_name: str, limit: int = 5) -> Iterable:
-    """
-    Try to fetch posts from Reddit. Any API/auth errors trigger a mock fallback.
-    Returning an iterable keeps the print loop simple.
-    """
-    try:
-        subreddit = reddit.subreddit(subreddit_name)
-        return subreddit.new(limit=limit)
-    except (prawcore.exceptions.PrawcoreException, KeyError) as exc:
-        # KeyError can happen if env vars are missing; treat it like an auth issue.
-        print("Reddit API not available (or access limited). Running in mock mode instead.", file=sys.stderr)
-        print(f"Details: {exc}", file=sys.stderr)
-        return MOCK_POSTS
-    except Exception as exc:
-        print("Reddit API not available (or access limited). Running in mock mode instead.", file=sys.stderr)
-        print(f"Unexpected error: {exc}", file=sys.stderr)
-        return MOCK_POSTS
 
 
 def print_posts(posts: Iterable) -> None:
@@ -100,7 +80,9 @@ def main() -> None:
     load_dotenv()
 
     forced_mock = os.getenv("MOCK_MODE") == "1"
-    subreddit_name = "test"  # Safe test subreddit for read-only checks (swap when ready)
+    config = ConfigManager().load_all()
+    subreddits = config.bot_settings.get("subreddits") or config.default_subreddits
+    subreddit_name = subreddits[0] if subreddits else "test"  # Safe test subreddit for read-only checks
 
     if forced_mock:
         print("MOCK_MODE is set; running with mock posts.")
@@ -113,7 +95,7 @@ def main() -> None:
         user = reddit.user.me()
         print(f"Logged in as: {user}")
         print(f"\nLatest posts from r/{subreddit_name}:")
-        posts = fetch_posts(reddit, subreddit_name, limit=5)
+        posts = fetch_posts(reddit, subreddit_name, limit=5, fallback_posts=MOCK_POSTS)
         print_posts(posts)
     except Exception as exc:
         # Any failure to authenticate or call the API drops to mock mode.

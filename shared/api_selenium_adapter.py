@@ -11,6 +11,16 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+from shared.safety_checker import SafetyChecker
+from shared.api_utils import make_reddit_client
+
+def _structured_error(message: str, code: str = "error", extra: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Return a consistent error payload."""
+    payload = {"success": False, "error": message, "code": code}
+    if extra:
+        payload.update(extra)
+    return payload
+
 class RedditBotAdapter:
     """Unified interface for both PRAW and Selenium"""
     
@@ -21,6 +31,19 @@ class RedditBotAdapter:
         self.praw_client = None
         self.selenium_bot = None
         self.has_api_functions = False
+        try:
+            from selenium_automation.utils.rate_limiter import RateLimiter
+            self.rate_limiter = RateLimiter(config_file=str(project_root / "config" / "rate_limits.json"))
+            # Align limits with loaded config if available
+            if getattr(config, "rate_limits", None):
+                self.rate_limiter.limits = config.rate_limits
+        except Exception:
+            self.rate_limiter = None
+        # Safety checker for content/rate parity
+        try:
+            self.safety_checker = SafetyChecker(config)
+        except Exception:
+            self.safety_checker = None
         
         # Set environment variables for API mode
         if self.mode == "api":
@@ -59,12 +82,9 @@ class RedditBotAdapter:
                 raise ValueError(f"Missing API credentials: {missing_creds}")
             
             # Create PRAW client
-            self.praw_client = praw.Reddit(
-                client_id=creds["client_id"],
-                client_secret=creds["client_secret"],
-                username=creds["username"],
-                password=creds["password"],
-                user_agent=creds["user_agent"],
+            self.praw_client = make_reddit_client(
+                creds=creds,
+                env_fallback=False,
             )
             
             # Test connection
@@ -315,11 +335,25 @@ class RedditBotAdapter:
         """Reply using PRAW"""
         try:
             if not self.praw_client:
-                return {"success": False, "error": "PRAW client not initialized"}
+                return _structured_error("PRAW client not initialized", code="client_uninitialized")
             
             # Check if we should actually post
             if not self.config.bot_settings.get("enable_posting", False):
                 return {"success": True, "dry_run": True, "comment_id": "dry_run"}
+            
+            # Rate/safety gate
+            if self.rate_limiter:
+                can_post, wait_time = self.rate_limiter.can_perform_action("comment")
+                if not can_post:
+                    return _structured_error(
+                        f"Rate limited: wait {wait_time:.1f}s before commenting",
+                        code="rate_limited",
+                        extra={"wait_seconds": wait_time},
+                    )
+            if self.safety_checker:
+                allowed, reason = self.safety_checker.can_perform_action("comment", target=post.get("title") or post.get("body", ""))
+                if not allowed:
+                    return _structured_error(reason, code="safety_blocked")
             
             # Get the submission object
             submission = post.get("raw")
@@ -328,10 +362,14 @@ class RedditBotAdapter:
                 try:
                     submission = self.praw_client.submission(id=post["id"])
                 except:
-                    return {"success": False, "error": "Could not get submission object"}
+                    return _structured_error("Could not get submission object", code="missing_submission")
             
             # Post the reply
             comment = submission.reply(reply_text)
+            if self.rate_limiter:
+                self.rate_limiter.record_action("comment")
+            if self.safety_checker:
+                self.safety_checker.record_action("comment", target=post.get("title") or post.get("body", ""))
             
             return {
                 "success": True, 
@@ -346,11 +384,25 @@ class RedditBotAdapter:
         """Reply using Selenium"""
         try:
             if not self.selenium_bot:
-                return {"success": False, "error": "Selenium bot not initialized"}
+                return _structured_error("Selenium bot not initialized", code="client_uninitialized")
             
             # Check if we should actually post
             if not self.config.bot_settings.get("enable_posting", False):
                 return {"success": True, "dry_run": True, "comment_id": "dry_run"}
+            
+            # Rate/safety gate
+            if self.rate_limiter:
+                can_post, wait_time = self.rate_limiter.can_perform_action("comment")
+                if not can_post:
+                    return _structured_error(
+                        f"Rate limited: wait {wait_time:.1f}s before commenting",
+                        code="rate_limited",
+                        extra={"wait_seconds": wait_time},
+                    )
+            if self.safety_checker:
+                allowed, reason = self.safety_checker.can_perform_action("comment", target=post.get("title") or post.get("body", ""))
+                if not allowed:
+                    return _structured_error(reason, code="safety_blocked")
             
             # Use Selenium bot's reply functionality if available
             if hasattr(self.selenium_bot, 'reply_to_post'):
@@ -461,7 +513,7 @@ class RedditBotAdapter:
         except Exception as e:
             print(f"Error collecting metrics: {e}")
             return {"error": str(e)}
-    
+
     def close(self):
         """Cleanup resources"""
         try:
@@ -473,3 +525,57 @@ class RedditBotAdapter:
         # PRAW client doesn't need explicit closing
         self.praw_client = None
         self.selenium_bot = None
+
+    # --- Bridging Selenium-scraped posts to PRAW replies ---
+    def reply_to_scraped_post_via_api(self, post: Dict[str, Any], reply_text: str, dry_run: bool = True) -> Dict[str, Any]:
+        """
+        Take a Selenium-scraped post dict (needs id or url) and reply using PRAW.
+        This is useful if you scrape with Selenium but want the reliability of API posting.
+        """
+        if not self.praw_client:
+            return _structured_error("PRAW client not initialized", code="client_uninitialized")
+
+        if dry_run or not self.config.bot_settings.get("enable_posting", False):
+            return {"success": True, "dry_run": True, "comment_id": "dry_run"}
+
+        post_id = post.get("id") or self._extract_post_id_from_url(post.get("url", ""))
+        if not post_id:
+            return _structured_error("No post ID or URL to derive ID", code="missing_submission")
+
+        try:
+            if self.rate_limiter:
+                can_post, wait_time = self.rate_limiter.can_perform_action("comment")
+                if not can_post:
+                    return _structured_error(
+                        f"Rate limited: wait {wait_time:.1f}s before commenting",
+                        code="rate_limited",
+                        extra={"wait_seconds": wait_time},
+                    )
+            if self.safety_checker:
+                allowed, reason = self.safety_checker.can_perform_action("comment", target=post.get("title") or post.get("body", ""))
+                if not allowed:
+                    return _structured_error(reason, code="safety_blocked")
+            submission = self.praw_client.submission(id=post_id)
+            comment = submission.reply(reply_text)
+            if self.rate_limiter:
+                self.rate_limiter.record_action("comment")
+            if self.safety_checker:
+                self.safety_checker.record_action("comment", target=post.get("title") or post.get("body", ""))
+            return {
+                "success": True,
+                "dry_run": False,
+                "comment_id": getattr(comment, "id", ""),
+                "permalink": f"https://reddit.com{comment.permalink}" if hasattr(comment, "permalink") else ""
+            }
+        except Exception as e:
+            return _structured_error(str(e), code="exception")
+
+    @staticmethod
+    def _extract_post_id_from_url(url: str) -> str:
+        """Extract the post ID from a Reddit URL (expects /comments/{id}/...)."""
+        if not url or "/comments/" not in url:
+            return ""
+        try:
+            return url.split("/comments/")[1].split("/")[0]
+        except Exception:
+            return ""

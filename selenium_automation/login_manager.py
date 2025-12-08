@@ -14,6 +14,74 @@ class LoginManager:
         self.driver = driver
         self.wait = WebDriverWait(driver, 20)
     
+    def _wait_for_clickable(self, locators, timeout=10):
+        """Wait for any locator to be clickable; returns element or None."""
+        try:
+            return WebDriverWait(self.driver, timeout).until(
+                EC.element_to_be_clickable(
+                    next(
+                        (locator for locator in locators if self.driver.find_elements(*locator)),
+                        locators[0],
+                    )
+                )
+            )
+        except Exception:
+            try:
+                # Fallback: loop with until_any pattern
+                return WebDriverWait(self.driver, timeout).until(
+                    lambda d: next(
+                        (
+                            elem
+                            for by, value in locators
+                            for elem in d.find_elements(by, value)
+                            if elem.is_displayed() and elem.is_enabled()
+                        ),
+                        None,
+                    )
+                )
+            except Exception:
+                return None
+    
+    def _google_button_locators(self):
+        return [
+            (By.XPATH, "//button[contains(text(), 'Google')]"),
+            (By.XPATH, "//button[contains(text(), 'Continue with Google')]"),
+            (By.XPATH, "//button[contains(text(), 'Sign in with Google')]"),
+            (By.CSS_SELECTOR, "button[data-provider='google']"),
+            (By.CSS_SELECTOR, "button[aria-label*='Google']"),
+            (By.XPATH, "//div[contains(text(), 'Google')]/ancestor::button"),
+            (By.XPATH, "//span[contains(text(), 'Google')]/ancestor::button"),
+        ]
+    
+    def _google_email_locators(self):
+        return [
+            (By.ID, "identifierId"),
+            (By.NAME, "identifier"),
+            (By.CSS_SELECTOR, "input[type='email']"),
+            (By.CSS_SELECTOR, "input[autocomplete='username']"),
+            (By.XPATH, "//input[@type='email']"),
+            (By.XPATH, "//input[contains(@aria-label, 'email')]"),
+        ]
+    
+    def _google_password_locators(self):
+        return [
+            (By.NAME, "password"),
+            (By.CSS_SELECTOR, "input[type='password']"),
+            (By.CSS_SELECTOR, "input[autocomplete='current-password']"),
+            (By.XPATH, "//input[@type='password']"),
+            (By.XPATH, "//input[contains(@aria-label, 'password')]"),
+        ]
+    
+    def _google_next_locators(self):
+        return [
+            (By.XPATH, "//button[contains(text(), 'Next')]"),
+            (By.XPATH, "//span[contains(text(), 'Next')]/ancestor::button"),
+            (By.XPATH, "//div[contains(text(), 'Next')]/ancestor::button"),
+            (By.CSS_SELECTOR, "button[type='button']"),
+            (By.ID, "identifierNext"),
+            (By.ID, "passwordNext"),
+        ]
+    
     def login_with_google(self, google_email, google_password):
         """Login to Reddit using Google OAuth"""
         logger.info("Starting Google OAuth login process...")
@@ -21,17 +89,12 @@ class LoginManager:
         try:
             # Go to Reddit login page
             self.driver.get("https://www.reddit.com/login")
-            time.sleep(random.uniform(2, 4))
-            
-            # Click the "Continue with Google" button
-            google_button = self._find_google_button()
+            google_button = self._wait_for_clickable(self._google_button_locators(), timeout=12)
             if not google_button:
                 logger.error("Could not find Google login button")
                 return False
-            
             google_button.click()
             logger.info("Clicked Google login button")
-            time.sleep(random.uniform(2, 4))
             
             # Handle Google OAuth flow
             return self._handle_google_oauth(google_email, google_password)
@@ -67,9 +130,6 @@ class LoginManager:
     def _handle_google_oauth(self, email, password):
         """Handle Google OAuth authentication flow"""
         try:
-            # Wait for Google login page to load
-            time.sleep(3)
-            
             # Check if we're on Google login page
             current_url = self.driver.current_url.lower()
             logger.info(f"Current URL: {current_url}")
@@ -79,23 +139,21 @@ class LoginManager:
                 logger.info("Not on Google accounts page, checking for email field")
             
             # Try to find email field
-            email_field = self._find_google_email_field()
+            email_field = self._wait_for_clickable(self._google_email_locators(), timeout=12)
             if not email_field:
                 logger.error("Could not find Google email field")
                 return False
             
             # Enter email
             self._human_type(email_field, email)
-            time.sleep(random.uniform(1, 2))
             
             # Click next button for email
-            next_button = self._find_google_next_button()
+            next_button = self._wait_for_clickable(self._google_next_locators(), timeout=8)
             if next_button:
                 next_button.click()
-                time.sleep(random.uniform(2, 4))
             
             # Try to find password field
-            password_field = self._find_google_password_field()
+            password_field = self._wait_for_clickable(self._google_password_locators(), timeout=12)
             if not password_field:
                 logger.warning("Could not find password field, checking if already logged in")
                 # Might be already logged into Google
@@ -103,13 +161,11 @@ class LoginManager:
             
             # Enter password
             self._human_type(password_field, password)
-            time.sleep(random.uniform(1, 2))
             
             # Click next button for password
-            next_button = self._find_google_next_button()
+            next_button = self._wait_for_clickable(self._google_next_locators(), timeout=8)
             if next_button:
                 next_button.click()
-                time.sleep(random.uniform(3, 5))
             
             # Check for 2FA or other security prompts
             if self._check_google_security_prompt():

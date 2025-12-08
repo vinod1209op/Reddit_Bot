@@ -27,6 +27,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Iterable, List
 
+# Ensure project root on path
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import praw
 import prawcore
 from dotenv import load_dotenv
@@ -43,7 +48,8 @@ def get_reddit_client() -> praw.Reddit:
         client_secret=os.environ["REDDIT_CLIENT_SECRET"],
         username=os.environ["REDDIT_USERNAME"],
         password=os.environ["REDDIT_PASSWORD"],
-        user_agent=os.environ["REDDIT_USER_AGENT"],
+        user_agent=os.environ.get("REDDIT_USER_AGENT", "reddit-bot-research/1.0 (+contact)"),
+        requestor_kwargs={"timeout": 10},
     )
 
 

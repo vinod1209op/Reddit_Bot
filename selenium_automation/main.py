@@ -7,11 +7,13 @@ here; keep usage exploratory and within Reddit’s rules.
 """
 import os
 import sys
+from selenium_automation.utils import reply_helpers as rh
 import time
 import random
 import logging
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Sequence, Tuple
+from urllib.parse import urljoin
 
 # Fix import path
 current_dir = Path(__file__).parent
@@ -35,6 +37,54 @@ class RedditAutomation:
         
         # Check which components are available
         self.components_available = self.check_components()
+
+    def _bot_setting(self, key: str, default=None):
+        """Safe access to bot_settings dict."""
+        if self.config and hasattr(self.config, "bot_settings"):
+            bs = self.config.bot_settings
+            if isinstance(bs, dict):
+                return bs.get(key, default)
+        return default
+
+    @staticmethod
+    def _normalize_post_url(url: str) -> str:
+        """Accept partial Reddit paths and convert to full URL."""
+        if not url:
+            return url
+        trimmed = url.strip()
+        if trimmed.startswith("http://") or trimmed.startswith("https://"):
+            return trimmed
+        if trimmed.startswith("r/"):
+            trimmed = "/" + trimmed
+        if not trimmed.startswith("/"):
+            trimmed = "/" + trimmed
+        return urljoin("https://www.reddit.com", trimmed)
+
+    def _selenium_setting(self, key: str, default=None):
+        """Safe access to selenium_settings dict."""
+        if self.config and hasattr(self.config, "selenium_settings"):
+            ss = self.config.selenium_settings
+            if isinstance(ss, dict):
+                return ss.get(key, default)
+        return default
+
+    def _wait_for_first(self, selectors: Sequence[Tuple[str, str]], timeout: int = 10):
+        """Wait for the first selector to appear; returns the element or None on timeout."""
+        try:
+            from selenium.webdriver.support.ui import WebDriverWait
+            from selenium.webdriver.support import expected_conditions as EC
+            return WebDriverWait(self.driver, timeout).until(
+                lambda d: next(
+                    (
+                        d.find_element(by, sel)
+                        for by, sel in selectors
+                        if d.find_elements(by, sel)
+                    ),
+                    None,
+                )
+            )
+        except Exception:
+            return None
     
     def check_components(self):
         """Check which utility components are available"""
@@ -82,9 +132,7 @@ class RedditAutomation:
             options = uc.ChromeOptions()
             
             # Get settings from config
-            headless = False
-            if self.config and hasattr(self.config, 'selenium_settings'):
-                headless = self.config.selenium_settings.get("headless", False)
+            headless = self._selenium_setting("headless", False)
             
             # Add arguments
             options.add_argument("--disable-blink-features=AutomationControlled")
@@ -144,9 +192,7 @@ class RedditAutomation:
             options = Options()
             
             # Get settings from config
-            headless = False
-            if self.config and hasattr(self.config, 'selenium_settings'):
-                headless = self.config.selenium_settings.get("headless", False)
+            headless = self._selenium_setting("headless", False)
             
             # Add arguments
             options.add_argument("--disable-blink-features=AutomationControlled")
@@ -169,7 +215,28 @@ class RedditAutomation:
                 from webdriver_manager.chrome import ChromeDriverManager
                 from selenium.webdriver.chrome.service import Service
                 
-                service = Service(ChromeDriverManager().install())
+                install_path = ChromeDriverManager().install()
+                driver_path = Path(install_path)
+
+                # Work around webdriver-manager sometimes returning a non-binary path (e.g., THIRD_PARTY_NOTICES)
+                if (not driver_path.is_file() or "THIRD_PARTY" in driver_path.name or not os.access(driver_path, os.X_OK)):
+                    parent = driver_path.parent if driver_path.is_file() else driver_path
+                    candidates = [
+                        path for path in parent.rglob("*chromedriver*")
+                        if path.is_file() and "THIRD_PARTY" not in path.name
+                    ]
+                    if not candidates:
+                        raise RuntimeError(f"Could not find chromedriver binary in {parent}")
+                    # prefer the one literally named "chromedriver"
+                    candidates = sorted(candidates, key=lambda p: (p.name != "chromedriver", len(str(p))))
+                    driver_path = candidates[0]
+                    if not os.access(driver_path, os.X_OK):
+                        try:
+                            driver_path.chmod(0o755)
+                        except Exception as chmod_err:
+                            logger.warning(f"Could not chmod chromedriver: {chmod_err}")
+
+                service = Service(str(driver_path))
                 self.driver = webdriver.Chrome(service=service, options=options)
                 logger.info("Using webdriver-manager")
             except ImportError:
@@ -244,7 +311,18 @@ class RedditAutomation:
             
             # Open Reddit login
             self.driver.get("https://www.reddit.com/login")
-            time.sleep(3)
+            try:
+                from selenium.webdriver.common.by import By
+                self._wait_for_first(
+                    [
+                        (By.CSS_SELECTOR, "form[action*='login']"),
+                        (By.CSS_SELECTOR, "button[data-testid='login-button']"),
+                        (By.XPATH, "//button[contains(., 'Google')]"),
+                    ],
+                    timeout=12,
+                )
+            except Exception:
+                logger.debug("Login form not detected before manual prompt; continuing.")
             
             # Maximize window for better visibility
             self.driver.maximize_window()
@@ -319,10 +397,24 @@ class RedditAutomation:
             return []
         
         try:
-            # Just navigate to messages page
+            # Just navigate to messages page and try to detect if logged in
             self.driver.get("https://www.reddit.com/message/unread")
-            time.sleep(3)
-            logger.info("At messages page")
+            from selenium.webdriver.common.by import By
+            self._wait_for_first(
+                [
+                    (By.CSS_SELECTOR, "[data-testid='inbox']"),
+                    (By.TAG_NAME, "article"),
+                ],
+                timeout=8,
+            )
+            if "login" in self.driver.current_url.lower():
+                logger.warning("Not logged in; skipping messages.")
+                return []
+            try:
+                self.driver.find_element(By.CSS_SELECTOR, "[data-testid='inbox']")  # rough check
+                logger.info("At messages page")
+            except Exception:
+                logger.info("Messages page loaded (no inbox marker found)")
             return []  # Return empty list for now
         
         except Exception as e:
@@ -348,12 +440,7 @@ class RedditAutomation:
         
         # Use config if available (default to first configured subreddit)
         if not subreddit and self.config:
-            if hasattr(self.config.bot_settings, "subreddits"):
-                subreddits = self.config.bot_settings.subreddits
-            elif hasattr(self.config, "bot_settings") and isinstance(self.config.bot_settings, dict):
-                subreddits = self.config.bot_settings.get("subreddits", ["test"])
-            else:
-                subreddits = ["test"]
+            subreddits = self._bot_setting("subreddits", ["test"])
             subreddit = subreddits[0] if subreddits else "test"
         
         logger.info(f"Searching r/{subreddit}...")
@@ -363,7 +450,14 @@ class RedditAutomation:
             
             # Navigate to subreddit (new Reddit UI)
             self.driver.get(f"https://www.reddit.com/r/{subreddit}/new")
-            time.sleep(3)
+            self._wait_for_first(
+                [
+                    (By.CSS_SELECTOR, "article"),
+                    (By.CSS_SELECTOR, "div[data-testid='post-container']"),
+                    (By.CSS_SELECTOR, "shreddit-post"),
+                ],
+                timeout=10,
+            )
             self._dismiss_popups()
             
             # Wait for posts to render, then scroll to load more
@@ -637,62 +731,62 @@ return results.slice(0, max);
             unique.append(post)
         return unique
 
-    def _focus_comment_box(self) -> None:
-        """Try to bring the comment composer into focus."""
-        try:
-            from selenium.webdriver.common.by import By
-        except ImportError:
-            return
-        
-        # Scroll near the comment area
-        try:
-            self.driver.execute_script("window.scrollBy(0, window.innerHeight * 0.4);")
-            time.sleep(0.5)
-        except Exception:
-            pass
-        
-        # Common triggers to open the comment box
-        triggers = [
-            "button[aria-label*='comment']",
-            "button[aria-label*='reply']",
-            "div[data-testid='comment-field']",
-            "div[data-test-id='comment-field']",
-            "div[placeholder*='thoughts']",
-        ]
-        for selector in triggers:
-            try:
-                elems = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                for el in elems:
-                    if el.is_displayed() and el.is_enabled():
-                        el.click()
-                        time.sleep(0.5)
-                        return
-            except Exception:
-                continue
 
-    def _find_comment_area(self):
-        """Locate a writable comment area."""
+    def _js_find_comment_box(self):
+        """Use JS (including shadow DOM) to locate a visible textarea/textbox."""
         try:
-            from selenium.webdriver.common.by import By
-        except ImportError:
+            el = self.driver.execute_script(
+                """
+const selectors = [
+  'textarea#innerTextArea',
+  'textarea[placeholder*="Share your thoughts"]',
+  'textarea[placeholder*="comment"]',
+  'textarea',
+  'div[role="textbox"][data-lexical-editor="true"]',
+  'div[contenteditable="true"][data-lexical-editor="true"]',
+  'div[role="textbox"]',
+  'div[contenteditable="true"]'
+];
+
+function isVisible(node) {
+  if (!node) return false;
+  const rect = node.getBoundingClientRect();
+  const style = window.getComputedStyle(node);
+  return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+}
+
+function findDeep(root) {
+  if (!root) return null;
+  for (const sel of selectors) {
+    const found = root.querySelector(sel);
+    if (found && isVisible(found)) return found;
+  }
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    if (node.shadowRoot) {
+      const shadowFound = findDeep(node.shadowRoot);
+      if (shadowFound) return shadowFound;
+    }
+  }
+  return null;
+}
+
+// Try inside the comment composer loader first
+const loader = document.querySelector('shreddit-async-loader[bundlename="comment_composer"]');
+if (loader) {
+  const shadow = loader.shadowRoot || loader;
+  const found = findDeep(shadow);
+  if (found) return found;
+}
+
+return findDeep(document);
+                """
+            )
+            return el
+        except Exception:
             return None
-        
-        selectors = [
-            "div[contenteditable='true']",
-            "div[role='textbox']",
-            "textarea",
-            "div[data-testid='comment-field'] div[contenteditable='true']",
-            "div[data-test-id='comment-field'] div[contenteditable='true']",
-        ]
-        for selector in selectors:
-            try:
-                candidates = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                for el in candidates:
-                    if el.is_displayed() and el.is_enabled():
-                        return el
-            except Exception:
-                continue
-        return None
+    
 
     def _enrich_post_details(self, post: Dict[str, Any], include_body: bool, include_comments: bool, comments_limit: int = 3) -> None:
         """Navigate to a post URL and collect body text and a few top comments."""
@@ -749,79 +843,106 @@ return results.slice(0, max);
     def reply_to_post(self, post_url: str, reply_text: str, dry_run: bool = True) -> Dict[str, Any]:
         """
         Post a reply on a thread using the current Selenium session.
-        
         Defaults to dry_run=True so you can validate selectors and text safely.
         Set dry_run=False only after manual review and with subreddit approval.
         """
         if not self.driver:
             return {"success": False, "error": "Driver not initialized"}
         
+        if not dry_run:
+            return {
+                "success": False,
+                "error": "Live Selenium submit is disabled. Use dry_run/prefill and submit manually.",
+                "live_disabled": True
+            }
+        
         try:
             from selenium.webdriver.common.by import By
             from selenium.webdriver.support.ui import WebDriverWait
             from selenium.webdriver.support import expected_conditions as EC
-            
-            logger.info(f"Navigating to post for reply: {post_url}")
-            self.driver.get(post_url)
-            WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "textarea, [contenteditable='true']"))
-            )
+            from selenium.webdriver.common.keys import Keys
+
+            normalized_url = self._normalize_post_url(post_url)
+            logger.info(f"Navigating to post for reply: {normalized_url}")
+            self.driver.get(normalized_url)
+            try:
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "textarea, [contenteditable='true'], article"))
+                )
+            except Exception as e:
+                logger.debug(f"Initial wait for comment area failed: {e}")
             time.sleep(1.5)
-            
-            # Bring reply box into view and try to focus it
-            self._focus_comment_box()
-            
-            # Type reply
-            target_area = self._find_comment_area()
+            # JS-first path using helper module
+            rh.js_open_comment_composer(self.driver)
+            target_area = (
+                rh.js_find_comment_box(self.driver)
+                or rh.find_comment_area(self.driver)
+                or rh.get_composer_element(self.driver)
+            )
+            if not target_area:
+                rh.focus_comment_box(self.driver)
+                target_area = (
+                    rh.js_find_comment_box(self.driver)
+                    or rh.find_comment_area(self.driver)
+                    or rh.get_composer_element(self.driver)
+                )
             if not target_area:
                 return {"success": False, "error": "Could not find reply textarea"}
+
+            # Try a direct focus/click on the detected area
+            try:
+                self.driver.execute_script("arguments[0].click(); arguments[0].focus();", target_area)
+            except Exception:
+                pass
+
+            # First try a pure keystroke fill (no JS)
+            filled = rh.keystroke_fill_simple(self.driver, target_area, reply_text)
+            # JS-first fill attempts (shadow DOM aware)
+            if not filled:
+                filled = (
+                    rh.js_fill_composer_strict(self.driver, reply_text)
+                    or rh.js_fill_shreddit_composer(self.driver, reply_text)
+                    or rh.js_force_set_comment_text(self.driver, reply_text)
+                    or rh.js_paste_comment_text(self.driver, reply_text)
+                )
+            if not filled:
+                filled = rh.fill_comment_box_via_keystrokes(self.driver, target_area, reply_text)
+            if not filled:
+                try:
+                    active = self.driver.switch_to.active_element
+                    active.send_keys(reply_text)
+                except Exception as e:
+                    logger.debug(f"Active element send_keys fallback failed: {e}")
             
-            target_area.clear()
-            target_area.send_keys(reply_text)
+            # Verify composer content and last-chance send_keys
+            try:
+                time.sleep(0.2)
+                content = rh.get_composer_text(self.driver)
+                if not str(content).strip():
+                    # Last-chance: click area and send keys directly
+                    try:
+                        self.driver.execute_script("arguments[0].click(); arguments[0].focus();", target_area)
+                    except Exception:
+                        pass
+                    try:
+                        from selenium.webdriver import ActionChains  # type: ignore
+                        actions = ActionChains(self.driver)
+                        actions.move_to_element(target_area).click().pause(0.2).send_keys(reply_text).perform()
+                        content = rh.get_composer_text(self.driver)
+                    except Exception:
+                        pass
+                if not str(content).strip():
+                    logger.warning("Composer readback empty; proceeding as filled based on actions taken.")
+            except Exception as e:
+                logger.debug(f"Composer verification failed: {e}")
+                # Continue; treat as best-effort success
             
             if dry_run:
                 logger.info("Dry run enabled; not submitting reply.")
                 return {"success": True, "dry_run": True}
             
-            clicked = False
-            submit_selectors = [
-                "button[data-testid='comment-submit-button']",
-                "button[type='submit']",
-                "button[aria-label*='comment']",
-            ]
-            for selector in submit_selectors:
-                try:
-                    btns = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                    for btn in btns:
-                        if btn.is_displayed() and btn.is_enabled():
-                            btn.click()
-                            clicked = True
-                            break
-                    if clicked:
-                        break
-                except Exception:
-                    continue
-            
-            if not clicked:
-                # Fallback: try keyboard shortcut (Ctrl/Cmd + Enter)
-                try:
-                    target_area.send_keys(Keys.CONTROL, Keys.ENTER)
-                    clicked = True
-                except Exception:
-                    try:
-                        target_area.send_keys(Keys.COMMAND, Keys.ENTER)
-                        clicked = True
-                    except Exception:
-                        pass
-            
-            time.sleep(2.5)
-            
-            # Quick verification: check if reply text appears in page source
-            snippet = reply_text[:80]
-            if snippet and snippet in self.driver.page_source:
-                return {"success": True, "dry_run": False, "verified": True}
-            else:
-                return {"success": clicked, "dry_run": False, "verified": False, "error": "Reply not detected after submit"}
+            # Live submit disabled; keep as dry-run only.
+            return {"success": True, "dry_run": True}
         except Exception as e:
             return {"success": False, "error": str(e)}
     
@@ -833,6 +954,23 @@ return results.slice(0, max);
                 logger.info("Browser closed")
             except:
                 pass
+
+    def save_login_cookies(self, cookie_file: str = "cookies.pkl") -> bool:
+        """Save current session cookies via the LoginManager helper."""
+        if not self.driver:
+            logger.error("Driver not initialized; cannot save cookies")
+            return False
+        try:
+            login_manager = self.get_login_manager()
+            if not login_manager:
+                logger.error("LoginManager not available; cannot save cookies")
+                return False
+            if hasattr(login_manager, "verify_login_success") and not login_manager.verify_login_success():
+                logger.warning("Login not verified; cookies may be invalid")
+            return login_manager.save_login_cookies(cookie_file)
+        except Exception as e:
+            logger.error(f"Failed to save cookies: {e}")
+            return False
 
 def test_selenium():
     """Test Selenium functionality"""

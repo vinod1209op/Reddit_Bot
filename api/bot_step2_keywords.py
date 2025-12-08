@@ -10,36 +10,18 @@ What this script does:
 
 import os
 import sys
+from pathlib import Path
 from typing import Iterable, List, Mapping, Sequence
 
+# Ensure project root on path
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import praw
-import prawcore
 from dotenv import load_dotenv
-
-
-SUBREDDITS: Sequence[str] = [
-    "test",  # Keep a safe dev subreddit first
-    "microdosing",
-    "psilocybin",
-    "mentalhealth",
-    "ADHD",
-    "Psychonaut",
-]  # Swap/confirm with moderators before live use.
-KEYWORDS: Sequence[str] = [
-    "microdosing",
-    "microdose",
-    "psilocybin",
-    "shrooms",
-    "lsd",
-    "psychedelic",
-    "set and setting",
-    "harm reduction",
-    "integration",
-    "mental health",
-    "anxiety microdosing",
-    "depression microdosing",
-    "adhd microdosing",
-]  # Microdosing/psychedelic harm-reduction oriented terms; adjust per study scope.
+from shared.config_manager import ConfigManager
+from shared.api_utils import normalize_post, matched_keywords, fetch_posts
 
 # Mock data for offline/testing mode.
 MOCK_POSTS: List[Mapping[str, str]] = [
@@ -74,40 +56,9 @@ def get_reddit_client() -> praw.Reddit:
         client_secret=os.environ["REDDIT_CLIENT_SECRET"],
         username=os.environ["REDDIT_USERNAME"],
         password=os.environ["REDDIT_PASSWORD"],
-        user_agent=os.environ["REDDIT_USER_AGENT"],
+        user_agent=os.environ.get("REDDIT_USER_AGENT", "reddit-bot-research/1.0 (+contact)"),
+        requestor_kwargs={"timeout": 10},
     )
-
-
-def fetch_posts(reddit: praw.Reddit, subreddit_name: str, limit: int = 50) -> Iterable:
-    """Fetch posts from Reddit; on error, return mock posts."""
-    try:
-        subreddit = reddit.subreddit(subreddit_name)
-        return subreddit.new(limit=limit)
-    except (prawcore.exceptions.PrawcoreException, KeyError) as exc:
-        print("Reddit API not available (or access limited). Running in mock mode instead.", file=sys.stderr)
-        print(f"Details: {exc}", file=sys.stderr)
-        return MOCK_POSTS
-    except Exception as exc:
-        print("Reddit API not available (or access limited). Running in mock mode instead.", file=sys.stderr)
-        print(f"Unexpected error: {exc}", file=sys.stderr)
-        return MOCK_POSTS
-
-
-def normalize_post(post, default_subreddit: str) -> Mapping[str, str]:
-    """Convert either a PRAW submission or a mock dict into a consistent mapping."""
-    return {
-        "id": getattr(post, "id", None) or post.get("id", ""),
-        "subreddit": getattr(post, "subreddit", None) or post.get("subreddit", default_subreddit),
-        "title": getattr(post, "title", None) or post.get("title", ""),
-        "score": getattr(post, "score", None) or post.get("score", 0),
-        "body": getattr(post, "selftext", None) or post.get("body", ""),
-    }
-
-
-def matched_keywords(text: str, keywords: Sequence[str]) -> List[str]:
-    """Return a list of keywords that appear in the text (case-insensitive)."""
-    haystack = text.lower()
-    return [kw for kw in keywords if kw.lower() in haystack]
 
 
 def scan_and_print(posts: Iterable, keywords: Sequence[str], default_subreddit: str) -> None:
@@ -129,13 +80,16 @@ def scan_and_print(posts: Iterable, keywords: Sequence[str], default_subreddit: 
 
 def main() -> None:
     load_dotenv()
+    config = ConfigManager().load_all()
+    subreddits = config.bot_settings.get("subreddits") or config.default_subreddits
+    keywords = config.bot_settings.get("keywords") or config.default_keywords
     forced_mock = os.getenv("MOCK_MODE") == "1"
 
     if forced_mock:
         print("MOCK_MODE is set; running with mock posts.")
-        for subreddit_name in SUBREDDITS:
-            print(f"\nScanning r/{subreddit_name} for keywords: {', '.join(KEYWORDS)}")
-            scan_and_print(MOCK_POSTS, KEYWORDS, subreddit_name)
+        for subreddit_name in subreddits:
+            print(f"\nScanning r/{subreddit_name} for keywords: {', '.join(keywords)}")
+            scan_and_print(MOCK_POSTS, keywords, subreddit_name)
         return
 
     try:
@@ -146,16 +100,16 @@ def main() -> None:
         # Any auth/HTTP failure triggers mock mode.
         print("Reddit API not available (or access limited). Running in mock mode instead.", file=sys.stderr)
         print(f"Details: {exc}", file=sys.stderr)
-        for subreddit_name in SUBREDDITS:
-            print(f"\nScanning r/{subreddit_name} for keywords: {', '.join(KEYWORDS)}")
-            scan_and_print(MOCK_POSTS, KEYWORDS, subreddit_name)
+        for subreddit_name in subreddits:
+            print(f"\nScanning r/{subreddit_name} for keywords: {', '.join(keywords)}")
+            scan_and_print(MOCK_POSTS, keywords, subreddit_name)
         return
 
     # Happy path: fetch from Reddit, but each fetch still has its own fallback.
-    for subreddit_name in SUBREDDITS:
-        print(f"\nScanning r/{subreddit_name} for keywords: {', '.join(KEYWORDS)}")
-        posts = fetch_posts(reddit, subreddit_name, limit=50)
-        scan_and_print(posts, KEYWORDS, subreddit_name)
+    for subreddit_name in subreddits:
+        print(f"\nScanning r/{subreddit_name} for keywords: {', '.join(keywords)}")
+        posts = fetch_posts(reddit, subreddit_name, limit=50, fallback_posts=MOCK_POSTS)
+        scan_and_print(posts, keywords, subreddit_name)
 
 
 if __name__ == "__main__":

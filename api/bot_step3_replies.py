@@ -16,7 +16,6 @@ Safety/ethics reminders:
 - Respect subreddit rules and Reddit's Responsible Builder Policy.
 """
 
-import csv
 import os
 import sys
 import time
@@ -24,9 +23,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, List, Mapping, Optional, Sequence, Tuple
 
+# Ensure project root on path
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import praw
-import prawcore
 from dotenv import load_dotenv
+from shared.config_manager import ConfigManager
+from shared.safety_checker import SafetyChecker
+from shared.api_utils import normalize_post, matched_keywords, fetch_posts, append_log
 
 try:
     from openai import OpenAI  # Optional; used only if USE_LLM=1 and OPENAI_API_KEY is set.
@@ -34,39 +40,33 @@ except ImportError:  # Optional dependency; safe to ignore when not installed.
     OpenAI = None
 
 
-SUBREDDITS: Sequence[str] = [
-    "test",  # Keep a safe dev subreddit first
-    "microdosing",
-    "psilocybin",
-    "mentalhealth",
-    "ADHD",
-    "Psychonaut",
-]  # Swap/confirm with moderators before live use.
-KEYWORDS: Sequence[str] = [
-    "microdosing",
-    "microdose",
-    "psilocybin",
-    "shrooms",
-    "lsd",
-    "psychedelic",
-    "set and setting",
-    "harm reduction",
-    "integration",
-    "mental health",
-    "anxiety microdosing",
-    "depression microdosing",
-    "adhd microdosing",
-]  # Microdosing/psychedelic harm-reduction oriented terms; adjust per study scope.
+SUBREDDITS: Sequence[str] = []  # populated from ConfigManager at runtime
+KEYWORDS: Sequence[str] = []  # populated from ConfigManager at runtime
 LOG_PATH = Path("bot_logs.csv")
+LOG_HEADER = [
+    "run_id",
+    "timestamp_utc",
+    "mode",
+    "subreddit",
+    "post_id",
+    "title",
+    "matched_keywords",
+    "reply_text",
+    "approved",
+    "posted",
+    "comment_id",
+    "error",
+]
 
 # Posting is disabled by default; set ENABLE_POSTING=1 to allow replies.
-ENABLE_POSTING = os.getenv("ENABLE_POSTING") == "1"
+# These are populated in main() after load_dotenv so .env changes take effect.
+ENABLE_POSTING = False
 # Optional hard cap to keep volume low per run (reduced to 5 for extra caution).
 MAX_APPROVED_PER_RUN = 5
 # Optional flag to use LLM; falls back to stub if not configured/available.
-USE_LLM = os.getenv("USE_LLM") == "1"
+USE_LLM = False
 # Optional run identifier for grouping logs.
-RUN_ID = os.getenv("RUN_ID") or datetime.now(timezone.utc).isoformat()
+RUN_ID = ""
 # Gentle delay between approved posts to respect rate/volume.
 POST_DELAY_SECONDS = 60
 
@@ -114,40 +114,9 @@ def get_reddit_client() -> praw.Reddit:
         client_secret=os.environ["REDDIT_CLIENT_SECRET"],
         username=os.environ["REDDIT_USERNAME"],
         password=os.environ["REDDIT_PASSWORD"],
-        user_agent=os.environ["REDDIT_USER_AGENT"],
+        user_agent=os.environ.get("REDDIT_USER_AGENT", "reddit-bot-research/1.0 (+contact)"),
+        requestor_kwargs={"timeout": 10},
     )
-
-
-def fetch_posts(reddit: praw.Reddit, subreddit_name: str, limit: int = 50) -> Iterable:
-    """Fetch posts from Reddit; on error, return mock posts."""
-    try:
-        subreddit = reddit.subreddit(subreddit_name)
-        return subreddit.new(limit=limit)
-    except (prawcore.exceptions.PrawcoreException, KeyError) as exc:
-        print("Reddit API not available (or access limited). Running in mock mode instead.", file=sys.stderr)
-        print(f"Details: {exc}", file=sys.stderr)
-        return MOCK_POSTS
-    except Exception as exc:
-        print("Reddit API not available (or access limited). Running in mock mode instead.", file=sys.stderr)
-        print(f"Unexpected error: {exc}", file=sys.stderr)
-        return MOCK_POSTS
-
-
-def normalize_post(post, default_subreddit: str) -> Mapping[str, str]:
-    """Convert either a PRAW submission or a mock dict into a consistent mapping."""
-    return {
-        "id": getattr(post, "id", None) or post.get("id", ""),
-        "subreddit": getattr(post, "subreddit", None) or post.get("subreddit", default_subreddit),
-        "title": getattr(post, "title", None) or post.get("title", ""),
-        "score": getattr(post, "score", None) or post.get("score", 0),
-        "body": getattr(post, "selftext", None) or post.get("body", ""),
-    }
-
-
-def matched_keywords(text: str, keywords: Sequence[str]) -> List[str]:
-    """Return a list of keywords that appear in the text (case-insensitive)."""
-    haystack = text.lower()
-    return [kw for kw in keywords if kw.lower() in haystack]
 
 
 def stub_reply(info: Mapping[str, str], hits: Sequence[str]) -> str:
@@ -199,30 +168,6 @@ def generate_reply(info: Mapping[str, str], hits: Sequence[str]) -> str:
     return llm_text if llm_text else stub_reply(info, hits)
 
 
-def append_log(row: Mapping[str, str]) -> None:
-    """Append a row to the CSV log, creating headers on first write."""
-    header = [
-        "run_id",
-        "timestamp_utc",
-        "mode",
-        "subreddit",
-        "post_id",
-        "title",
-        "matched_keywords",
-        "reply_text",
-        "approved",
-        "posted",
-        "comment_id",
-        "error",
-    ]
-    file_exists = LOG_PATH.exists()
-    with LOG_PATH.open("a", newline="", encoding="utf-8") as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=header)
-        if not file_exists:
-            writer.writeheader()
-        writer.writerow(row)
-
-
 def iter_matches(posts: Iterable, keywords: Sequence[str], default_subreddit: str) -> Iterable[Tuple[Mapping[str, str], object, List[str]]]:
     """Yield (normalized_info, raw_post, hits) for posts matching keywords."""
     for post in posts:
@@ -235,7 +180,16 @@ def iter_matches(posts: Iterable, keywords: Sequence[str], default_subreddit: st
 
 def main() -> None:
     load_dotenv()
+    # Refresh env-driven toggles after .env is loaded
+    global ENABLE_POSTING, USE_LLM, RUN_ID
+    ENABLE_POSTING = os.getenv("ENABLE_POSTING") == "1"
+    USE_LLM = os.getenv("USE_LLM") == "1"
+    RUN_ID = os.getenv("RUN_ID") or datetime.now(timezone.utc).isoformat()
     forced_mock = os.getenv("MOCK_MODE") == "1"
+    config = ConfigManager().load_all()
+    subreddits = config.bot_settings.get("subreddits") or config.default_subreddits
+    keywords = config.bot_settings.get("keywords") or config.default_keywords
+    safety_checker = SafetyChecker(config)
 
     approved_count = 0
 
@@ -256,11 +210,11 @@ def main() -> None:
             mode = "mock"
             forced_mock = True
 
-    for subreddit_name in SUBREDDITS:
-        print(f"\nScanning r/{subreddit_name} for keywords: {', '.join(KEYWORDS)}")
-        posts = MOCK_POSTS if forced_mock else fetch_posts(reddit, subreddit_name, limit=50)
+    for subreddit_name in subreddits:
+        print(f"\nScanning r/{subreddit_name} for keywords: {', '.join(keywords)}")
+        posts = MOCK_POSTS if forced_mock else fetch_posts(reddit, subreddit_name, limit=50, fallback_posts=MOCK_POSTS)
 
-        for info, raw_post, hits in iter_matches(posts, KEYWORDS, subreddit_name):
+        for info, raw_post, hits in iter_matches(posts, keywords, subreddit_name):
             print(
                 f"\n[MATCH] ID: {info['id']}\n"
                 f"Subreddit: r/{info['subreddit']}\n"
@@ -284,19 +238,27 @@ def main() -> None:
                     print("Approval cap reached for this run; not posting further replies.")
                     approved = False
                 else:
-                    approved_count += 1
-                    if ENABLE_POSTING and (not forced_mock) and hasattr(raw_post, "reply"):
-                        try:
-                            reply = raw_post.reply(reply_text)
-                            comment_id = getattr(reply, "id", "") or ""
-                            posted = True
-                            print("Reply posted.")
-                            time.sleep(POST_DELAY_SECONDS)  # be gentle with rate/volume
-                        except Exception as exc:
-                            error = f"Failed to post: {exc}"
-                            print(error, file=sys.stderr)
+                    allowed, reason = safety_checker.can_perform_action("comment", target=info["title"])
+                    if not allowed:
+                        error = f"Rate/safety blocked: {reason}"
+                        print(error)
+                        approved = False
                     else:
-                        print("Posting is disabled (dry-run). Set ENABLE_POSTING=1 to allow replies.")
+                        approved_count += 1
+                        if ENABLE_POSTING and (not forced_mock) and hasattr(raw_post, "reply"):
+                            try:
+                                reply = raw_post.reply(reply_text)
+                                comment_id = getattr(reply, "id", "") or ""
+                                posted = True
+                                print("Reply posted.")
+                                safety_checker.record_action("comment", target=info["title"])
+                                time.sleep(POST_DELAY_SECONDS)  # be gentle with rate/volume
+                            except Exception as exc:
+                                error = f"Failed to post: {exc}"
+                                print(error, file=sys.stderr)
+                        else:
+                            print("Posting is disabled (dry-run). Set ENABLE_POSTING=1 to allow replies.")
+                            safety_checker.record_action("comment", target=info["title"], success=True)
 
             log_row = {
                 "run_id": RUN_ID,
@@ -312,7 +274,7 @@ def main() -> None:
                 "comment_id": comment_id,
                 "error": error,
             }
-            append_log(log_row)
+            append_log(LOG_PATH, log_row, LOG_HEADER)
 
 
 if __name__ == "__main__":

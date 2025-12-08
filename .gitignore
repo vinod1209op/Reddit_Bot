@@ -1,17 +1,35 @@
-.DS_Store
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtualenvs
+.venv/
+venv/
+ENV/
+
+# Environment files
 .env
 config/credentials.env
-config/credentials.env.local
 *.env
-*.env.*
 
-# Selenium artifacts
-cookies.pkl
-manual_login_start.png
-google_login_error.png
-screenshots/
-
-# Logs and run outputs (keep locally; don't commit)
+# Logs and data
 logs/
 bot_logs.csv
 bot_metrics.csv
+cookies.pkl
+*.log
+
+# IDE/editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Selenium artifacts
+*.png
+
+# Compiled tests
+*.pyc

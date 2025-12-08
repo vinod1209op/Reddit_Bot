@@ -20,6 +20,8 @@
 ## Setup
 1) Install deps (within your venv):
    ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
    pip install praw python-dotenv
    # Optional LLM support:
    pip install openai

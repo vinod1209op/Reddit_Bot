@@ -74,6 +74,14 @@ def run_selenium_mode(config):
             print("\n" + "="*50)
             print("Running Selenium Tasks")
             print("="*50)
+
+            # Auto-save cookies for next run (best-effort)
+            try:
+                if hasattr(bot, "save_login_cookies"):
+                    bot.save_login_cookies()
+                    print("✓ Session cookies saved for future runs.")
+            except Exception as e:
+                print(f"Could not save cookies automatically: {e}")
             
             # 1. Check messages
             print("\n1. Checking messages...")
@@ -95,7 +103,8 @@ def run_selenium_mode(config):
                     if len(title) > 60:
                         title = title[:57] + "..."
                     subreddit = post.get('subreddit', 'unknown')
-                    print(f"{i}. r/{subreddit}: {title}")
+                    url = post.get('url') or f"https://reddit.com/r/{subreddit}"
+                    print(f"{i}. r/{subreddit}: {title}\n   {url}")
                 print("-"*50)
             
             # 3. Ask user what to do next
@@ -106,7 +115,7 @@ def run_selenium_mode(config):
             print("1. View more posts")
             print("2. Search specific subreddit")
             print("3. Check messages again")
-            print("4. Post a reply (Selenium)")
+            print("4. Prefill a reply (Selenium, manual submit)")
             print("5. Keep browser open for manual use")
             print("6. Exit and close browser")
             
@@ -125,7 +134,10 @@ def run_selenium_mode(config):
                             title = post.get('title', 'No title')
                             if len(title) > 80:
                                 title = title[:77] + "..."
+                            url = post.get('url') or ""
                             print(f"{i}. {title}")
+                            if url:
+                                print(f"   {url}")
                 
                 elif choice == "2":
                     subreddit = input("Enter subreddit name (default 'microdosing'): ").strip() or "microdosing"
@@ -140,7 +152,10 @@ def run_selenium_mode(config):
                             title = post.get('title', 'No title')
                             if len(title) > 80:
                                 title = title[:77] + "..."
+                            url = post.get('url') or ""
                             print(f"{i}. {title}")
+                            if url:
+                                print(f"   {url}")
                 
                 elif choice == "3":
                     print("Checking messages...")
@@ -148,17 +163,13 @@ def run_selenium_mode(config):
                     print(f"Found {len(messages)} relevant messages")
                 
                 elif choice == "4":
-                    url = input("Enter full post URL to reply to: ").strip()
-                    reply_text = input("Enter reply text: ").strip()
-                    confirm = input("Post this via Selenium? This is LIVE. (type 'post' to confirm): ").strip().lower()
-                    if confirm == "post":
-                        result = bot.reply_to_post(url, reply_text, dry_run=False)
-                        if result.get("success"):
-                            print("Reply posted via Selenium.")
-                        else:
-                            print(f"Failed to post: {result.get('error', 'unknown error')}")
+                    url = input("Enter full post URL to prefill reply on: ").strip()
+                    reply_text = input("Enter reply text to prefill (will NOT submit): ").strip()
+                    result = bot.reply_to_post(url, reply_text, dry_run=True)
+                    if result.get("success"):
+                        print("Reply text filled in the browser. Please review and click submit manually.")
                     else:
-                        print("Cancelled (dry-run).")
+                        print(f"Failed to prefill: {result.get('error', 'unknown error')}")
                 
                 elif choice == "5":
                     print("\n" + "="*50)

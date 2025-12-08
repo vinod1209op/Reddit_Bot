@@ -262,9 +262,9 @@ class ConfigManager:
                 print(f"  {key}: {value}")
         
         # Safety settings
-        if self.bot_settings:
+        if getattr(self, "safety_settings", None):
             print(f"\nSafety Settings:")
-            for key, value in self.bot_settings.items():
+            for key, value in self.safety_settings.items():
                 print(f"  {key}: {value}")
         
         # Mask credentials for display
