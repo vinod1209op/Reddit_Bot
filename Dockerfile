@@ -6,7 +6,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         chromium chromium-driver \
         wget curl unzip gnupg ca-certificates fonts-liberation \
-        libnss3 libgconf-2-4 libxss1 libasound2 libatk-bridge2.0-0 libgtk-3-0 && \
+        libnss3 libxss1 libasound2 libatk-bridge2.0-0 libgtk-3-0 libgbm1 && \
     rm -rf /var/lib/apt/lists/*
 
 ENV CHROME_BIN=/usr/bin/chromium \
