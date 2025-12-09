@@ -160,7 +160,26 @@ def run_selenium_mode(config):
                 
                 elif choice == "4":
                     url = input("Enter full post URL to prefill reply on: ").strip()
-                    reply_text = input("Enter reply text to prefill (will NOT submit): ").strip()
+                    use_llm_choice = input("Use LLM to generate reply? (y/N): ").strip().lower() == "y"
+                    reply_text = ""
+                    if use_llm_choice:
+                        use_page_context = input("Use page title/body as context? (y/N): ").strip().lower() == "y"
+                        if use_page_context:
+                            context = bot.fetch_post_context(url)
+                            if not context:
+                                print("Could not fetch page context; falling back to manual context.")
+                                context = input("Enter brief context for the reply (optional): ").strip() or "Provide a concise, supportive, safe reply."
+                        else:
+                            context = input("Enter brief context for the reply (optional): ").strip() or "Provide a concise, supportive, safe reply."
+                        llm_text = bot.generate_llm_reply(context)
+                        if llm_text:
+                            reply_text = llm_text
+                            print("\nGenerated reply:\n")
+                            print(reply_text)
+                        else:
+                            print("LLM generation unavailable; falling back to manual text.")
+                    if not reply_text:
+                        reply_text = input("Enter reply text to prefill (will NOT submit): ").strip()
                     result = bot.reply_to_post(url, reply_text, dry_run=True)
                     if result.get("success"):
                         print("Reply text filled in the browser. Please review and click submit manually.")

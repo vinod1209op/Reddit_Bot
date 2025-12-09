@@ -135,11 +135,40 @@ def llm_reply(info: Mapping[str, str], hits: Sequence[str]) -> Optional[str]:
         return None
     if OpenAI is None:
         return None
-    api_key = os.getenv("OPENAI_API_KEY")
+    # Use OpenRouter key
+    api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
         return None
 
-    client = OpenAI(api_key=api_key)
+    base_url_env = os.getenv("OPENROUTER_BASE_URL", "").strip()
+    # Default to OpenRouter API if base URL not set
+    base_url = base_url_env or "https://openrouter.ai/api/v1"
+    client_kwargs = {"api_key": api_key}
+    if base_url:
+        client_kwargs["base_url"] = base_url
+        # OpenRouter recommends passing referer/title headers
+        if api_key.startswith("sk-or-"):
+            client_kwargs["default_headers"] = {
+                "HTTP-Referer": os.getenv("OPENAI_HTTP_REFERER", "http://localhost"),
+                "X-Title": os.getenv("OPENAI_X_TITLE", "Reddit_Bot"),
+            }
+    try:
+        client = OpenAI(**client_kwargs)
+    except TypeError as e:
+        print(f"LLM client init failed (possible httpx version mismatch): {e}", file=sys.stderr)
+        try:
+            import httpx
+
+            manual_client = httpx.Client()
+            client = OpenAI(http_client=manual_client, **{k: v for k, v in client_kwargs.items() if k != "default_headers"})
+            if "default_headers" in client_kwargs and hasattr(client, "_default_headers"):
+                client._default_headers.update(client_kwargs["default_headers"])
+        except Exception as e2:
+            print(f"LLM client fallback init failed: {e2}", file=sys.stderr)
+            return None
+    except Exception as e:
+        print(f"LLM client init failed: {e}", file=sys.stderr)
+        return None
     prompt = (
         SAFETY_PROMPT
         + "\n\n"
@@ -156,6 +185,8 @@ def llm_reply(info: Mapping[str, str], hits: Sequence[str]) -> Optional[str]:
             temperature=0.4,
         )
         text = resp.choices[0].text.strip()
+        if len(text) >= 2 and text[0] == text[-1] and text[0] in {'"', "'"}:
+            text = text[1:-1].strip()
         return text
     except Exception as exc:
         print(f"LLM generation failed; falling back to stub. Details: {exc}", file=sys.stderr)

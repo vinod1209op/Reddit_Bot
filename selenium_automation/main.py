@@ -15,6 +15,12 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Sequence, Tuple
 from urllib.parse import urljoin
 
+# Optional LLM
+try:
+    from openai import OpenAI  # type: ignore
+except Exception:
+    OpenAI = None
+
 # Fix import path
 current_dir = Path(__file__).parent
 if str(current_dir) not in sys.path:
@@ -37,6 +43,11 @@ class RedditAutomation:
         
         # Check which components are available
         self.components_available = self.check_components()
+        # LLM config
+        self.use_llm = False
+        if self.config and hasattr(self.config, "bot_settings"):
+            if isinstance(self.config.bot_settings, dict):
+                self.use_llm = self.config.bot_settings.get("use_llm", False)
 
     def _bot_setting(self, key: str, default=None):
         """Safe access to bot_settings dict."""
@@ -59,6 +70,110 @@ class RedditAutomation:
         if not trimmed.startswith("/"):
             trimmed = "/" + trimmed
         return urljoin("https://www.reddit.com", trimmed)
+
+    def generate_llm_reply(self, context: str) -> Optional[str]:
+        """Generate a reply via OpenAI if enabled and configured."""
+        if not self.use_llm or OpenAI is None:
+            return None
+        import os
+
+        # Use OpenRouter key
+        api_key = os.getenv("OPENROUTER_API_KEY", "")
+        if not api_key:
+            return None
+
+        # If using OpenRouter key, default the base URL accordingly
+        base_url_env = os.getenv("OPENROUTER_BASE_URL", "").strip()
+        base_url = base_url_env or "https://openrouter.ai/api/v1"
+
+        safety_prompt = (
+            "You are an educational assistant focused on harm reduction and neutral information.\n"
+            "Rules:\n"
+            "- Do not give medical or dosing advice.\n"
+            "- Do not encourage illegal activity or acquisition of substances.\n"
+            "- Do not promote products, brands, or websites.\n"
+            "- Do not provide microdosing protocols, schedules, or dose guidance; emphasize legal/health risks and uncertainty.\n"
+            "- Keep replies short (2-5 sentences), neutral, and focus on general risks/considerations.\n"
+            "- Suggest speaking with qualified professionals for personal guidance.\n"
+            "- Respect community rules and be considerate in tone."
+        )
+        client_kwargs = {"api_key": api_key}
+        if base_url:
+            client_kwargs["base_url"] = base_url
+        if api_key.startswith("sk-or-"):
+            client_kwargs["default_headers"] = {
+                "HTTP-Referer": os.getenv("OPENAI_HTTP_REFERER", "http://localhost"),
+                "X-Title": os.getenv("OPENAI_X_TITLE", "Reddit_Bot"),
+            }
+        try:
+            client = OpenAI(**client_kwargs)
+        except TypeError as e:
+            # Fallback for older httpx missing 'proxies' argument: build our own client.
+            logger.warning(f"LLM client init failed (possible httpx version mismatch): {e}")
+            try:
+                import httpx
+
+                manual_client = httpx.Client()
+                client = OpenAI(http_client=manual_client, **{k: v for k, v in client_kwargs.items() if k != "default_headers"})
+                if "default_headers" in client_kwargs and hasattr(client, "_default_headers"):
+                    client._default_headers.update(client_kwargs["default_headers"])
+            except Exception as e2:
+                logger.warning(f"LLM client fallback init failed: {e2}")
+                return None
+        except Exception as e:
+            logger.warning(f"LLM client init failed: {e}")
+            return None
+        try:
+            resp = client.completions.create(
+                model="gpt-3.5-turbo-instruct",
+                prompt=f"{safety_prompt}\n\nContext: {context}\nWrite one short reply that follows the rules.",
+                max_tokens=180,
+                temperature=0.4,
+            )
+            text = resp.choices[0].text.strip()
+            # Some models wrap the reply in quotes; unwrap a matching single/double pair.
+            if len(text) >= 2 and text[0] == text[-1] and text[0] in {'"', "'"}:
+                text = text[1:-1].strip()
+            return text
+        except Exception as e:
+            logger.warning(f"LLM generation failed: {e}")
+            return None
+
+    def fetch_post_context(self, url: str) -> str:
+        """Fetch a post's title and body text for LLM context (best-effort)."""
+        try:
+            normalized = self._normalize_post_url(url)
+            from selenium.webdriver.common.by import By
+            self.driver.get(normalized)
+            try:
+                self.driver.implicitly_wait(2)
+            except Exception:
+                pass
+            title = ""
+            body = ""
+            try:
+                title_el = self.driver.find_element(By.TAG_NAME, "h1")
+                title = title_el.text
+            except Exception:
+                pass
+            body_selectors = [
+                "div[data-click-id='text']",
+                "div[data-test-id='post-content']",
+                "div[slot='body']",
+            ]
+            for sel in body_selectors:
+                try:
+                    el = self.driver.find_element(By.CSS_SELECTOR, sel)
+                    if el.text:
+                        body = el.text
+                        break
+                except Exception:
+                    continue
+            combined = (title + "\n\n" + body).strip()
+            return combined or normalized
+        except Exception as e:
+            logger.debug(f"fetch_post_context failed: {e}")
+            return ""
 
     def _selenium_setting(self, key: str, default=None):
         """Safe access to selenium_settings dict."""

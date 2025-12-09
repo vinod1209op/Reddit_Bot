@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: reddit-selenium-streamlit
+    env: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: PORT
+        value: 8501
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_BASE_URL
+        value: https://openrouter.ai/api/v1
+      - key: OPENAI_HTTP_REFERER
+        value: http://localhost
+      - key: OPENAI_X_TITLE
+        value: Reddit_Bot
+      - key: STREAMLIT_APP_PASSWORD
+        sync: false
+      - key: REDDIT_CLIENT_ID
+        sync: false
+      - key: REDDIT_CLIENT_SECRET
+        sync: false
+      - key: REDDIT_USERNAME
+        sync: false
+      - key: REDDIT_PASSWORD
+        sync: false
+      - key: REDDIT_USER_AGENT
+        value: bot:reddit_streamlit_prefill:v1.0
+      - key: PYTHONUNBUFFERED
+        value: "1"

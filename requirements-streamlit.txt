@@ -1,0 +1,4 @@
+# Streamlit UI for Selenium prefill
+-r requirements-selenium.txt
+-r requirements-llm.txt
+streamlit>=1.37.0
