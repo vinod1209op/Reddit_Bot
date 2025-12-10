@@ -575,6 +575,7 @@ class RedditAutomation:
             
             # Navigate to subreddit (new Reddit UI)
             self.driver.get(f"https://www.reddit.com/r/{subreddit}/new")
+            time.sleep(2)
             self._wait_for_first(
                 [
                     (By.CSS_SELECTOR, "article"),
@@ -584,6 +585,7 @@ class RedditAutomation:
                 timeout=10,
             )
             self._dismiss_popups()
+            time.sleep(1)
             
             # Wait for posts to render, then scroll to load more
             try:
@@ -597,9 +599,10 @@ class RedditAutomation:
             except Exception as e:
                 logger.debug(f"No initial post elements yet: {e}")
 
-            for _ in range(4):
+            for _ in range(6):
                 self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(2)
+            self._dismiss_popups()
             
             posts = []
             post_elements = self._find_post_elements(limit)
@@ -742,7 +745,7 @@ class RedditAutomation:
         try:
             # Generic button scan for consent/close
             buttons = self.driver.find_elements(By.TAG_NAME, "button")
-            keywords = ["accept", "agree", "continue", "got it"]
+            keywords = ["accept", "agree", "continue", "got it", "consent", "allow"]
             for btn in buttons:
                 try:
                     text = btn.text.strip().lower()
@@ -756,6 +759,7 @@ class RedditAutomation:
             # Specific selectors for Reddit consent overlays
             selectors = [
                 "[data-testid='accept-button']",
+                "[data-testid='accept-privacy-button']",
                 "button[aria-label='close']",
                 "button[aria-label*='consent']",
             ]
@@ -767,6 +771,22 @@ class RedditAutomation:
                         time.sleep(0.5)
                 except:
                     continue
+
+            # JS fallback: click any button containing accept/agree text
+            try:
+                self.driver.execute_script(
+                    """
+const keywords = ["accept","agree","continue","allow","consent"];
+const buttons = Array.from(document.querySelectorAll('button'));
+for (const btn of buttons) {
+  const t = (btn.innerText || "").toLowerCase();
+  if (keywords.some(k => t.includes(k))) { btn.click(); break; }
+}
+                    """
+                )
+                time.sleep(0.3)
+            except Exception:
+                pass
             
             if old_reddit:
                 try:
