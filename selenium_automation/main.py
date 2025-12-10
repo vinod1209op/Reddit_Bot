@@ -7,13 +7,14 @@ here; keep usage exploratory and within Reddit’s rules.
 """
 import os
 import sys
-from selenium_automation.utils import reply_helpers as rh
 import time
 import random
 import logging
+import json
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Sequence, Tuple
 from urllib.parse import urljoin
+from selenium_automation.utils import reply_helpers as rh
 
 # Optional LLM
 try:
@@ -687,6 +688,11 @@ class RedditAutomation:
                 extra = self._scrape_via_js(limit=limit, subreddit=subreddit)
                 logger.info(f"Fallback JS scrape added {len(extra)} posts")
                 posts.extend(extra)
+                if not posts:
+                    json_posts = self._scrape_via_json(subreddit=subreddit, limit=limit)
+                    if json_posts:
+                        logger.info(f"JSON fallback added {len(json_posts)} posts")
+                        posts.extend(json_posts)
 
             posts = self._dedupe_posts(posts)
 
@@ -875,6 +881,43 @@ return results.slice(0, max);
             seen.add(key)
             unique.append(post)
         return unique
+
+    def _scrape_via_json(self, subreddit: str, limit: int = 20) -> List[Dict[str, Any]]:
+        """Fetch posts via Reddit's JSON endpoint as a last-resort fallback."""
+        try:
+            url = f"https://www.reddit.com/r/{subreddit}/new.json?limit={limit}"
+            self.driver.get(url)
+            time.sleep(1.5)
+            text = ""
+            try:
+                from selenium.webdriver.common.by import By
+                pre = self.driver.find_element(By.TAG_NAME, "pre")
+                text = pre.text
+            except Exception:
+                text = self.driver.page_source
+            data = json.loads(text)
+            children = data.get("data", {}).get("children", [])
+            posts = []
+            for child in children:
+                d = child.get("data", {})
+                url = d.get("url") or f"https://www.reddit.com{d.get('permalink', '')}"
+                posts.append(
+                    {
+                        "id": d.get("id", ""),
+                        "title": d.get("title", ""),
+                        "body": d.get("selftext", ""),
+                        "subreddit": d.get("subreddit", subreddit),
+                        "score": d.get("score", 0),
+                        "author": d.get("author", ""),
+                        "url": url,
+                        "raw": d,
+                        "method": "json",
+                    }
+                )
+            return posts[:limit]
+        except Exception as e:
+            logger.debug(f"JSON scrape failed: {e}")
+            return []
 
 
     def _js_find_comment_box(self):
