@@ -264,13 +264,6 @@ class RedditAutomation:
             options.add_experimental_option("excludeSwitches", ["enable-automation"])
             options.add_experimental_option('useAutomationExtension', False)
             
-            # Add preferences to ignore SSL errors
-            options.add_experimental_option('prefs', {
-                'profile.managed_default_content_settings.images': 1,
-                'profile.default_content_setting_values.notifications': 2,
-                'profile.default_content_setting_values.insecure_ssl': 1,
-            })
-            
             # Headless mode if configured
             if headless:
                 options.add_argument("--headless=new")
@@ -309,10 +302,15 @@ class RedditAutomation:
             # Get settings from config
             headless = self._selenium_setting("headless", False)
             
+            chrome_bin = os.getenv("CHROME_BIN") or ""
+
             # Add arguments
             options.add_argument("--disable-blink-features=AutomationControlled")
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-gpu")
+
+            if chrome_bin and Path(chrome_bin).exists():
+                options.binary_location = chrome_bin
             
             # Fix SSL certificate errors
             options.add_argument("--ignore-certificate-errors")
