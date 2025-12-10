@@ -230,8 +230,12 @@ class RedditAutomation:
         return any(available.values())
     
     def setup(self):
-        """Setup Chrome driver using undetected-chromedriver"""
+        """Setup Chrome driver using undetected-chromedriver unless env forces regular."""
         logger.info("Setting up browser...")
+        
+        # If explicit binaries are provided (common in containers), skip undetected and go regular.
+        if os.getenv("CHROME_BIN") or os.getenv("CHROMEDRIVER_PATH"):
+            return self._setup_regular_selenium(prefer_env=True)
         
         # Try undetected chromedriver first
         try:
@@ -244,6 +248,11 @@ class RedditAutomation:
     def _setup_undetected_chrome(self, uc):
         """Setup using undetected-chromedriver"""
         try:
+            # If explicit binaries are provided, skip undetected to avoid option incompatibility.
+            if os.getenv("CHROME_BIN") or os.getenv("CHROMEDRIVER_PATH"):
+                logger.info("CHROME_BIN/CHROMEDRIVER_PATH provided; skipping undetected-chromedriver.")
+                return self._setup_regular_selenium(prefer_env=True)
+
             options = uc.ChromeOptions()
             
             # Get settings from config
@@ -255,15 +264,6 @@ class RedditAutomation:
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-gpu")
             
-            # Fix SSL certificate errors
-            options.add_argument("--ignore-certificate-errors")
-            options.add_argument("--ignore-ssl-errors")
-            options.add_argument("--allow-running-insecure-content")
-            
-            # Exclude automation detection
-            options.add_experimental_option("excludeSwitches", ["enable-automation"])
-            options.add_experimental_option('useAutomationExtension', False)
-            
             # Headless mode if configured
             if headless:
                 options.add_argument("--headless=new")
@@ -271,7 +271,6 @@ class RedditAutomation:
             else:
                 options.add_argument("--start-maximized")
             
-            # Initialize driver with SSL ignore
             logger.info("Initializing undetected-chromedriver...")
             self.driver = uc.Chrome(
                 options=options,
@@ -290,7 +289,7 @@ class RedditAutomation:
             logger.error(f"Undetected chromedriver setup failed: {e}")
             return self._setup_regular_selenium()
     
-    def _setup_regular_selenium(self):
+    def _setup_regular_selenium(self, prefer_env: bool = False):
         """Setup using regular selenium"""
         try:
             from selenium import webdriver
@@ -301,7 +300,6 @@ class RedditAutomation:
             
             # Get settings from config
             headless = self._selenium_setting("headless", False)
-            
             chrome_bin = os.getenv("CHROME_BIN") or ""
 
             # Add arguments
@@ -323,39 +321,54 @@ class RedditAutomation:
             else:
                 options.add_argument("--start-maximized")
             
-            # Try webdriver-manager
-            try:
-                from webdriver_manager.chrome import ChromeDriverManager
+            # Prefer explicit driver if provided (e.g., container-installed chromium-driver)
+            driver_env = os.getenv("CHROMEDRIVER_PATH")
+            if driver_env:
+                driver_path = Path(driver_env)
+                if not driver_path.exists():
+                    logger.error(f"CHROMEDRIVER_PATH does not exist: {driver_path}")
+                    if prefer_env:
+                        return None
+                    raise FileNotFoundError(driver_path)
                 from selenium.webdriver.chrome.service import Service
-                
-                install_path = ChromeDriverManager().install()
-                driver_path = Path(install_path)
-
-                # Work around webdriver-manager sometimes returning a non-binary path (e.g., THIRD_PARTY_NOTICES)
-                if (not driver_path.is_file() or "THIRD_PARTY" in driver_path.name or not os.access(driver_path, os.X_OK)):
-                    parent = driver_path.parent if driver_path.is_file() else driver_path
-                    candidates = [
-                        path for path in parent.rglob("*chromedriver*")
-                        if path.is_file() and "THIRD_PARTY" not in path.name
-                    ]
-                    if not candidates:
-                        raise RuntimeError(f"Could not find chromedriver binary in {parent}")
-                    # prefer the one literally named "chromedriver"
-                    candidates = sorted(candidates, key=lambda p: (p.name != "chromedriver", len(str(p))))
-                    driver_path = candidates[0]
-                    if not os.access(driver_path, os.X_OK):
-                        try:
-                            driver_path.chmod(0o755)
-                        except Exception as chmod_err:
-                            logger.warning(f"Could not chmod chromedriver: {chmod_err}")
 
                 service = Service(str(driver_path))
                 self.driver = webdriver.Chrome(service=service, options=options)
-                logger.info("Using webdriver-manager")
-            except ImportError:
-                # Fallback to system ChromeDriver
-                self.driver = webdriver.Chrome(options=options)
-                logger.info("Using system ChromeDriver")
+                logger.info("Using driver from CHROMEDRIVER_PATH")
+            else:
+                # Try webdriver-manager
+                try:
+                    from webdriver_manager.chrome import ChromeDriverManager
+                    from selenium.webdriver.chrome.service import Service
+                    
+                    install_path = ChromeDriverManager().install()
+                    driver_path = Path(install_path)
+
+                    # Work around webdriver-manager sometimes returning a non-binary path (e.g., THIRD_PARTY_NOTICES)
+                    if (not driver_path.is_file() or "THIRD_PARTY" in driver_path.name or not os.access(driver_path, os.X_OK)):
+                        parent = driver_path.parent if driver_path.is_file() else driver_path
+                        candidates = [
+                            path for path in parent.rglob("*chromedriver*")
+                            if path.is_file() and "THIRD_PARTY" not in path.name
+                        ]
+                        if not candidates:
+                            raise RuntimeError(f"Could not find chromedriver binary in {parent}")
+                        # prefer the one literally named "chromedriver"
+                        candidates = sorted(candidates, key=lambda p: (p.name != "chromedriver", len(str(p))))
+                        driver_path = candidates[0]
+                        if not os.access(driver_path, os.X_OK):
+                            try:
+                                driver_path.chmod(0o755)
+                            except Exception as chmod_err:
+                                logger.warning(f"Could not chmod chromedriver: {chmod_err}")
+
+                    service = Service(str(driver_path))
+                    self.driver = webdriver.Chrome(service=service, options=options)
+                    logger.info("Using webdriver-manager")
+                except ImportError:
+                    # Fallback to system ChromeDriver
+                    self.driver = webdriver.Chrome(options=options)
+                    logger.info("Using system ChromeDriver")
             
             self.wait = WebDriverWait(self.driver, 15)
             logger.info("Regular Selenium setup complete")
