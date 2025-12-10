@@ -259,11 +259,14 @@ class RedditAutomation:
             # Get settings from config
             headless = self._selenium_setting("headless", False)
             
+            ua = os.getenv("REDDIT_USER_AGENT") or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
             # Add arguments
             options.add_argument("--disable-blink-features=AutomationControlled")
             options.add_argument("--disable-dev-shm-usage")
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-gpu")
+            options.add_argument(f"--user-agent={ua}")
             
             # Headless mode if configured
             if headless:
@@ -302,11 +305,13 @@ class RedditAutomation:
             # Get settings from config
             headless = self._selenium_setting("headless", False)
             chrome_bin = os.getenv("CHROME_BIN") or ""
+            ua = os.getenv("REDDIT_USER_AGENT") or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
             # Add arguments
             options.add_argument("--disable-blink-features=AutomationControlled")
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-gpu")
+            options.add_argument(f"--user-agent={ua}")
 
             if chrome_bin and Path(chrome_bin).exists():
                 options.binary_location = chrome_bin
@@ -690,8 +695,8 @@ class RedditAutomation:
                 posts.extend(extra)
                 if not posts:
                     json_posts = self._scrape_via_json(subreddit=subreddit, limit=limit)
+                    logger.info(f"JSON fallback returned {len(json_posts)} posts")
                     if json_posts:
-                        logger.info(f"JSON fallback added {len(json_posts)} posts")
                         posts.extend(json_posts)
 
             posts = self._dedupe_posts(posts)
@@ -916,7 +921,8 @@ return results.slice(0, max);
                 )
             return posts[:limit]
         except Exception as e:
-            logger.debug(f"JSON scrape failed: {e}")
+            snippet = text[:2000] if isinstance(text, str) else ""
+            logger.debug(f"JSON scrape failed: {e}; snippet={snippet}")
             return []
 
 
