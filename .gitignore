@@ -19,7 +19,6 @@ config/credentials.env
 logs/
 bot_logs.csv
 bot_metrics.csv
-cookies.pkl
 *.log
 
 # IDE/editor
