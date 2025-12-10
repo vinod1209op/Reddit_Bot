@@ -326,16 +326,15 @@ class RedditAutomation:
             if driver_env:
                 driver_path = Path(driver_env)
                 if not driver_path.exists():
-                    logger.error(f"CHROMEDRIVER_PATH does not exist: {driver_path}")
-                    if prefer_env:
-                        return None
-                    raise FileNotFoundError(driver_path)
-                from selenium.webdriver.chrome.service import Service
+                    logger.error(f"CHROMEDRIVER_PATH does not exist: {driver_path}; will try webdriver-manager.")
+                else:
+                    from selenium.webdriver.chrome.service import Service
 
-                service = Service(str(driver_path))
-                self.driver = webdriver.Chrome(service=service, options=options)
-                logger.info("Using driver from CHROMEDRIVER_PATH")
-            else:
+                    service = Service(str(driver_path))
+                    self.driver = webdriver.Chrome(service=service, options=options)
+                    logger.info("Using driver from CHROMEDRIVER_PATH")
+
+            if not self.driver:
                 # Try webdriver-manager
                 try:
                     from webdriver_manager.chrome import ChromeDriverManager
