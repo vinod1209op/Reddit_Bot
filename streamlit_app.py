@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 import streamlit as st
+import json
 
 # Ensure project imports work when launched from elsewhere (Render, etc.)
 PROJECT_ROOT = Path(__file__).parent
@@ -67,119 +68,374 @@ def close_bot() -> None:
     st.session_state.bot = None
 
 
+STATE_FILE = PROJECT_ROOT / "data" / "post_state.json"
+
+
+def _post_key(post: dict) -> str:
+    return post.get("id") or post.get("url") or post.get("permalink") or post.get("title") or ""
+
+
+def _context_cache() -> dict:
+    return st.session_state.setdefault("post_context_cache", {})
+
+
+def load_post_state() -> dict:
+    if "post_state" in st.session_state:
+        return st.session_state["post_state"]
+    if STATE_FILE.exists():
+        try:
+            with STATE_FILE.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+                st.session_state["post_state"] = {
+                    "submitted": set(data.get("submitted", [])),
+                    "ignored": set(data.get("ignored", [])),
+                    "submitted_details": data.get("submitted_details", []),
+                    "ignored_details": data.get("ignored_details", []),
+                }
+                return st.session_state["post_state"]
+        except Exception:
+            pass
+    st.session_state["post_state"] = {
+        "submitted": set(),
+        "ignored": set(),
+        "submitted_details": [],
+        "ignored_details": [],
+    }
+    return st.session_state["post_state"]
+
+
+def save_post_state(state: dict) -> None:
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    data = {
+        "submitted": sorted(state.get("submitted", [])),
+        "ignored": sorted(state.get("ignored", [])),
+        "submitted_details": state.get("submitted_details", []),
+        "ignored_details": state.get("ignored_details", []),
+    }
+    with STATE_FILE.open("w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+
 def main() -> None:
-    st.set_page_config(page_title="Reddit Selenium Prefill", layout="wide")
-    st.title("Reddit Selenium Prefill (Dry-Run)")
-    st.write("Prefills a reply in Reddit's composer using Selenium. No auto-submit.")
+    st.set_page_config(page_title="Reddit Reply Helper", layout="wide")
+    st.title("Reddit Reply Helper")
+    st.caption("Search → draft → fill (optionally auto-submit). Keep runs short to avoid session timeouts.")
 
     if not require_auth():
         return
 
     cfg = load_config()
+    post_state = load_post_state()
 
     with st.sidebar:
-        st.subheader("Status & Controls")
+        st.subheader("Browser")
         bot_active = bool(st.session_state.get("bot"))
-        st.write(f"Browser status: {'🟢 Ready' if bot_active else '🔴 Not started'}")
-        if st.button("Start / Reconnect Browser"):
+        st.write(f"{'🟢 Ready' if bot_active else '🔴 Not started'}")
+        if st.button("Start / Reconnect"):
             if ensure_bot(cfg):
                 st.success("Browser ready.")
-        if st.button("Close Browser"):
+        if st.button("Close"):
             close_bot()
             st.info("Browser closed.")
+        st.subheader("Tips")
         st.markdown(
-            "- Uses your server-side Reddit session.\n"
-            "- Dry-run only; you must manually submit in the browser.\n"
-            "- LLM uses OpenRouter if `OPENROUTER_API_KEY` is set."
+            "- Start browser, then search.\n"
+            "- Edit or generate a reply.\n"
+            "- Prefill keeps it manual; Auto-submit posts immediately.\n"
+            "- Mark submitted/ignored to hide later."
         )
+        st.caption("LLM uses OpenRouter when `OPENROUTER_API_KEY` is set.")
 
-    st.header("Find Posts")
+    st.subheader("Find Posts")
     with st.form("search_form", clear_on_submit=False):
         subreddit = st.text_input("Subreddit", value="microdosing", help="Name without r/")
-        limit = st.number_input("How many posts?", min_value=1, max_value=100, value=15, step=1)
+        limit = st.number_input("How many posts?", min_value=1, max_value=50, value=10, step=1)
         submitted_search = st.form_submit_button("Search")
     if submitted_search:
         bot = ensure_bot(cfg)
         if bot:
-            st.info(f"Searching r/{subreddit}...")
-            posts = bot.search_posts(subreddit=subreddit.strip() or None, limit=int(limit), include_body=False, include_comments=False)
+            search_status = st.empty()
+            search_status.info(f"Searching r/{subreddit}...")
+            requested = int(limit)
+            # Over-fetch to compensate for filtering out submitted/ignored/duplicates.
+            fetch_limit = requested + len(post_state.get("submitted", [])) + len(post_state.get("ignored", [])) + 5
+            posts = bot.search_posts(subreddit=subreddit.strip() or None, limit=fetch_limit, include_body=False, include_comments=False)
             st.session_state["last_posts"] = posts
-            if posts:
-                st.success(f"Found {len(posts)} posts.")
-            else:
-                st.warning("No posts found.")
+            st.session_state["last_posts_fetched_count"] = len(posts)
+            st.session_state["last_requested_limit"] = int(limit)
+            search_status.empty()
     posts = st.session_state.get("last_posts", [])
+    fetched_count = st.session_state.get("last_posts_fetched_count")
+    requested_limit = st.session_state.get("last_requested_limit", 0)
     if posts:
-        st.subheader("Posts")
+        filtered_posts = []
+        seen = set()
+        for p in posts:
+            key = _post_key(p)
+            if key in post_state["submitted"] or key in post_state["ignored"]:
+                continue
+            dedupe_key = key or p.get("title", "")
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            filtered_posts.append(p)
+        # Cap to requested limit to avoid overshooting the user's requested count.
+        posts = filtered_posts[:requested_limit or len(filtered_posts)]
+        shown_count = len(posts)
+        if requested_limit and shown_count < requested_limit:
+            st.success(f"Showing {shown_count} of requested {requested_limit} (filtered out submitted/ignored or not enough new posts).")
+        else:
+            st.success(f"Showing {shown_count} posts.")
+        st.subheader("Pick a Post")
         for idx, post in enumerate(posts, 1):
             title = post.get("title") or "No title"
             url = post.get("url") or post.get("permalink") or ""
+            post_key = _post_key(post)
+            status_key = f"post_status_{post_key}"
+            if not url:
+                pid = post.get("id")
+                sub = post.get("subreddit")
+                if pid and sub:
+                    url = f"https://www.reddit.com/r/{sub}/comments/{pid}/"
             subreddit = post.get("subreddit", "")
-            col1, col2 = st.columns([0.8, 0.2])
-            with col1:
-                st.markdown(f"**{idx}. {title}**  _(r/{subreddit})_")
-                if url:
-                    st.code(url, language="")
-            with col2:
-                if url and st.button("Use for prefill", key=f"use_{idx}"):
-                    st.session_state["prefill_url"] = url
-    st.header("Prefill Reply")
-    with st.form("prefill_form", clear_on_submit=False):
-        prefill_default = st.session_state.get("prefill_url", "")
-        post_url = st.text_input(
-            "Post URL or path",
-            value=prefill_default,
-            help="Accepts full URL or paths like /r/sub/comments/xyz/title/",
-        )
-        use_llm = st.checkbox("Generate reply with LLM (OpenRouter)", value=False)
-        use_page_context = st.checkbox("Use page title/body as context (fetches post)", value=True)
-        manual_context = st.text_area(
-            "Manual context (optional)",
-            placeholder="Provide a brief prompt/context for the reply.",
-        )
-        manual_reply = st.text_area(
-            "Manual reply (used if LLM disabled or fails)",
-            placeholder="Enter reply text to prefill",
-        )
-        submitted = st.form_submit_button("Prefill (dry-run)")
-
-    if submitted:
-        if not post_url.strip():
-            st.error("Please provide a post URL or path.")
-            return
-
-        bot = ensure_bot(cfg)
-        if not bot:
-            return
-
-        reply_text = manual_reply.strip()
-        if use_llm:
-            bot.use_llm = True  # ensure LLM is allowed for this run
-            context = ""
-            if use_page_context:
-                st.info("Fetching post context...")
-                context = bot.fetch_post_context(post_url) or ""
-            if not context:
-                context = manual_context.strip() or "Provide a concise, supportive, safe reply."
-            st.info("Generating reply via OpenRouter...")
-            llm_text = bot.generate_llm_reply(context)
-            if llm_text:
-                reply_text = llm_text
-                st.success("LLM reply generated:")
-                st.code(reply_text)
+            st.markdown(f"**{idx}. {title}**  _(r/{subreddit})_")
+            if url:
+                st.code(url, language="")
             else:
-                st.warning("LLM generation unavailable; falling back to manual reply.")
+                st.caption("No link available for this post.")
+            if url:
+                expander_key = f"expander_{post_key}"
+                expanded_state = st.session_state.get(expander_key, False)
+                with st.expander(f"Reply options #{idx}", expanded=expanded_state):
+                    with st.form(f"inline_prefill_form_{idx}", clear_on_submit=False):
+                        st.markdown("Write your reply")
+                        use_page_context_inline = st.checkbox(
+                            "Use page title/body as context",
+                            value=True,
+                            key=f"use_ctx_{post_key}",
+                        )
+                        llm_generated = st.session_state.get(f"llm_reply_{post_key}", "")
+                        manual_context_val = st.session_state.get(f"manual_ctx_val_{post_key}", "")
 
-        if not reply_text:
-            st.error("No reply text available. Enter a manual reply or enable LLM.")
-            return
+                        if llm_generated:
+                            edit_key = f"llm_edit_{post_key}"
+                            if edit_key not in st.session_state:
+                                st.session_state[edit_key] = llm_generated
+                            generated_reply = st.text_area(
+                                "Generated reply (editable)",
+                                key=edit_key,
+                            )
+                            auto_submit = st.checkbox(
+                                "Auto-submit (posts now)",
+                                value=False,
+                                key=f"auto_submit_{post_key}",
+                            )
+                            col_btn1, col_btn2, pad_btn_r = st.columns([0.5, 0.5, 7], gap="small")
+                            with col_btn1:
+                                gen_llm = st.form_submit_button("Generate with LLM")
+                            with col_btn2:
+                                submitted_inline = st.form_submit_button("Prefill / Submit")
+                            manual_context_inline = manual_context_val  # keep last context for regen
+                            manual_reply_inline = ""  # not used in this view
+                        else:
+                            manual_context_inline = st.text_area(
+                                "Manual context (optional)",
+                                key=f"manual_ctx_{post_key}",
+                                placeholder="Provide a brief prompt/context for the reply.",
+                                value=manual_context_val,
+                            )
+                            manual_reply_inline = st.text_area(
+                                "Reply text (edit or paste here)",
+                                key=f"manual_reply_{post_key}",
+                                placeholder="Enter reply text to prefill",
+                                value="",
+                            )
+                            auto_submit = st.checkbox(
+                                "Auto-submit (posts now)",
+                                value=False,
+                                key=f"auto_submit_{post_key}",
+                            )
+                            col_btn1, col_btn2, pad_btn_r = st.columns([1, 1, 0.5], gap="small")
+                            with col_btn1:
+                                gen_llm = st.form_submit_button("Generate with LLM")
+                            with col_btn2:
+                                submitted_inline = st.form_submit_button("Prefill / Submit")
 
-        st.info("Attempting to prefill (no auto-submit)...")
-        result = bot.reply_to_post(post_url, reply_text, dry_run=True)
-        if result.get("success"):
-            st.success("Prefill attempted. Review the browser window and submit manually.")
-        else:
-            st.error(f"Failed to prefill: {result.get('error', 'unknown error')}")
+                    if submitted_inline:
+                        bot = ensure_bot(cfg)
+                        if not bot:
+                            st.stop()
+                        reply_text = (
+                            st.session_state.get(f"llm_edit_{post_key}", "").strip()
+                            if llm_generated
+                            else manual_reply_inline.strip()
+                        )
+                        if not reply_text:
+                            st.error("No reply text available. Enter a manual reply or enable LLM.")
+                        else:
+                            result = bot.reply_to_post(url, reply_text, dry_run=not auto_submit)
+                            if result.get("success"):
+                                submitted_flag = result.get("submitted")
+                                if auto_submit:
+                                    if submitted_flag:
+                                        st.session_state[status_key] = ("success", "Auto-submit attempted. Check the thread to confirm it posted.")
+                                    else:
+                                        st.session_state[status_key] = ("warning", "Filled the comment box but could not confirm submit. Please verify in the browser.")
+                                else:
+                                    st.session_state[status_key] = ("success", "Prefill attempted. Review the browser window and submit manually.")
+                                if submitted_flag:
+                                    post_state["submitted"].add(post_key)
+                                    post_state["submitted_details"].append(
+                                        {
+                                            "key": post_key,
+                                            "title": post.get("title") or post.get("url") or "Untitled",
+                                            "reply": reply_text,
+                                            "subreddit": post.get("subreddit", ""),
+                                        }
+                                    )
+                                    save_post_state(post_state)
+                            else:
+                                st.session_state[status_key] = ("error", f"Failed to prefill: {result.get('error', 'unknown error')}")
+                            st.session_state[expander_key] = False
+                            st.rerun()
+                    if 'bot' not in locals():
+                        bot = None
+                    if gen_llm:
+                        bot = bot or ensure_bot(cfg)
+                        if not bot:
+                            st.stop()
+                        bot.use_llm = True
+                        context = ""
+                        if use_page_context_inline:
+                            cache = _context_cache()
+                            context = cache.get(post_key, "")
+                            if not context:
+                                st.info("Fetching post context...")
+                                context = bot.fetch_post_context(url) or ""
+                                if context:
+                                    cache[post_key] = context
+                        if not context:
+                            context = manual_context_inline.strip() or "Provide a concise, supportive, safe reply."
+                        gen_status = st.empty()
+                        gen_status.info("Generating reply via OpenRouter...")
+                        llm_text = bot.generate_llm_reply(context)
+                        if llm_text:
+                            st.session_state[f"llm_reply_{post_key}"] = llm_text
+                            st.session_state[f"manual_ctx_val_{post_key}"] = manual_context_inline
+                            st.session_state[f"llm_edit_{post_key}"] = llm_text
+                            st.rerun()
+                        else:
+                            gen_status.warning("LLM generation unavailable; please enter a manual reply.")
+
+                # Render status message for this post outside the expander
+            if status_key in st.session_state:
+                level, msg = st.session_state[status_key]
+                if level == "success":
+                    st.success(msg)
+                elif level == "warning":
+                    st.warning(msg)
+                elif level == "error":
+                    st.error(msg)
+
+            # Post-level actions (outside the expander)
+            pad_left, col_a, col_b, pad_right = st.columns([0.1, 2, 2, 5], gap="small")
+            mark_sub_key = f"mark_submitted_{post_key}"
+            mark_submitted_box = col_a.checkbox("Mark submitted", key=mark_sub_key, value=False)
+            ignore_key = f"ignore_post_{post_key}"
+            ignore_checked = col_b.checkbox("Ignore this post", key=ignore_key, value=False)
+
+            if mark_submitted_box and post_key not in post_state["submitted"]:
+                post_state["submitted"].add(post_key)
+                existing_keys_sub = {d.get("key") for d in post_state.get("submitted_details", [])}
+                if post_key not in existing_keys_sub:
+                    post_state["submitted_details"].append(
+                        {
+                            "key": post_key,
+                            "title": post.get("title") or post.get("url") or "Untitled",
+                            "reply": st.session_state.get(f"llm_edit_{post_key}", "").strip() if llm_generated else "",
+                            "subreddit": post.get("subreddit", ""),
+                        }
+                    )
+                # Clear per-post session state so UI resets on rerun
+                st.session_state.pop(f"llm_reply_{post_key}", None)
+                st.session_state.pop(f"manual_ctx_val_{post_key}", None)
+                st.session_state.pop(f"llm_edit_{post_key}", None)
+                st.session_state.pop(f"post_status_{post_key}", None)
+                save_post_state(post_state)
+                st.success("Marked as submitted.")
+                st.rerun()
+
+            if ignore_checked and post_key not in post_state["ignored"]:
+                post_state["ignored"].add(post_key)
+                existing_keys = {d.get("key") for d in post_state.get("ignored_details", [])}
+                if post_key not in existing_keys:
+                    post_state["ignored_details"].append(
+                        {
+                            "key": post_key,
+                            "title": post.get("title") or post.get("url") or "Untitled",
+                            "subreddit": post.get("subreddit", ""),
+                        }
+                    )
+                save_post_state(post_state)
+                st.success("Post ignored.")
+                st.rerun()
+
+    # Show ignored posts for current subreddit
+    current_sub = subreddit.strip() if 'subreddit' in locals() else ""
+    ignored_list = []
+    ignored_details = []
+    submitted_details = []
+    if current_sub:
+        for p in st.session_state.get("last_posts", []):
+            key = _post_key(p)
+            if key in post_state["ignored"] and p.get("subreddit", "") == current_sub:
+                ignored_list.append(p)
+        submitted_details = [
+            d for d in post_state.get("submitted_details", []) if d.get("subreddit", "") == current_sub
+        ]
+        ignored_details = [
+            d for d in post_state.get("ignored_details", []) if d.get("subreddit", "") == current_sub
+        ]
+    if submitted_details or ignored_details:
+        st.markdown("---")
+        st.subheader("Saved activity")
+        if submitted_details:
+            with st.expander(f"Submitted posts in r/{current_sub}", expanded=False):
+                for d in list(submitted_details):
+                    title = d.get("title") or "Untitled"
+                    key_val = d.get("key", title)
+                    chk_key = f"submitted_item_{key_val}"
+                    checked = st.checkbox(title, value=True, key=chk_key)
+                    if not checked:
+                        post_state["submitted"].discard(key_val)
+                        post_state["submitted_details"] = [
+                            x for x in post_state.get("submitted_details", []) if x.get("key") != key_val
+                        ]
+                        save_post_state(post_state)
+                        st.success("Post unmarked as submitted. It will show up on next search.")
+                        st.rerun()
+                    reply_text = d.get("reply", "")
+                    if reply_text:
+                        st.code(reply_text)
+        with st.expander(f"Ignored posts in r/{current_sub}", expanded=False):
+            entries = ignored_details
+            if entries:
+                for d in list(entries):
+                    title = d.get("title") or "Untitled"
+                    key_val = d.get("key", title)
+                    chk_key = f"ignored_item_{key_val}"
+                    checked = st.checkbox(title, value=True, key=chk_key)
+                    if not checked:
+                        post_state["ignored"].discard(key_val)
+                        post_state["ignored_details"] = [
+                            x for x in post_state.get("ignored_details", []) if x.get("key") != key_val
+                        ]
+                        save_post_state(post_state)
+                        st.success("Post unignored. It will show up on next search.")
+                        st.rerun()
+            else:
+                st.caption("No ignored posts yet.")
+    # Prefill reply UI is now inline under each post above
 
 
 if __name__ == "__main__":
