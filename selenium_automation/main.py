@@ -14,6 +14,8 @@ import json
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Sequence, Tuple
 from urllib.parse import urljoin
+
+import requests
 from selenium_automation.utils import reply_helpers as rh
 
 # Optional LLM
@@ -302,9 +304,11 @@ class RedditAutomation:
             
             options = Options()
             
-            # Get settings from config
+            # Get settings from config / env
             headless = self._selenium_setting("headless", False)
-            chrome_bin = os.getenv("CHROME_BIN") or ""
+            chrome_bin = self._selenium_setting("chrome_binary", "") or os.getenv("CHROME_BIN") or ""
+            driver_env = self._selenium_setting("chromedriver_path", "") or os.getenv("CHROMEDRIVER_PATH") or ""
+            driver_version = self._selenium_setting("chromedriver_version", "") or os.getenv("CHROMEDRIVER_VERSION") or ""
             ua = os.getenv("REDDIT_USER_AGENT") or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
             # Add arguments
@@ -328,7 +332,6 @@ class RedditAutomation:
                 options.add_argument("--start-maximized")
             
             # Prefer explicit driver if provided (e.g., container-installed chromium-driver)
-            driver_env = os.getenv("CHROMEDRIVER_PATH")
             if driver_env:
                 driver_path = Path(driver_env)
                 if not driver_path.exists():
@@ -339,14 +342,32 @@ class RedditAutomation:
                     service = Service(str(driver_path))
                     self.driver = webdriver.Chrome(service=service, options=options)
                     logger.info("Using driver from CHROMEDRIVER_PATH")
+            else:
+                # Fallback to bundled chromedriver-binary if available
+                try:
+                    import chromedriver_binary  # type: ignore
+                    driver_env = getattr(chromedriver_binary, "chromedriver_filename", "")
+                    if driver_env:
+                        driver_path = Path(driver_env)
+                        if driver_path.exists():
+                            from selenium.webdriver.chrome.service import Service
+
+                            service = Service(str(driver_path))
+                            self.driver = webdriver.Chrome(service=service, options=options)
+                            logger.info(f"Using bundled chromedriver-binary at {driver_path}")
+                except Exception:
+                    driver_env = ""
 
             if not self.driver:
                 # Try webdriver-manager
                 try:
                     from webdriver_manager.chrome import ChromeDriverManager
                     from selenium.webdriver.chrome.service import Service
-                    
-                    install_path = ChromeDriverManager().install()
+
+                    manager_kwargs = {}
+                    if driver_version:
+                        manager_kwargs["version"] = driver_version
+                    install_path = ChromeDriverManager(**manager_kwargs).install()
                     driver_path = Path(install_path)
 
                     # Work around webdriver-manager sometimes returning a non-binary path (e.g., THIRD_PARTY_NOTICES)
@@ -418,6 +439,11 @@ class RedditAutomation:
                         logger.info("No valid cookies, proceeding with manual login")
                 except Exception as e:
                     logger.warning(f"Cookie login failed: {e}")
+
+            # Quick reuse if already authenticated (requires user markers)
+            if self._fast_session_check():
+                logger.info("Existing Reddit session detected.")
+                return True
             
             # SIMPLEST APPROACH: Manual Google login
             logger.info("Using simple manual login approach...")
@@ -425,6 +451,27 @@ class RedditAutomation:
                 
         except Exception as e:
             logger.error(f"Login failed: {e}")
+            return False
+
+    def _fast_session_check(self) -> bool:
+        """Quick best-effort check for an already-authenticated session."""
+        try:
+            from selenium.webdriver.common.by import By
+            # Avoid extra navigation if already on reddit.com
+            if "reddit.com" not in (self.driver.current_url or ""):
+                self.driver.get("https://www.reddit.com/")
+            marker = self._wait_for_first(
+                [
+                    (By.XPATH, "//button[@aria-label='User menu']"),
+                    (By.XPATH, "//img[contains(@src, 'avatar')]"),
+                    (By.CSS_SELECTOR, "a[data-click-id='user']"),
+                    (By.XPATH, "//a[contains(@href,'/user/')]"),
+                    (By.XPATH, "//span[contains(text(), '/u/')]"),
+                ],
+                timeout=6,
+            )
+            return bool(marker)
+        except Exception:
             return False
     
     def _simple_manual_login(self):
@@ -605,9 +652,13 @@ class RedditAutomation:
             except Exception as e:
                 logger.debug(f"No initial post elements yet: {e}")
 
-            for _ in range(6):
-                self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
+            # Scroll until enough posts are present or attempts exhausted.
+            max_scrolls = 4
+            for _ in range(max_scrolls):
+                if len(self._find_post_elements(limit)) >= limit:
+                    break
+                self.driver.execute_script("window.scrollBy(0, document.body.scrollHeight * 0.8);")
+                time.sleep(0.8)
             self._dismiss_popups()
             
             posts = []
@@ -891,16 +942,13 @@ return results.slice(0, max);
         """Fetch posts via Reddit's JSON endpoint as a last-resort fallback."""
         try:
             url = f"https://www.reddit.com/r/{subreddit}/new.json?limit={limit}"
-            self.driver.get(url)
-            time.sleep(1.5)
-            text = ""
-            try:
-                from selenium.webdriver.common.by import By
-                pre = self.driver.find_element(By.TAG_NAME, "pre")
-                text = pre.text
-            except Exception:
-                text = self.driver.page_source
-            data = json.loads(text)
+            headers = {
+                "User-Agent": os.getenv("REDDIT_USER_AGENT")
+                or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+            resp = requests.get(url, headers=headers, timeout=8)
+            resp.raise_for_status()
+            data = resp.json()
             children = data.get("data", {}).get("children", [])
             posts = []
             for child in children:
@@ -921,8 +969,7 @@ return results.slice(0, max);
                 )
             return posts[:limit]
         except Exception as e:
-            snippet = text[:2000] if isinstance(text, str) else ""
-            logger.debug(f"JSON scrape failed: {e}; snippet={snippet}")
+            logger.debug(f"JSON scrape failed: {e}")
             return []
 
 
@@ -1043,13 +1090,6 @@ return findDeep(document);
         if not self.driver:
             return {"success": False, "error": "Driver not initialized"}
         
-        if not dry_run:
-            return {
-                "success": False,
-                "error": "Live Selenium submit is disabled. Use dry_run/prefill and submit manually.",
-                "live_disabled": True
-            }
-        
         try:
             from selenium.webdriver.common.by import By
             from selenium.webdriver.support.ui import WebDriverWait
@@ -1135,8 +1175,25 @@ return findDeep(document);
                 logger.info("Dry run enabled; not submitting reply.")
                 return {"success": True, "dry_run": True}
             
-            # Live submit disabled; keep as dry-run only.
-            return {"success": True, "dry_run": True}
+            # Attempt to submit the comment automatically.
+            submitted = False
+            try:
+                submitted = rh.js_submit_comment(self.driver)
+                if not submitted:
+                    submitted = rh.submit_via_buttons(self.driver)
+                if not submitted:
+                    # Try keyboard submit (Ctrl+Enter) as a last resort.
+                    try:
+                        from selenium.webdriver import ActionChains  # type: ignore
+                        actions = ActionChains(self.driver)
+                        actions.key_down(Keys.CONTROL).send_keys("\n").key_up(Keys.CONTROL).perform()
+                        submitted = True  # best-effort
+                    except Exception as ke:
+                        logger.debug(f"Keyboard submit fallback failed: {ke}")
+            except Exception as e:
+                logger.debug(f"Auto-submit failed: {e}")
+
+            return {"success": True, "dry_run": False, "submitted": submitted}
         except Exception as e:
             return {"success": False, "error": str(e)}
     

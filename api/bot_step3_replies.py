@@ -65,6 +65,8 @@ ENABLE_POSTING = False
 MAX_APPROVED_PER_RUN = 5
 # Optional flag to use LLM; falls back to stub if not configured/available.
 USE_LLM = False
+# How many posts to fetch per subreddit scan.
+SCAN_LIMIT = 50
 # Optional run identifier for grouping logs.
 RUN_ID = ""
 # Gentle delay between approved posts to respect rate/volume.
@@ -212,10 +214,17 @@ def iter_matches(posts: Iterable, keywords: Sequence[str], default_subreddit: st
 def main() -> None:
     load_dotenv()
     # Refresh env-driven toggles after .env is loaded
-    global ENABLE_POSTING, USE_LLM, RUN_ID
+    global ENABLE_POSTING, USE_LLM, RUN_ID, SCAN_LIMIT, POST_DELAY_SECONDS
+    def _int_env(name: str, default: int) -> int:
+        try:
+            return int(os.getenv(name, str(default)))
+        except Exception:
+            return default
     ENABLE_POSTING = os.getenv("ENABLE_POSTING") == "1"
     USE_LLM = os.getenv("USE_LLM") == "1"
     RUN_ID = os.getenv("RUN_ID") or datetime.now(timezone.utc).isoformat()
+    SCAN_LIMIT = _int_env("STEP3_SCAN_LIMIT", 50)
+    POST_DELAY_SECONDS = max(0, _int_env("STEP3_POST_DELAY_SECONDS", 60))
     forced_mock = os.getenv("MOCK_MODE") == "1"
     config = ConfigManager().load_all()
     subreddits = config.bot_settings.get("subreddits") or config.default_subreddits
@@ -243,7 +252,7 @@ def main() -> None:
 
     for subreddit_name in subreddits:
         print(f"\nScanning r/{subreddit_name} for keywords: {', '.join(keywords)}")
-        posts = MOCK_POSTS if forced_mock else fetch_posts(reddit, subreddit_name, limit=50, fallback_posts=MOCK_POSTS)
+        posts = MOCK_POSTS if forced_mock else fetch_posts(reddit, subreddit_name, limit=SCAN_LIMIT, fallback_posts=MOCK_POSTS)
 
         for info, raw_post, hits in iter_matches(posts, keywords, subreddit_name):
             print(

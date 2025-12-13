@@ -79,6 +79,9 @@ class ConfigManager:
             "headless": os.getenv("SELENIUM_HEADLESS", "False").lower() in ("true", "1"),
             "wait_time": int(os.getenv("SELENIUM_WAIT_TIME", "10")),
             "browser": os.getenv("BROWSER_TYPE", "chrome"),
+            "chrome_binary": os.getenv("CHROME_BIN", ""),
+            "chromedriver_path": os.getenv("CHROMEDRIVER_PATH", ""),
+            "chromedriver_version": os.getenv("CHROMEDRIVER_VERSION", ""),
         }
         
         # Bot settings

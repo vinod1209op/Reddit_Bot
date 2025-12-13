@@ -230,7 +230,7 @@ def main() -> None:
                                 value=False,
                                 key=f"auto_submit_{post_key}",
                             )
-                            col_btn1, col_btn2, pad_btn_r = st.columns([0.5, 0.5, 7], gap="small")
+                            pad_btn_l, col_btn1, col_btn2, pad_btn_r = st.columns([0.1, 2, 2, 5], gap="small")
                             with col_btn1:
                                 gen_llm = st.form_submit_button("Generate with LLM")
                             with col_btn2:
@@ -255,7 +255,7 @@ def main() -> None:
                                 value=False,
                                 key=f"auto_submit_{post_key}",
                             )
-                            col_btn1, col_btn2, pad_btn_r = st.columns([1, 1, 0.5], gap="small")
+                            pad_btn_l, col_btn1, col_btn2, pad_btn_r = st.columns([0.1, 2, 2, 5], gap="small")
                             with col_btn1:
                                 gen_llm = st.form_submit_button("Generate with LLM")
                             with col_btn2:
