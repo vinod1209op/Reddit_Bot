@@ -271,20 +271,15 @@ class RedditAutomation:
         return any(available.values())
     
     def setup(self):
-        """Setup Chrome driver using undetected-chromedriver unless env forces regular."""
-        logger.info("Setting up browser...")
+        """Setup Chrome driver using regular Selenium (no undetected-chromedriver)."""
+        logger.info("Setting up browser (regular selenium)...")
         
-        # If explicit binaries are provided (common in containers), skip undetected and go regular.
+        # Prefer explicit binaries if provided
         if os.getenv("CHROME_BIN") or os.getenv("CHROMEDRIVER_PATH"):
             return self._setup_regular_selenium(prefer_env=True)
         
-        # Try undetected chromedriver first
-        try:
-            import undetected_chromedriver as uc
-            return self._setup_undetected_chrome(uc)
-        except ImportError:
-            logger.warning("undetected_chromedriver not found, trying regular selenium")
-            return self._setup_regular_selenium()
+        # Always use regular Selenium path to avoid uc downloads/delays
+        return self._setup_regular_selenium()
     
     def _setup_undetected_chrome(self, uc):
         """Setup using undetected-chromedriver"""
