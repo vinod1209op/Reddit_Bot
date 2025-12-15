@@ -36,11 +36,17 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-# Rotate file logs to avoid unbounded growth (only when handlers are configured elsewhere)
+# Rotate file logs to avoid unbounded growth; fallback to stdout if path unavailable.
 if not logger.handlers:
-    handler = RotatingFileHandler("logs/selenium_automation.log", maxBytes=5 * 1024 * 1024, backupCount=2)
-    handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-    logger.addHandler(handler)
+    try:
+        logs_dir = Path(__file__).parent.parent / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        file_path = logs_dir / "selenium_automation.log"
+        handler = RotatingFileHandler(file_path, maxBytes=5 * 1024 * 1024, backupCount=2)
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        logger.addHandler(handler)
+    except Exception as e:
+        logger.warning(f"Could not initialize rotating file handler: {e}")
 
 class RedditAutomation:
     """Main Selenium automation class for Reddit"""
