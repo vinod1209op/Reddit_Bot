@@ -11,6 +11,7 @@ import time
 import random
 import logging
 import json
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Sequence, Tuple
 from urllib.parse import urljoin
@@ -35,6 +36,11 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+# Rotate file logs to avoid unbounded growth (only when handlers are configured elsewhere)
+if not logger.handlers:
+    handler = RotatingFileHandler("logs/selenium_automation.log", maxBytes=5 * 1024 * 1024, backupCount=2)
+    handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    logger.addHandler(handler)
 
 class RedditAutomation:
     """Main Selenium automation class for Reddit"""
@@ -43,6 +49,7 @@ class RedditAutomation:
         self.config = config
         self.driver = None
         self.wait = None
+        self.cookie_file = None
         
         # Check which components are available
         self.components_available = self.check_components()
@@ -51,6 +58,29 @@ class RedditAutomation:
         if self.config and hasattr(self.config, "bot_settings"):
             if isinstance(self.config.bot_settings, dict):
                 self.use_llm = self.config.bot_settings.get("use_llm", False)
+        if self.config and hasattr(self.config, "selenium_settings"):
+            ss = self.config.selenium_settings
+            if isinstance(ss, dict):
+                self.cookie_file = ss.get("cookie_file")
+
+    def ensure_driver(self) -> bool:
+        """Ensure driver/session is alive; recreate if needed."""
+        try:
+            if self.driver and getattr(self.driver, "session_id", None):
+                return True
+        except Exception:
+            pass
+        try:
+            self.close()
+        except Exception:
+            pass
+        if self.setup():
+            try:
+                self.login(use_cookies_only=True)
+            except Exception:
+                pass
+            return self.driver is not None
+        return False
 
     def _bot_setting(self, key: str, default=None):
         """Safe access to bot_settings dict."""
@@ -144,6 +174,8 @@ class RedditAutomation:
 
     def fetch_post_context(self, url: str) -> str:
         """Fetch a post's title and body text for LLM context (best-effort)."""
+        if not self.ensure_driver():
+            return ""
         try:
             normalized = self._normalize_post_url(url)
             from selenium.webdriver.common.by import By
@@ -421,7 +453,7 @@ class RedditAutomation:
             logger.error(f"Failed to get login manager: {e}")
             return None
     
-    def login(self) -> bool:
+    def login(self, use_cookies_only: bool = False) -> bool:
         """Login to Reddit"""
         if not self.driver:
             logger.error("Driver not initialized")
@@ -432,13 +464,16 @@ class RedditAutomation:
             if self.components_available:
                 try:
                     login_manager = self.get_login_manager()
-                    if login_manager and login_manager.login_with_cookies():
+                    cookie_file = self.cookie_file or "cookies.pkl"
+                    if login_manager and login_manager.login_with_cookies(cookie_file=cookie_file):
                         logger.info("Logged in with cookies")
                         return True
                     else:
                         logger.info("No valid cookies, proceeding with manual login")
                 except Exception as e:
                     logger.warning(f"Cookie login failed: {e}")
+            if use_cookies_only:
+                return False
 
             # Quick reuse if already authenticated (requires user markers)
             if self._fast_session_check():
@@ -612,7 +647,7 @@ class RedditAutomation:
         (best-effort; keeps volume low). comments_limit caps how many top-level
         comments to collect per post.
         """
-        if not self.driver:
+        if not self.ensure_driver():
             logger.error("Driver not initialized")
             return []
         
@@ -628,7 +663,7 @@ class RedditAutomation:
             
             # Navigate to subreddit (new Reddit UI)
             self.driver.get(f"https://www.reddit.com/r/{subreddit}/new")
-            time.sleep(2)
+            time.sleep(1)
             self._wait_for_first(
                 [
                     (By.CSS_SELECTOR, "article"),
@@ -653,12 +688,12 @@ class RedditAutomation:
                 logger.debug(f"No initial post elements yet: {e}")
 
             # Scroll until enough posts are present or attempts exhausted.
-            max_scrolls = 4
+            max_scrolls = 3
             for _ in range(max_scrolls):
                 if len(self._find_post_elements(limit)) >= limit:
                     break
                 self.driver.execute_script("window.scrollBy(0, document.body.scrollHeight * 0.8);")
-                time.sleep(0.8)
+                time.sleep(0.5)
             self._dismiss_popups()
             
             posts = []
@@ -1087,7 +1122,7 @@ return findDeep(document);
         Defaults to dry_run=True so you can validate selectors and text safely.
         Set dry_run=False only after manual review and with subreddit approval.
         """
-        if not self.driver:
+        if not self.ensure_driver():
             return {"success": False, "error": "Driver not initialized"}
         
         try:

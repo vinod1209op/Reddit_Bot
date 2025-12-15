@@ -126,11 +126,20 @@ def main() -> None:
 
     cfg = load_config()
     post_state = load_post_state()
+    auto_submit_limit = cfg.bot_settings.get("auto_submit_limit", 0)
+    st.session_state.setdefault("auto_submit_count", 0)
 
     with st.sidebar:
         st.subheader("Browser")
         bot_active = bool(st.session_state.get("bot"))
+        bot = st.session_state.get("bot")
+        driver_alive = bool(getattr(bot, "driver", None) and getattr(getattr(bot, "driver", None), "session_id", None))
         st.write(f"{'🟢 Ready' if bot_active else '🔴 Not started'}")
+        if driver_alive:
+            current_url = getattr(getattr(bot, "driver", None), "current_url", "") or ""
+            st.caption(f"Driver alive • {current_url[:40] + '...' if len(current_url) > 43 else current_url}")
+        else:
+            st.caption("Driver: not started")
         if st.button("Start / Reconnect"):
             if ensure_bot(cfg):
                 st.success("Browser ready.")
@@ -204,9 +213,7 @@ def main() -> None:
             else:
                 st.caption("No link available for this post.")
             if url:
-                expander_key = f"expander_{post_key}"
-                expanded_state = st.session_state.get(expander_key, False)
-                with st.expander(f"Reply options #{idx}", expanded=expanded_state):
+                with st.expander(f"Reply options #{idx}", expanded=False):
                     with st.form(f"inline_prefill_form_{idx}", clear_on_submit=False):
                         st.markdown("Write your reply")
                         use_page_context_inline = st.checkbox(
@@ -273,6 +280,9 @@ def main() -> None:
                         if not reply_text:
                             st.error("No reply text available. Enter a manual reply or enable LLM.")
                         else:
+                            if auto_submit and auto_submit_limit > 0 and st.session_state["auto_submit_count"] >= auto_submit_limit:
+                                auto_submit = False
+                                st.session_state[status_key] = ("warning", "Auto-submit limit reached; prefilling only.")
                             result = bot.reply_to_post(url, reply_text, dry_run=not auto_submit)
                             if result.get("success"):
                                 submitted_flag = result.get("submitted")
@@ -294,9 +304,10 @@ def main() -> None:
                                         }
                                     )
                                     save_post_state(post_state)
+                                    if auto_submit:
+                                        st.session_state["auto_submit_count"] += 1
                             else:
                                 st.session_state[status_key] = ("error", f"Failed to prefill: {result.get('error', 'unknown error')}")
-                            st.session_state[expander_key] = False
                             st.rerun()
                     if 'bot' not in locals():
                         bot = None

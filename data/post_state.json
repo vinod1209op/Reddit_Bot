@@ -1,6 +1,10 @@
 {
   "submitted": [
-    "1pkvok5"
+    "1pjwxdu",
+    "1pjygay",
+    "1pkvok5",
+    "1pm71hz",
+    "1pmqgvc"
   ],
   "ignored": [
     "1pk5btv",
@@ -9,13 +13,39 @@
     "1pksp6y",
     "1plahg4",
     "1plkxi6",
-    "1plle1c"
+    "1plle1c",
+    "1pmosin",
+    "1pn7tic"
   ],
   "submitted_details": [
     {
       "key": "1pkvok5",
       "title": "Not hungry 10 days after 3g Natalensis trip?",
       "reply": "asdfasdf",
+      "subreddit": "microdosing"
+    },
+    {
+      "key": "1pjygay",
+      "title": "Its been 10 days microdose shroom and I feel nothing .",
+      "reply": "Microdosing can have varying effects on individuals and it's important to remember that results may not be immediate. It's also important to consider the potential legal and health risks associated with microdosing. If you have concerns, it's best to speak with a qualified professional for personalized guidance.",
+      "subreddit": "microdosing"
+    },
+    {
+      "key": "1pjwxdu",
+      "title": "Word Search and SideBar Library",
+      "reply": "",
+      "subreddit": "microdosing"
+    },
+    {
+      "key": "1pmqgvc",
+      "title": "Question about microdosing with fly agaric mushrooms",
+      "reply": "",
+      "subreddit": "microdosing"
+    },
+    {
+      "key": "1pm71hz",
+      "title": "Does microdosing help derealization or make it worse?",
+      "reply": "",
       "subreddit": "microdosing"
     }
   ],
@@ -48,6 +78,16 @@
     {
       "key": "1plle1c",
       "title": "Microdose shroom making my anxiety worse .no relief",
+      "subreddit": "microdosing"
+    },
+    {
+      "key": "1pn7tic",
+      "title": "Microdosing makes me tired instead of energized \u2013 what am I doing wrong?",
+      "subreddit": "microdosing"
+    },
+    {
+      "key": "1pmosin",
+      "title": "Functional mushroom gummies.....",
       "subreddit": "microdosing"
     }
   ]

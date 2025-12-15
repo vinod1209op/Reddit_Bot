@@ -82,6 +82,7 @@ class ConfigManager:
             "chrome_binary": os.getenv("CHROME_BIN", ""),
             "chromedriver_path": os.getenv("CHROMEDRIVER_PATH", ""),
             "chromedriver_version": os.getenv("CHROMEDRIVER_VERSION", ""),
+            "cookie_file": os.getenv("COOKIE_PATH", "data/cookies.pkl"),
         }
         
         # Bot settings
@@ -92,6 +93,7 @@ class ConfigManager:
             "use_llm": os.getenv("USE_LLM", "0") in ("1", "true"),
             "log_level": os.getenv("LOG_LEVEL", "INFO"),
             "human_approval": os.getenv("HUMAN_APPROVAL_MODE", "all"),
+            "auto_submit_limit": int(os.getenv("SELENIUM_AUTO_SUBMIT_LIMIT", "0") or 0),
         }
 
         self.google_creds = {
