@@ -1,0 +1,15 @@
+{
+  "timezone": "America/Los_Angeles",
+  "scan_windows": [
+    { "start": "02:00", "end": "05:00" },
+    { "start": "23:00", "end": "01:00" }
+  ],
+  "mode": "selenium",
+  "limit": 25,
+  "jitter_min": 2,
+  "jitter_max": 8,
+  "log_path": "logs/night_scan.csv",
+  "queue_path": "logs/night_queue.json",
+  "summary_path": "logs/night_scan_summary.csv",
+  "max_subreddits": 0
+}

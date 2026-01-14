@@ -9,13 +9,15 @@
 - Human-in-the-loop, low volume, respect subreddit rules and Reddit policies.
 
 3) System Design
-- Auth + mock fallback; keyword scan (microdosing/psychedelic terms); reply generator (stub/optional LLM + strict safety prompt).
+- Auth + mock fallback; keyword scan (microdosing/psychedelic terms); reply generator (stub/optional LLM via OpenRouter + strict safety prompt).
 - Approval gate; posting guard (off by default); logging (bot_logs); metrics (bot_metrics).
-- Selenium path: manual Google login, scrape subreddit /new pages; optional body/comment capture; reply helper with dry-run default.
+- Selenium path: manual Google login, scrape subreddit /new pages; optional body/comment capture; reply helper with dry-run default; Streamlit UI for search + prefill.
+- Scheduled read-only scans: `scripts/night_scanner.py` + `config/schedule.json` → logs matches, summary counts, and a review queue.
 
 4) Workflow
-- Configure .env; mock vs live; target subs/keywords.
+- Configure `config/credentials.env` (or `.env`); mock vs live; target subs/keywords.
 - Scan → suggest reply → human approves → (optional) post → log → later metrics check.
+- Optional night scan → review queue next day → manual decision.
 
 5) Results (fill in)
 - Runs, volume, engagement (score/replies), notable patterns in microdosing topics.

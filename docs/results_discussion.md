@@ -2,7 +2,7 @@
 
 ## Setup Summary
 - Runs: note dates, run_ids, subreddits (microdosing/psychedelic harm-reduction set), keywords, modes (mock/live), and posting enabled? (y/n).
-- Volume: number of posts scanned, matches surfaced, approvals given, comments posted.
+- Volume: number of posts scanned, matches surfaced, approvals given, comments posted. For scheduled scans, cite `logs/night_scan_summary.csv` and `logs/night_queue.json` counts.
 
 ## Engagement Findings
 - Per-comment stats: score, replies_count (from `bot_metrics.csv`).

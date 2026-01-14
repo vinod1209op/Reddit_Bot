@@ -80,6 +80,7 @@ class RedditAutomation:
             self.close()
         except Exception:
             pass
+        self._log_event("driver_restart")
         if self.setup():
             try:
                 self.login(use_cookies_only=True)
@@ -95,6 +96,17 @@ class RedditAutomation:
             if isinstance(bs, dict):
                 return bs.get(key, default)
         return default
+
+    def _log_event(self, action: str, **fields) -> None:
+        """Emit a minimal JSON event to stdout when LOG_JSON is enabled."""
+        if os.getenv("LOG_JSON", "0").lower() not in ("1", "true", "yes"):
+            return
+        payload = {"action": action, "ts": time.time()}
+        payload.update(fields)
+        try:
+            logger.info(json.dumps(payload))
+        except Exception:
+            pass
 
     @staticmethod
     def _normalize_post_url(url: str) -> str:
@@ -698,6 +710,7 @@ class RedditAutomation:
             self._dismiss_popups()
             
             posts = []
+            used_old_reddit = False
             post_elements = self._find_post_elements(limit)
             logger.info(f"Selector scrape found {len(post_elements)} elements")
             
@@ -709,6 +722,7 @@ class RedditAutomation:
                 self._dismiss_popups(old_reddit=True)
                 post_elements = self.driver.find_elements(By.CSS_SELECTOR, "div.thing")[:limit]
                 logger.info(f"Old Reddit selector scrape found {len(post_elements)} elements")
+                used_old_reddit = bool(post_elements)
             
             if not post_elements:
                 logger.info("No posts found via elements; trying JS scrape of shreddit-post components...")
@@ -718,61 +732,113 @@ class RedditAutomation:
                     posts = self._dedupe_posts(posts)
                     return posts
             
-            for element in post_elements:
-                try:
-                    href = ""
-                    title = ""
-                    
-                    title_selectors = [
-                        "h3",
-                        "[data-click-id='body'] h3",
-                        "a[data-click-id='body']",
-                        "faceplate-screenreader-only",
-                        "span[class*='title']",
-                    ]
-                    for selector in title_selectors:
-                        try:
-                            t_elem = element.find_element(By.CSS_SELECTOR, selector)
-                            if t_elem.text:
-                                title = t_elem.text
-                                break
-                        except:
+            def _parse_elements(elements, old_reddit: bool) -> List[Dict[str, Any]]:
+                parsed = []
+                for element in elements:
+                    try:
+                        href = ""
+                        title = ""
+                        title_elem = None
+
+                        title_selectors = [
+                            "h3",
+                            "[data-click-id='body'] h3",
+                            "a[data-click-id='body']",
+                            "faceplate-screenreader-only",
+                            "span[class*='title']",
+                            "a.title",
+                            "p.title > a",
+                            "a[data-event-action='title']",
+                        ]
+                        for selector in title_selectors:
+                            try:
+                                t_elem = element.find_element(By.CSS_SELECTOR, selector)
+                                text = (t_elem.text or "").strip()
+                                if text:
+                                    title = text
+                                    title_elem = t_elem
+                                    break
+                            except Exception:
+                                continue
+
+                        if not title:
+                            try:
+                                data_title = (element.get_attribute("data-title") or "").strip()
+                                if data_title:
+                                    title = data_title
+                            except Exception:
+                                pass
+
+                        if not title:
                             continue
-                    
-                    if not title:
+
+                        post_id = ""
+                        link_selectors = [
+                            "a[data-click-id='comments']",
+                            "a[href*='/comments/']",
+                            "a.comments",
+                            "a[data-event-action='comments']",
+                        ]
+                        for selector in link_selectors:
+                            try:
+                                link = element.find_element(By.CSS_SELECTOR, selector)
+                                href = link.get_attribute("href") or ""
+                                if "/comments/" in href:
+                                    post_id = href.split("/comments/")[1].split("/")[0]
+                                    break
+                            except Exception:
+                                continue
+
+                        if not href and title_elem:
+                            try:
+                                href = title_elem.get_attribute("href") or ""
+                            except Exception:
+                                pass
+                        if not href:
+                            try:
+                                data_permalink = element.get_attribute("data-permalink") or ""
+                                if data_permalink:
+                                    href = urljoin("https://www.reddit.com", data_permalink)
+                            except Exception:
+                                pass
+                        if not post_id:
+                            try:
+                                data_fullname = element.get_attribute("data-fullname") or ""
+                                if data_fullname.startswith("t3_"):
+                                    post_id = data_fullname.split("t3_")[1]
+                            except Exception:
+                                pass
+
+                        parsed.append({
+                            "id": post_id,
+                            "title": title,
+                            "body": "",
+                            "subreddit": subreddit,
+                            "score": 0,
+                            "author": "",
+                            "url": href,
+                            "raw": element,
+                            "method": "selenium-old" if old_reddit else "selenium"
+                        })
+
+                    except Exception as e:
+                        logger.debug(f"Error extracting post: {e}")
                         continue
-                    
-                    post_id = ""
-                    link_selectors = [
-                        "a[data-click-id='comments']",
-                        "a[href*='/comments/']",
-                    ]
-                    for selector in link_selectors:
-                        try:
-                            link = element.find_element(By.CSS_SELECTOR, selector)
-                            href = link.get_attribute("href")
-                            if "/comments/" in href:
-                                post_id = href.split("/comments/")[1].split("/")[0]
-                                break
-                        except:
-                            continue
-                    
-                    posts.append({
-                        "id": post_id,
-                        "title": title,
-                        "body": "",
-                        "subreddit": subreddit,
-                        "score": 0,
-                        "author": "",
-                        "url": href,
-                        "raw": element,
-                        "method": "selenium"
-                    })
-                    
-                except Exception as e:
-                    logger.debug(f"Error extracting post: {e}")
-                    continue
-            
+                return parsed
+
+            posts = _parse_elements(post_elements, used_old_reddit)
+
+            if not posts and not used_old_reddit:
+                logger.info("No posts parsed on new Reddit; trying old.reddit fallback parse...")
+                self.driver.get(f"https://old.reddit.com/r/{subreddit}/new")
+                time.sleep(3)
+                self._dismiss_popups(old_reddit=True)
+                post_elements = self.driver.find_elements(By.CSS_SELECTOR, "div.thing")[:limit]
+                logger.info(f"Old Reddit selector scrape found {len(post_elements)} elements")
+                used_old_reddit = bool(post_elements)
+                if post_elements:
+                    posts = _parse_elements(post_elements, True)
+
             logger.info(f"Found {len(posts)} posts")
             
             if not posts:
@@ -801,6 +867,7 @@ class RedditAutomation:
                         comments_limit=comments_limit
                     )
             
+            self._log_event("search_posts", subreddit=subreddit, limit=limit, found=len(posts))
             return posts
             
         except Exception as e:
@@ -1209,6 +1276,7 @@ return findDeep(document);
             
             if dry_run:
                 logger.info("Dry run enabled; not submitting reply.")
+                self._log_event("reply_prefill", dry_run=True, success=True)
                 return {"success": True, "dry_run": True}
             
             # Attempt to submit the comment automatically.
@@ -1229,8 +1297,10 @@ return findDeep(document);
             except Exception as e:
                 logger.debug(f"Auto-submit failed: {e}")
 
+            self._log_event("reply_submit", dry_run=False, submitted=submitted)
             return {"success": True, "dry_run": False, "submitted": submitted}
         except Exception as e:
+            self._log_event("reply_error", error=str(e))
             return {"success": False, "error": str(e)}
     
     def close(self):

@@ -3,6 +3,7 @@
 
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -127,7 +128,10 @@ def main() -> None:
     cfg = load_config()
     post_state = load_post_state()
     auto_submit_limit = cfg.bot_settings.get("auto_submit_limit", 0)
+    search_cache_ttl = int(os.getenv("SEARCH_CACHE_TTL", "0") or 0)
     st.session_state.setdefault("auto_submit_count", 0)
+    st.session_state.setdefault("last_action", "")
+    st.session_state.setdefault("error_count", 0)
 
     with st.sidebar:
         st.subheader("Browser")
@@ -146,6 +150,12 @@ def main() -> None:
         if st.button("Close"):
             close_bot()
             st.info("Browser closed.")
+        if auto_submit_limit:
+            st.caption(f"Auto-submit used: {st.session_state['auto_submit_count']}/{auto_submit_limit}")
+        if st.session_state.get("last_action"):
+            st.caption(f"Last action: {st.session_state['last_action']}")
+        if st.session_state.get("error_count"):
+            st.caption(f"Errors: {st.session_state['error_count']}")
         st.subheader("Tips")
         st.markdown(
             "- Start browser, then search.\n"
@@ -163,16 +173,21 @@ def main() -> None:
     if submitted_search:
         bot = ensure_bot(cfg)
         if bot:
-            search_status = st.empty()
-            search_status.info(f"Searching r/{subreddit}...")
             requested = int(limit)
-            # Over-fetch to compensate for filtering out submitted/ignored/duplicates.
-            fetch_limit = requested + len(post_state.get("submitted", [])) + len(post_state.get("ignored", [])) + 5
-            posts = bot.search_posts(subreddit=subreddit.strip() or None, limit=fetch_limit, include_body=False, include_comments=False)
+            cache_key = f"search_cache_{subreddit.strip().lower()}_{requested}"
+            cached = st.session_state.get(cache_key)
+            if cached and search_cache_ttl > 0 and (time.time() - cached.get("ts", 0)) < search_cache_ttl:
+                posts = cached.get("posts", [])
+            else:
+                search_status = st.empty()
+                search_status.info(f"Searching r/{subreddit}...")
+                fetch_limit = requested + len(post_state.get("submitted", [])) + len(post_state.get("ignored", [])) + 5
+                posts = bot.search_posts(subreddit=subreddit.strip() or None, limit=fetch_limit, include_body=False, include_comments=False)
+                st.session_state[cache_key] = {"ts": time.time(), "posts": posts}
+                search_status.empty()
             st.session_state["last_posts"] = posts
             st.session_state["last_posts_fetched_count"] = len(posts)
-            st.session_state["last_requested_limit"] = int(limit)
-            search_status.empty()
+            st.session_state["last_requested_limit"] = requested
     posts = st.session_state.get("last_posts", [])
     fetched_count = st.session_state.get("last_posts_fetched_count")
     requested_limit = st.session_state.get("last_requested_limit", 0)
@@ -306,8 +321,11 @@ def main() -> None:
                                     save_post_state(post_state)
                                     if auto_submit:
                                         st.session_state["auto_submit_count"] += 1
+                                st.session_state["last_action"] = f"prefill {post_key}"
                             else:
                                 st.session_state[status_key] = ("error", f"Failed to prefill: {result.get('error', 'unknown error')}")
+                                st.session_state["error_count"] += 1
+                                st.session_state["last_action"] = f"prefill_failed {post_key}"
                             st.rerun()
                     if 'bot' not in locals():
                         bot = None
@@ -374,6 +392,7 @@ def main() -> None:
                 st.session_state.pop(f"post_status_{post_key}", None)
                 save_post_state(post_state)
                 st.success("Marked as submitted.")
+                st.session_state["last_action"] = f"mark_submitted {post_key}"
                 st.rerun()
 
             if ignore_checked and post_key not in post_state["ignored"]:
@@ -389,6 +408,7 @@ def main() -> None:
                     )
                 save_post_state(post_state)
                 st.success("Post ignored.")
+                st.session_state["last_action"] = f"ignore {post_key}"
                 st.rerun()
 
     # Show ignored posts for current subreddit
@@ -424,6 +444,7 @@ def main() -> None:
                         ]
                         save_post_state(post_state)
                         st.success("Post unmarked as submitted. It will show up on next search.")
+                        st.session_state["last_action"] = f"unmark_submitted {key_val}"
                         st.rerun()
                     reply_text = d.get("reply", "")
                     if reply_text:
@@ -443,6 +464,7 @@ def main() -> None:
                         ]
                         save_post_state(post_state)
                         st.success("Post unignored. It will show up on next search.")
+                        st.session_state["last_action"] = f"unignore {key_val}"
                         st.rerun()
             else:
                 st.caption("No ignored posts yet.")

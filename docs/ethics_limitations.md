@@ -8,12 +8,12 @@
 - Transparent intent: educational, harm-reduction-oriented, neutral tone; suggest professional help for personal guidance.
 
 ## Privacy & Data Handling
-- Data stored locally in CSVs (`bot_logs.csv`, `bot_metrics.csv`); no external storage.
+- Data stored locally in CSVs and JSON (`bot_logs.csv`, `bot_metrics.csv`, `logs/night_scan.csv`, `logs/night_scan_summary.csv`, `logs/night_queue.json`); no external storage.
 - Collected fields: post/comment IDs, titles, matched keywords, reply text, approval decisions, basic engagement (score/replies).
 - No user PII collected beyond public Reddit content; avoid logging usernames.
 
 ## Model/Content Risks
-- LLM output (when enabled) is constrained by a strict safety prompt; stub reply used as fallback.
+- LLM output (when enabled, via OpenRouter) is constrained by a strict safety prompt; stub reply used as fallback.
 - Explicit guard against dosing guidance/protocols and illegal encouragement; human-in-the-loop mitigates inappropriate outputs; posting guard defaults to off.
 - Keyword matching is simple; may surface irrelevant posts—requires mindful approval.
 

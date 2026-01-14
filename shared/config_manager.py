@@ -82,7 +82,7 @@ class ConfigManager:
             "chrome_binary": os.getenv("CHROME_BIN", ""),
             "chromedriver_path": os.getenv("CHROMEDRIVER_PATH", ""),
             "chromedriver_version": os.getenv("CHROMEDRIVER_VERSION", ""),
-            "cookie_file": os.getenv("COOKIE_PATH", "data/cookies.pkl"),
+            "cookie_file": os.getenv("COOKIE_PATH", "cookies.pkl"),
         }
         
         # Bot settings

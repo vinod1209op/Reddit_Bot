@@ -20,6 +20,7 @@ logs/
 bot_logs.csv
 bot_metrics.csv
 *.log
+information/
 
 # IDE/editor
 .vscode/

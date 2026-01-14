@@ -18,28 +18,34 @@
 - Mock mode for development without API access.
 
 ## Architecture Overview
-- **Config**: `.env` provides Reddit creds; toggles: `MOCK_MODE`, `ENABLE_POSTING`, `USE_LLM`, `RUN_ID`, optional `OPENAI_API_KEY`.
+- **Config**: `config/credentials.env` (or `.env`) provides Reddit creds; toggles: `MOCK_MODE`, `ENABLE_POSTING`, `USE_LLM`, `RUN_ID`, optional `OPENROUTER_API_KEY` (plus `OPENROUTER_BASE_URL`, `OPENAI_HTTP_REFERER`, `OPENAI_X_TITLE`).
 - **Auth + mock fallback**: If auth fails or `MOCK_MODE=1`, scripts use hard-coded mock posts so logic stays testable.
 - **Keyword scan**: `bot_step2_keywords.py` filters recent posts in target subs for microdosing/psychedelic harm-reduction `KEYWORDS` and prints matches. Default subreddits include `test`, `microdosing`, `psilocybin`, `mentalhealth`, `ADHD`, `Psychonaut` (swap to approved subs as needed).
-- **Reply generator**: `bot_step3_replies.py` uses a deterministic safe stub; optionally an LLM (`USE_LLM=1`) with a strict safety prompt (no dosing/protocols, no illegal encouragement, no links/promos). Any LLM failure falls back to the stub.
+- **Reply generator**: `bot_step3_replies.py` uses a deterministic safe stub; optionally an LLM (`USE_LLM=1`) via the OpenAI client against OpenRouter with a strict safety prompt (no dosing/protocols, no illegal encouragement, no links/promos). Any LLM failure falls back to the stub.
 - **Approval gate**: CLI prompt `Post this reply? (y/n)`; approval cap per run; posting disabled unless explicitly enabled.
 - **Posting guard**: Dry-run by default. Actual posting only when `ENABLE_POSTING=1` and user approves.
 - **Logging**: `bot_step3_replies.py` appends to `bot_logs.csv` (run_id, mode, post metadata, matched keywords, reply text, approval decision, posted flag, comment_id, error).
 - **Metrics**: `bot_step4_metrics.py` reads `bot_logs.csv`, fetches posted comments, records score and replies_count to `bot_metrics.csv`.
-- **Selenium mode (manual)**: `selenium_automation/main.py` opens a real browser for manual Google login and subreddit scraping. `search_posts(..., include_body=True, include_comments=True)` can click into posts to grab body text and a few top comments (best-effort). `reply_to_post(url, text, dry_run=True)` stages a reply but defaults to dry-run; flip only after human review and subreddit approval.
+- **Selenium mode (manual)**: `selenium_automation/main.py` opens a real browser for manual Google login and subreddit scraping. `search_posts(..., include_body=True, include_comments=True)` can click into posts to grab body text and a few top comments (best-effort). `reply_to_post(url, text, dry_run=True)` stages a reply but defaults to dry-run; flip only after human review and subreddit approval. A Streamlit UI (`streamlit_app.py`) is available for search + prefill, with optional auto-submit.
+- **Scheduled read-only scans**: `scripts/night_scanner.py` runs within configured windows (`config/schedule.json`), scans only, and logs matches to `logs/night_scan.csv` plus summaries to `logs/night_scan_summary.csv` and a review queue at `logs/night_queue.json`.
 
 ## Run Instructions (short)
-- Install deps: `pip install praw python-dotenv` (and `openai` if using LLM).
-- Set `.env`:
+- Install deps: `pip install -r requirements.txt` (and `-r requirements-llm.txt` if using LLM).
+- Set `config/credentials.env` (or `.env`):
   - Required: Reddit creds, `REDDIT_USER_AGENT` descriptive.
-  - Optional toggles: `MOCK_MODE=1` (offline), `ENABLE_POSTING=1` (allow replies), `USE_LLM=1` + `OPENAI_API_KEY`, `RUN_ID` (label).
+  - Optional toggles: `MOCK_MODE=1` (offline), `ENABLE_POSTING=1` (allow replies), `USE_LLM=1` + `OPENROUTER_API_KEY`, `RUN_ID` (label).
 - Dry-run / mock:
-  - `python bot_step1.py` (auth check + mock posts if enabled).
-  - `python bot_step2_keywords.py` (keyword scan; mock fallback).
-  - `python bot_step3_replies.py` (matches + suggested replies + approval prompts; logs to `bot_logs.csv`).
+  - `python api/bot_step1.py` (auth check + mock posts if enabled).
+  - `python api/bot_step2_keywords.py` (keyword scan; mock fallback).
+  - `python api/bot_step3_replies.py` (matches + suggested replies + approval prompts; logs to `bot_logs.csv`).
 - Metrics:
-  - After live posts exist: `python bot_step4_metrics.py` (skips in mock mode) to append `bot_metrics.csv`.
+  - After live posts exist: `python api/bot_step4_metrics.py` (skips in mock mode) to append `bot_metrics.csv`.
+- Scheduled scans:
+  - `python scripts/night_scanner.py` (read-only; uses `config/schedule.json` for windows).
 
 ## Data Collected
 - `bot_logs.csv`: per match/reply attempt (run_id, mode, subreddit, post_id, title, matched_keywords, reply_text, approved, posted, comment_id, error).
 - `bot_metrics.csv`: per posted comment check (timestamp_checked_utc, run_id, subreddit, post_id, comment_id, title, matched_keywords, score, replies_count, error).
+- `logs/night_scan.csv`: per-match log for scheduled scans (read-only).
+- `logs/night_scan_summary.csv`: per-subreddit scan counts (scanned vs matched).
+- `logs/night_queue.json`: review queue for matched posts.
