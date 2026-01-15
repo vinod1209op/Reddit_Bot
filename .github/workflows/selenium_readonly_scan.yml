@@ -59,27 +59,54 @@ jobs:
       - name: Detect Chrome paths
         run: |
           CHROME_BIN=""
-          if command -v chromium >/dev/null 2>&1; then
-            CHROME_BIN="$(command -v chromium)"
-          elif command -v chromium-browser >/dev/null 2>&1; then
-            CHROME_BIN="$(command -v chromium-browser)"
-          elif command -v google-chrome >/dev/null 2>&1; then
-            CHROME_BIN="$(command -v google-chrome)"
+          for candidate in \
+            "$(command -v chromium 2>/dev/null || true)" \
+            "$(command -v chromium-browser 2>/dev/null || true)" \
+            "$(command -v google-chrome 2>/dev/null || true)" \
+            "/usr/bin/chromium" \
+            "/usr/bin/chromium-browser" \
+            "/usr/bin/google-chrome"; do
+            if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+              CHROME_BIN="$candidate"
+              break
+            fi
+          done
+          if [ -z "$CHROME_BIN" ]; then
+            CHROME_BIN="$(dpkg -L chromium 2>/dev/null | grep -E '/chromium$' | head -1)"
+            if [ -n "$CHROME_BIN" ] && [ ! -x "$CHROME_BIN" ]; then
+              CHROME_BIN=""
+            fi
           fi
-          if [ -n "$CHROME_BIN" ]; then
-            echo "CHROME_BIN=$CHROME_BIN" >> $GITHUB_ENV
-            echo "Using CHROME_BIN=$CHROME_BIN"
-          else
+          if [ -z "$CHROME_BIN" ]; then
             echo "Chrome binary not found" >&2
             exit 1
           fi
-          if command -v chromedriver >/dev/null 2>&1; then
-            echo "CHROMEDRIVER_PATH=$(command -v chromedriver)" >> $GITHUB_ENV
-            echo "Using CHROMEDRIVER_PATH=$(command -v chromedriver)"
-          else
+          echo "CHROME_BIN=$CHROME_BIN" >> $GITHUB_ENV
+          echo "Using CHROME_BIN=$CHROME_BIN"
+
+          CHROMEDRIVER_PATH=""
+          for candidate in \
+            "$(command -v chromedriver 2>/dev/null || true)" \
+            "/usr/lib/chromium/chromedriver" \
+            "/usr/lib/chromium-browser/chromedriver" \
+            "/usr/bin/chromedriver"; do
+            if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+              CHROMEDRIVER_PATH="$candidate"
+              break
+            fi
+          done
+          if [ -z "$CHROMEDRIVER_PATH" ]; then
+            CHROMEDRIVER_PATH="$(dpkg -L chromium-driver 2>/dev/null | grep -E '/chromedriver$' | head -1)"
+            if [ -n "$CHROMEDRIVER_PATH" ] && [ ! -x "$CHROMEDRIVER_PATH" ]; then
+              CHROMEDRIVER_PATH=""
+            fi
+          fi
+          if [ -z "$CHROMEDRIVER_PATH" ]; then
             echo "Chromedriver not found" >&2
             exit 1
           fi
+          echo "CHROMEDRIVER_PATH=$CHROMEDRIVER_PATH" >> $GITHUB_ENV
+          echo "Using CHROMEDRIVER_PATH=$CHROMEDRIVER_PATH"
 
       - name: Run night scanner (read-only)
         env:
