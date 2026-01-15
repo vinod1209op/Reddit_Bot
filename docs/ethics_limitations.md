@@ -21,6 +21,8 @@
 - API access may be restricted; mock mode allows development but does not exercise live behaviors.
 - Rate/volume should remain low; add sleeps/throttling before scaling beyond small batches.
 - Metrics script counts shallow replies (no deep `replace_more` to limit API load).
+- Experimental browsing/engagement helpers (`selenium_automation/utils/human_simulator.py`, `selenium_automation/utils/engagement_actions.py`, `scripts/humanized_night_scanner.py`) are not part of the core workflow and should remain disabled unless explicitly approved.
+- No proxy rotation is implemented; any fingerprint randomization in Selenium helpers is experimental and not required for the core workflow.
 
 ## Limitations & Future Mitigations
 - Simple keyword matching (no semantic filtering); could add safer, context-aware filters later.

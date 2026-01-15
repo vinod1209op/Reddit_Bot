@@ -1,46 +1,67 @@
+"""
+Login manager for Reddit using Google OAuth
+Now uses BrowserManager for all browser interactions
+"""
 import time
 import random
 import pickle
 import logging
+import os
 from pathlib import Path
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 
+# Selenium selectors
+from selenium.webdriver.common.by import By
+
+# Setup logging
 logger = logging.getLogger(__name__)
 
+# Import BrowserManager - all Selenium interactions go through this
+from selenium_automation.utils.browser_manager import BrowserManager
+
+
 class LoginManager:
-    def __init__(self, driver):
+    def __init__(self, browser_manager=None, driver=None, headless=False):
+        """Initialize LoginManager with optional shared BrowserManager/driver."""
+        self.browser_manager = browser_manager or BrowserManager(headless=headless)
         self.driver = driver
-        self.wait = WebDriverWait(driver, 20)
+        self.wait_time = 20  # Default wait time for operations
     
-    def _wait_for_clickable(self, locators, timeout=10):
+    def create_driver(self, headless=False):
+        """Create a new browser driver using BrowserManager"""
+        if not self.browser_manager or self.browser_manager.headless != headless:
+            self.browser_manager = BrowserManager(headless=headless)
+        self.driver = self.browser_manager.create_driver(use_undetected=True)
+        
+        # Randomize fingerprint to avoid detection
+        self.browser_manager.randomize_fingerprint(self.driver)
+        
+        return self.driver
+    
+    def _wait_for_clickable(self, locators, timeout=None):
         """Wait for any locator to be clickable; returns element or None."""
-        try:
-            return WebDriverWait(self.driver, timeout).until(
-                EC.element_to_be_clickable(
-                    next(
-                        (locator for locator in locators if self.driver.find_elements(*locator)),
-                        locators[0],
-                    )
-                )
-            )
-        except Exception:
+        timeout = timeout or self.wait_time
+        
+        for by, value in locators:
             try:
-                # Fallback: loop with until_any pattern
-                return WebDriverWait(self.driver, timeout).until(
-                    lambda d: next(
-                        (
-                            elem
-                            for by, value in locators
-                            for elem in d.find_elements(by, value)
-                            if elem.is_displayed() and elem.is_enabled()
-                        ),
-                        None,
-                    )
+                element = self.browser_manager.wait_for_clickable(
+                    self.driver, by, value, timeout=2  # Try each locator for 2 seconds
                 )
-            except Exception:
-                return None
+                if element:
+                    return element
+            except:
+                continue
+        
+        # Fallback: manually try to find any clickable element
+        try:
+            for by, value in locators:
+                elements = self.driver.find_elements(by, value)
+                for element in elements:
+                    if element.is_displayed() and element.is_enabled():
+                        return element
+        except:
+            pass
+        
+        return None
     
     def _google_button_locators(self):
         return [
@@ -49,9 +70,46 @@ class LoginManager:
             (By.XPATH, "//button[contains(text(), 'Sign in with Google')]"),
             (By.CSS_SELECTOR, "button[data-provider='google']"),
             (By.CSS_SELECTOR, "button[aria-label*='Google']"),
+            (By.CSS_SELECTOR, "button[data-testid*='google']"),
+            (By.CSS_SELECTOR, "button[aria-label*='Continue with Google']"),
+            (By.CSS_SELECTOR, "a[href*='accounts.google.com']"),
             (By.XPATH, "//div[contains(text(), 'Google')]/ancestor::button"),
             (By.XPATH, "//span[contains(text(), 'Google')]/ancestor::button"),
         ]
+
+    def _find_google_button_js(self):
+        """Attempt to find a Google login button via DOM + shadow DOM search."""
+        if not self.driver:
+            return None
+        script = """
+const queue = [document];
+const seen = new Set();
+const matchText = (el) => {
+  const text = (el && el.textContent || '').toLowerCase();
+  return text.includes('google') && (el.tagName === 'BUTTON' || el.tagName === 'A');
+};
+
+while (queue.length) {
+  const root = queue.shift();
+  if (!root || seen.has(root)) continue;
+  seen.add(root);
+
+  const nodes = root.querySelectorAll ? root.querySelectorAll('button,a') : [];
+  for (const node of nodes) {
+    if (matchText(node)) return node;
+  }
+
+  const all = root.querySelectorAll ? root.querySelectorAll('*') : [];
+  for (const el of all) {
+    if (el.shadowRoot) queue.push(el.shadowRoot);
+  }
+}
+return null;
+"""
+        try:
+            return self.driver.execute_script(script)
+        except Exception:
+            return None
     
     def _google_email_locators(self):
         return [
@@ -82,18 +140,31 @@ class LoginManager:
             (By.ID, "passwordNext"),
         ]
     
-    def login_with_google(self, google_email, google_password):
-        """Login to Reddit using Google OAuth"""
+    def login_with_google(self, google_email, google_password, headless=False):
+        """Login to Reddit using Google OAuth with BrowserManager"""
         logger.info("Starting Google OAuth login process...")
         
         try:
+            # Create driver if not already created
+            if not self.driver:
+                self.create_driver(headless=headless)
+            
             # Go to Reddit login page
             self.driver.get("https://www.reddit.com/login")
+            self.browser_manager.add_human_delay(2, 4)
+            
+            # Find and click Google button
             google_button = self._wait_for_clickable(self._google_button_locators(), timeout=12)
             if not google_button:
+                google_button = self._find_google_button_js()
+            if not google_button:
+                if self.verify_login_success():
+                    logger.info("Already logged in; skipping Google login.")
+                    return True
                 logger.error("Could not find Google login button")
                 return False
-            google_button.click()
+            
+            self.browser_manager.safe_click(self.driver, google_button)
             logger.info("Clicked Google login button")
             
             # Handle Google OAuth flow
@@ -103,39 +174,14 @@ class LoginManager:
             logger.error(f"Google login failed: {str(e)}")
             return False
     
-    def _find_google_button(self):
-        """Find the Google login button on Reddit"""
-        locators = [
-            (By.XPATH, "//button[contains(text(), 'Google')]"),
-            (By.XPATH, "//button[contains(text(), 'Continue with Google')]"),
-            (By.XPATH, "//button[contains(text(), 'Sign in with Google')]"),
-            (By.CSS_SELECTOR, "button[data-provider='google']"),
-            (By.CSS_SELECTOR, "button[aria-label*='Google']"),
-            (By.XPATH, "//div[contains(text(), 'Google')]/ancestor::button"),
-            (By.XPATH, "//span[contains(text(), 'Google')]/ancestor::button"),
-        ]
-        
-        for by, value in locators:
-            try:
-                element = self.driver.find_element(by, value)
-                if element.is_displayed() and element.is_enabled():
-                    logger.info(f"Found Google button with: {by}={value}")
-                    return element
-            except:
-                continue
-        
-        logger.error("No Google login button found")
-        return None
-    
     def _handle_google_oauth(self, email, password):
-        """Handle Google OAuth authentication flow"""
+        """Handle Google OAuth authentication flow using BrowserManager"""
         try:
             # Check if we're on Google login page
             current_url = self.driver.current_url.lower()
             logger.info(f"Current URL: {current_url}")
             
             if "accounts.google.com" not in current_url:
-                # Might be on a different OAuth page
                 logger.info("Not on Google accounts page, checking for email field")
             
             # Try to find email field
@@ -144,13 +190,14 @@ class LoginManager:
                 logger.error("Could not find Google email field")
                 return False
             
-            # Enter email
-            self._human_type(email_field, email)
+            # Enter email with human-like typing
+            self.browser_manager.human_like_typing(email_field, email)
             
             # Click next button for email
             next_button = self._wait_for_clickable(self._google_next_locators(), timeout=8)
             if next_button:
-                next_button.click()
+                self.browser_manager.safe_click(self.driver, next_button)
+                self.browser_manager.add_human_delay(1, 2)
             
             # Try to find password field
             password_field = self._wait_for_clickable(self._google_password_locators(), timeout=12)
@@ -159,13 +206,14 @@ class LoginManager:
                 # Might be already logged into Google
                 return self._check_google_logged_in()
             
-            # Enter password
-            self._human_type(password_field, password)
+            # Enter password with human-like typing
+            self.browser_manager.human_like_typing(password_field, password)
             
             # Click next button for password
             next_button = self._wait_for_clickable(self._google_next_locators(), timeout=8)
             if next_button:
-                next_button.click()
+                self.browser_manager.safe_click(self.driver, next_button)
+                self.browser_manager.add_human_delay(2, 4)
             
             # Check for 2FA or other security prompts
             if self._check_google_security_prompt():
@@ -174,7 +222,7 @@ class LoginManager:
                 time.sleep(10)
             
             # Wait for redirect back to Reddit
-            time.sleep(5)
+            self.browser_manager.add_human_delay(3, 6)
             
             # Verify we're back on Reddit and logged in
             return self.verify_login_success()
@@ -182,74 +230,6 @@ class LoginManager:
         except Exception as e:
             logger.error(f"Google OAuth handling failed: {e}")
             return False
-    
-    def _find_google_email_field(self):
-        """Find email field on Google login page"""
-        locators = [
-            (By.ID, "identifierId"),
-            (By.NAME, "identifier"),
-            (By.CSS_SELECTOR, "input[type='email']"),
-            (By.CSS_SELECTOR, "input[autocomplete='username']"),
-            (By.XPATH, "//input[@type='email']"),
-            (By.XPATH, "//input[contains(@aria-label, 'email')]"),
-        ]
-        
-        for by, value in locators:
-            try:
-                element = self.driver.find_element(by, value)
-                if element.is_displayed():
-                    logger.info(f"Found Google email field with: {by}={value}")
-                    return element
-            except:
-                continue
-        
-        logger.error("No Google email field found")
-        return None
-    
-    def _find_google_password_field(self):
-        """Find password field on Google login page"""
-        locators = [
-            (By.NAME, "password"),
-            (By.CSS_SELECTOR, "input[type='password']"),
-            (By.CSS_SELECTOR, "input[autocomplete='current-password']"),
-            (By.XPATH, "//input[@type='password']"),
-            (By.XPATH, "//input[contains(@aria-label, 'password')]"),
-        ]
-        
-        for by, value in locators:
-            try:
-                element = self.driver.find_element(by, value)
-                if element.is_displayed():
-                    logger.info(f"Found Google password field with: {by}={value}")
-                    return element
-            except:
-                continue
-        
-        logger.warning("No Google password field found")
-        return None
-    
-    def _find_google_next_button(self):
-        """Find next button on Google login page"""
-        locators = [
-            (By.XPATH, "//button[contains(text(), 'Next')]"),
-            (By.XPATH, "//span[contains(text(), 'Next')]/ancestor::button"),
-            (By.XPATH, "//div[contains(text(), 'Next')]/ancestor::button"),
-            (By.CSS_SELECTOR, "button[type='button']"),
-            (By.ID, "identifierNext"),
-            (By.ID, "passwordNext"),
-        ]
-        
-        for by, value in locators:
-            try:
-                element = self.driver.find_element(by, value)
-                if element.is_displayed() and element.is_enabled():
-                    logger.info(f"Found Google next button with: {by}={value}")
-                    return element
-            except:
-                continue
-        
-        logger.warning("No Google next button found")
-        return None
     
     def _check_google_security_prompt(self):
         """Check for Google security prompts (2FA, suspicious login, etc.)"""
@@ -262,7 +242,7 @@ class LoginManager:
             "Get a verification code",
         ]
         
-        page_text = self.driver.page_source.lower()
+        page_text = self.browser_manager.get_page_source_safely(self.driver).lower()
         for indicator in security_indicators:
             if indicator.lower() in page_text:
                 logger.warning(f"Google security prompt detected: {indicator}")
@@ -282,16 +262,18 @@ class LoginManager:
             
             for selector in choose_account_selectors:
                 try:
-                    self.driver.find_element(By.XPATH, selector)
-                    logger.info("On Google account selection screen")
-                    # Click the first account (usually the desired one)
-                    account_buttons = self.driver.find_elements(
-                        By.XPATH, "//div[@role='button' and contains(@aria-label, '@')]"
-                    )
-                    if account_buttons:
-                        account_buttons[0].click()
-                        time.sleep(3)
-                        return True
+                    elements = self.driver.find_elements(By.XPATH, selector)
+                    if elements:
+                        logger.info("On Google account selection screen")
+                        # Click the first account (usually the desired one)
+                        account_buttons = self.driver.find_elements(
+                            By.XPATH, 
+                            "//div[@role='button' and contains(@aria-label, '@')]"
+                        )
+                        if account_buttons:
+                            self.browser_manager.safe_click(self.driver, account_buttons[0])
+                            self.browser_manager.add_human_delay(2, 3)
+                            return True
                 except:
                     continue
             
@@ -304,33 +286,18 @@ class LoginManager:
         
         return False
     
-    def _human_type(self, element, text):
-        """Type text with human-like delays"""
-        try:
-            element.click()
-            time.sleep(random.uniform(0.2, 0.5))
-            
-            element.clear()
-            time.sleep(random.uniform(0.1, 0.3))
-            
-            for char in text:
-                element.send_keys(char)
-                time.sleep(random.uniform(0.05, 0.15))
-            
-            time.sleep(random.uniform(0.1, 0.3))
-        except Exception as e:
-            logger.warning(f"Human typing failed, using simple typing: {e}")
-            try:
-                element.clear()
-                element.send_keys(text)
-            except:
-                pass
-    
     def verify_login_success(self):
         """Check if login was successful with multiple methods"""
         try:
+            # Fast path for environments with tight timeouts (e.g., Render)
+            if os.getenv("FAST_LOGIN_CHECK", "0").lower() in ("1", "true", "yes"):
+                current_url = (self.driver.current_url or "").lower()
+                if "reddit.com" in current_url and "login" not in current_url and "auth" not in current_url:
+                    return True
+                return False
+
             # Give it a moment to redirect
-            time.sleep(3)
+            self.browser_manager.add_human_delay(2, 4)
             
             # Check current URL
             current_url = self.driver.current_url.lower()
@@ -338,34 +305,36 @@ class LoginManager:
                 logger.warning(f"Still on login/auth page: {current_url}")
                 return False
             
-            # Try multiple indicators
+            # Try multiple indicators using BrowserManager's wait methods
             indicators = [
                 # User menu button
-                ("//button[@aria-label='User menu']", "User menu button"),
+                (By.XPATH, "//button[@aria-label='User menu']", "User menu button"),
                 # Create post button/link
-                ("//a[contains(text(), 'Create Post')]", "Create Post link"),
-                ("//button[contains(text(), 'Create Post')]", "Create Post button"),
+                (By.XPATH, "//a[contains(text(), 'Create Post')]", "Create Post link"),
+                (By.XPATH, "//button[contains(text(), 'Create Post')]", "Create Post button"),
                 # User avatar
-                ("//img[contains(@src, 'avatar')]", "User avatar"),
-                ("//*[contains(@class, 'user-avatar')]", "User avatar class"),
+                (By.XPATH, "//img[contains(@src, 'avatar')]", "User avatar"),
+                (By.XPATH, "//*[contains(@class, 'user-avatar')]", "User avatar class"),
                 # Username display
-                ("//span[contains(text(), '/u/')]", "Username span"),
+                (By.XPATH, "//span[contains(text(), '/u/')]", "Username span"),
                 # Home page indicators
-                ("//h1[contains(text(), 'Home')]", "Home header"),
-                ("//a[contains(@href, '/user/')]", "User profile link"),
+                (By.XPATH, "//h1[contains(text(), 'Home')]", "Home header"),
+                (By.XPATH, "//a[contains(@href, '/user/')]", "User profile link"),
             ]
             
-            for xpath, description in indicators:
+            for by, xpath, description in indicators:
                 try:
-                    elements = self.driver.find_elements(By.XPATH, xpath)
-                    if elements:
+                    element = self.browser_manager.wait_for_element(
+                        self.driver, by, xpath, timeout=3
+                    )
+                    if element:
                         logger.info(f"Login success indicator found: {description}")
                         return True
                 except:
                     continue
             
             # Check page title or content
-            page_source = self.driver.page_source.lower()
+            page_source = self.browser_manager.get_page_source_safely(self.driver).lower()
             if "logout" in page_source or "my profile" in page_source:
                 logger.info("Found logout or profile in page source")
                 return True
@@ -413,14 +382,18 @@ class LoginManager:
             logger.error(f"Failed to load cookies: {e}")
             return []
     
-    def login_with_cookies(self, cookie_file="cookies.pkl"):
+    def login_with_cookies(self, cookie_file="cookies.pkl", headless=False):
         """Try to login using saved cookies"""
         try:
             logger.info("Attempting cookie login...")
             
+            # Create driver if not already created
+            if not self.driver:
+                self.create_driver(headless=headless)
+            
             # First go to reddit.com to set cookies
             self.driver.get("https://www.reddit.com")
-            time.sleep(2)
+            self.browser_manager.add_human_delay(1, 2)
             
             cookies = self.load_cookies(cookie_file)
             
@@ -441,7 +414,7 @@ class LoginManager:
             
             # Refresh to apply cookies
             self.driver.refresh()
-            time.sleep(3)
+            self.browser_manager.add_human_delay(2, 4)
             
             if self.verify_login_success():
                 logger.info("✓ Logged in with cookies")
@@ -458,54 +431,71 @@ class LoginManager:
         """Clean logout function"""
         try:
             self.driver.get("https://www.reddit.com/logout")
-            time.sleep(2)
+            self.browser_manager.add_human_delay(1, 2)
             logger.info("Logged out successfully")
             return True
         except Exception as e:
             logger.error(f"Logout failed: {e}")
             return False
-
-    # Keep the original login_with_credentials for direct Reddit login (optional)
-    def login_with_credentials(self, username, password):
+    
+    def login_with_credentials(self, username, password, headless=False):
         """Direct Reddit login (if not using Google)"""
         logger.info("Starting direct Reddit login...")
         
         try:
+            # Create driver if not already created
+            if not self.driver:
+                self.create_driver(headless=headless)
+            
             self.driver.get("https://www.reddit.com/login")
-            time.sleep(random.uniform(2, 4))
+            self.browser_manager.add_human_delay(2, 4)
             
-            # Check if Google button is present
-            google_button = self._find_google_button()
-            if google_button and google_button.is_displayed():
-                logger.warning("Google button detected but using direct login")
-            
-            # Find username field
-            username_field = self._find_reddit_username_field()
+            # Find username field using BrowserManager
+            username_field = self.browser_manager.wait_for_element(
+                self.driver, 
+                By.ID, 
+                "loginUsername",
+                timeout=10
+            )
             if not username_field:
                 logger.error("Could not find Reddit username field")
                 return False
             
-            self._human_type(username_field, username)
-            time.sleep(random.uniform(0.5, 1.5))
+            # Human-like typing for username
+            self.browser_manager.human_like_typing(username_field, username)
+            self.browser_manager.add_human_delay(0.5, 1.5)
             
             # Find password field
-            password_field = self._find_reddit_password_field()
+            password_field = self.browser_manager.wait_for_element(
+                self.driver,
+                By.ID,
+                "loginPassword",
+                timeout=10
+            )
             if not password_field:
                 logger.error("Could not find Reddit password field")
                 return False
             
-            self._human_type(password_field, password)
-            time.sleep(random.uniform(0.8, 1.2))
+            # Human-like typing for password
+            self.browser_manager.human_like_typing(password_field, password)
+            self.browser_manager.add_human_delay(0.8, 1.2)
             
             # Find login button
-            login_button = self._find_reddit_login_button()
+            login_button = self.browser_manager.wait_for_element(
+                self.driver,
+                By.XPATH,
+                "//button[@type='submit']",
+                timeout=10
+            )
             if not login_button:
                 logger.error("Could not find Reddit login button")
                 return False
             
-            login_button.click()
-            time.sleep(random.uniform(3, 5))
+            # Safe click on login button
+            self.browser_manager.safe_click(self.driver, login_button)
+            self.browser_manager.add_human_delay(3, 5)
             
+            # Verify login
             if self.verify_login_success():
                 logger.info("✓ Direct Reddit login successful!")
                 self.save_login_cookies()
@@ -518,52 +508,95 @@ class LoginManager:
             logger.error(f"Direct login failed: {str(e)}")
             return False
     
-    def _find_reddit_username_field(self):
-        """Find Reddit username field"""
-        locators = [
-            (By.ID, "loginUsername"),
-            (By.NAME, "username"),
-            (By.CSS_SELECTOR, "input[name='username']"),
-        ]
-        
-        for by, value in locators:
-            try:
-                element = self.driver.find_element(by, value)
-                if element.is_displayed():
-                    return element
-            except:
-                continue
-        return None
+    def close_browser(self):
+        """Close browser using BrowserManager"""
+        if self.driver:
+            self.browser_manager.close_driver(self.driver)
+            self.driver = None
+            logger.info("Browser closed")
     
-    def _find_reddit_password_field(self):
-        """Find Reddit password field"""
-        locators = [
-            (By.ID, "loginPassword"),
-            (By.NAME, "password"),
-            (By.CSS_SELECTOR, "input[name='password']"),
-        ]
-        
-        for by, value in locators:
-            try:
-                element = self.driver.find_element(by, value)
-                if element.is_displayed():
-                    return element
-            except:
-                continue
-        return None
+    def get_driver(self):
+        """Get the current driver instance"""
+        return self.driver
     
-    def _find_reddit_login_button(self):
-        """Find Reddit login button"""
-        locators = [
-            (By.XPATH, "//button[@type='submit']"),
-            (By.XPATH, "//button[contains(text(), 'Log In')]"),
-        ]
+    def is_logged_in(self):
+        """Check if currently logged in"""
+        if not self.driver:
+            return False
+        return self.verify_login_success()
+
+
+# Legacy function for backward compatibility
+def login_to_reddit(driver, username, password):
+    """
+    Legacy function - use LoginManager class instead
+    Log in to Reddit with human-like behavior
+    """
+    logger = logging.getLogger(__name__)
+    logger.warning("Using deprecated login_to_reddit function. Use LoginManager class instead.")
+    
+    # Create a BrowserManager instance
+    from selenium_automation.utils.browser_manager import BrowserManager
+    bm = BrowserManager(headless=False)
+    
+    try:
+        # Go to login page
+        driver.get("https://www.reddit.com/login")
+        bm.add_human_delay(2, 4)
         
-        for by, value in locators:
-            try:
-                element = self.driver.find_element(by, value)
-                if element.is_displayed():
-                    return element
-            except:
-                continue
-        return None
+        # Wait for username field
+        username_field = bm.wait_for_element(
+            driver,
+            By.ID,
+            "loginUsername",
+            timeout=10
+        )
+        
+        if not username_field:
+            logger.error("Could not find username field")
+            return False
+        
+        # Human-like typing for username
+        bm.human_like_typing(username_field, username)
+        bm.add_human_delay(0.5, 1)
+        
+        # Find password field
+        password_field = bm.wait_for_element(
+            driver,
+            By.ID,
+            "loginPassword",
+            timeout=5
+        )
+        
+        if not password_field:
+            logger.error("Could not find password field")
+            return False
+        
+        # Human-like typing for password
+        bm.human_like_typing(password_field, password)
+        bm.add_human_delay(0.5, 1)
+        
+        # Find and click login button
+        login_button = bm.wait_for_element(
+            driver,
+            By.XPATH,
+            "//button[@type='submit']",
+            timeout=5
+        )
+        
+        if login_button:
+            bm.safe_click(driver, login_button)
+            bm.add_human_delay(3, 6)
+            
+            # Verify login success
+            login_manager = LoginManager()
+            login_manager.driver = driver
+            login_manager.browser_manager = bm
+            if login_manager.verify_login_success():
+                logger.info("Login successful!")
+                return True
+        
+        return False
+    except Exception as e:
+        logger.error(f"Login error: {e}")
+        return False

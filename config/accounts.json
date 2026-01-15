@@ -1,0 +1,38 @@
+[
+  {
+    "name": "account1",
+    "email_env_var": "REDDIT_EMAIL_1",
+    "password_env_var": "REDDIT_PASSWORD_1",
+    "cookies_path": "data/cookies_account1.pkl",
+    "activity_profile": "researcher",
+    "browser_fingerprint": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      "viewport": "1920x1080",
+      "timezone": "America/Los_Angeles"
+    }
+  },
+  {
+    "name": "account2",
+    "email_env_var": "REDDIT_EMAIL_2",
+    "password_env_var": "REDDIT_PASSWORD_2",
+    "cookies_path": "data/cookies_account2.pkl",
+    "activity_profile": "casual_reader",
+    "browser_fingerprint": {
+      "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15",
+      "viewport": "1440x900",
+      "timezone": "America/Los_Angeles"
+    }
+  },
+  {
+    "name": "account3",
+    "email_env_var": "REDDIT_EMAIL_3",
+    "password_env_var": "REDDIT_PASSWORD_3",
+    "cookies_path": "data/cookies_account3.pkl",
+    "activity_profile": "night_owl",
+    "browser_fingerprint": {
+      "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+      "viewport": "1536x864",
+      "timezone": "America/Los_Angeles"
+    }
+  }
+]

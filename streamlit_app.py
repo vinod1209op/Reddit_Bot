@@ -4,6 +4,7 @@
 import os
 import sys
 import time
+import hashlib
 from pathlib import Path
 from typing import Optional
 
@@ -75,6 +76,21 @@ STATE_FILE = PROJECT_ROOT / "data" / "post_state.json"
 def _post_key(post: dict) -> str:
     return post.get("id") or post.get("url") or post.get("permalink") or post.get("title") or ""
 
+def _normalize_cached_posts(posts):
+    """Normalize cached post URLs to canonical reddit.com URLs."""
+    if not isinstance(posts, list):
+        return posts
+    for post in posts:
+        if not isinstance(post, dict):
+            continue
+        url = post.get("url")
+        if url:
+            post["url"] = RedditAutomation._normalize_post_url(url)
+        permalink = post.get("permalink")
+        if permalink:
+            post["permalink"] = RedditAutomation._normalize_post_url(permalink)
+    return posts
+
 
 def _context_cache() -> dict:
     return st.session_state.setdefault("post_context_cache", {})
@@ -132,6 +148,7 @@ def main() -> None:
     st.session_state.setdefault("auto_submit_count", 0)
     st.session_state.setdefault("last_action", "")
     st.session_state.setdefault("error_count", 0)
+    st.session_state.setdefault("auto_submit_guard", {})
 
     with st.sidebar:
         st.subheader("Browser")
@@ -150,6 +167,15 @@ def main() -> None:
         if st.button("Close"):
             close_bot()
             st.info("Browser closed.")
+        if st.button("Clear search cache"):
+            for key in list(st.session_state.keys()):
+                if key.startswith("search_cache_"):
+                    st.session_state.pop(key, None)
+            st.session_state.pop("last_posts", None)
+            st.session_state.pop("last_posts_fetched_count", None)
+            st.session_state.pop("last_requested_limit", None)
+            st.session_state.pop("post_context_cache", None)
+            st.info("Search cache cleared.")
         if auto_submit_limit:
             st.caption(f"Auto-submit used: {st.session_state['auto_submit_count']}/{auto_submit_limit}")
         if st.session_state.get("last_action"):
@@ -177,18 +203,22 @@ def main() -> None:
             cache_key = f"search_cache_{subreddit.strip().lower()}_{requested}"
             cached = st.session_state.get(cache_key)
             if cached and search_cache_ttl > 0 and (time.time() - cached.get("ts", 0)) < search_cache_ttl:
-                posts = cached.get("posts", [])
+                posts = _normalize_cached_posts(cached.get("posts", []))
+                cached["posts"] = posts
+                st.session_state[cache_key] = cached
             else:
                 search_status = st.empty()
                 search_status.info(f"Searching r/{subreddit}...")
                 fetch_limit = requested + len(post_state.get("submitted", [])) + len(post_state.get("ignored", [])) + 5
                 posts = bot.search_posts(subreddit=subreddit.strip() or None, limit=fetch_limit, include_body=False, include_comments=False)
+                posts = _normalize_cached_posts(posts)
                 st.session_state[cache_key] = {"ts": time.time(), "posts": posts}
                 search_status.empty()
             st.session_state["last_posts"] = posts
             st.session_state["last_posts_fetched_count"] = len(posts)
             st.session_state["last_requested_limit"] = requested
-    posts = st.session_state.get("last_posts", [])
+    posts = _normalize_cached_posts(st.session_state.get("last_posts", []))
+    st.session_state["last_posts"] = posts
     fetched_count = st.session_state.get("last_posts_fetched_count")
     requested_limit = st.session_state.get("last_requested_limit", 0)
     if posts:
@@ -298,6 +328,18 @@ def main() -> None:
                             if auto_submit and auto_submit_limit > 0 and st.session_state["auto_submit_count"] >= auto_submit_limit:
                                 auto_submit = False
                                 st.session_state[status_key] = ("warning", "Auto-submit limit reached; prefilling only.")
+                            if auto_submit:
+                                guard_window = float(os.getenv("AUTO_SUBMIT_GUARD_SECONDS", "20") or 20)
+                                reply_hash = hashlib.sha256(reply_text.encode("utf-8")).hexdigest()
+                                guard = st.session_state.get("auto_submit_guard", {})
+                                guard_entry = guard.get(post_key, {})
+                                last_ts = float(guard_entry.get("ts", 0.0) or 0.0)
+                                if guard_entry.get("hash") == reply_hash and (time.time() - last_ts) < guard_window:
+                                    auto_submit = False
+                                    st.session_state[status_key] = ("warning", "Auto-submit throttled; prefilling only.")
+                                else:
+                                    guard[post_key] = {"hash": reply_hash, "ts": time.time()}
+                                    st.session_state["auto_submit_guard"] = guard
                             result = bot.reply_to_post(url, reply_text, dry_run=not auto_submit)
                             if result.get("success"):
                                 submitted_flag = result.get("submitted")
@@ -323,6 +365,10 @@ def main() -> None:
                                         st.session_state["auto_submit_count"] += 1
                                 st.session_state["last_action"] = f"prefill {post_key}"
                             else:
+                                if auto_submit:
+                                    guard = st.session_state.get("auto_submit_guard", {})
+                                    guard.pop(post_key, None)
+                                    st.session_state["auto_submit_guard"] = guard
                                 st.session_state[status_key] = ("error", f"Failed to prefill: {result.get('error', 'unknown error')}")
                                 st.session_state["error_count"] += 1
                                 st.session_state["last_action"] = f"prefill_failed {post_key}"

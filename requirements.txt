@@ -8,3 +8,7 @@ prawcore==2.4.0
 # Optional extras are split into separate files:
 # - requirements-selenium.txt (selenium stack)
 # - requirements-llm.txt (LLM support)
+
+pytz>=2021.3
+scipy>=1.7.0  # For statistical distributions
+numpy>=1.21.0

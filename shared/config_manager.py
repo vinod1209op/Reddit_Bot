@@ -4,9 +4,6 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 import logging
 
-# Don't create logger here - let UnifiedLogger handle it
-# logger = logging.getLogger(__name__)
-
 class ConfigManager:
     """Unified configuration for both API and Selenium methods"""
     
@@ -187,6 +184,51 @@ class ConfigManager:
             "keywords.json", self.default_keywords
         )
         return self.bot_settings["keywords"]
+
+    def load_json(self, path: str, default: Any = None) -> Any:
+        """Load JSON data from a file path (relative to repo root or config dir)."""
+        if not path:
+            return default
+
+        path_obj = Path(path)
+        if not path_obj.is_absolute():
+            if path_obj.parts and path_obj.parts[0] == "config":
+                path_obj = self.config_dir.parent / path_obj
+            else:
+                path_obj = self.config_dir / path_obj
+
+        if not path_obj.exists():
+            return default
+
+        try:
+            with path_obj.open('r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error reading {path_obj}: {e}")
+            return default
+
+    def load_activity_schedule(self):
+        """Load activity schedule configuration"""
+        return self.load_json('config/activity_schedule.json')
+
+    def load_accounts_config(self):
+        """Load multi-account configuration"""
+        accounts_file = os.path.join(self.config_dir, 'accounts.json')
+        if os.path.exists(accounts_file):
+            with open(accounts_file, 'r') as f:
+                accounts = json.load(f)
+            
+            # Load credentials from environment variables
+            for account in accounts:
+                email_var = account.get('email_env_var')
+                password_var = account.get('password_env_var')
+                
+                if email_var and password_var:
+                    account['email'] = os.getenv(email_var)
+                    account['password'] = os.getenv(password_var)
+            
+            return accounts
+        return []
     
     def save_json(self, filepath: Path, data: Any):
         """Save data to JSON file"""

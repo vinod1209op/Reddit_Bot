@@ -1,0 +1,49 @@
+{
+  "time_windows": [
+    {
+      "name": "early_morning",
+      "start": "05:00",
+      "end": "07:00",
+      "timezone": "America/Los_Angeles",
+      "intensity": "medium",
+      "actions": ["browse", "view_posts", "scroll", "check_notifications"]
+    },
+    {
+      "name": "late_night",
+      "start": "22:00",
+      "end": "01:00",
+      "timezone": "America/Los_Angeles",
+      "intensity": "high",
+      "actions": ["browse", "view_posts", "scroll", "vote", "save", "follow"]
+    }
+  ],
+  "activity_mix": {
+    "browse_subreddit": 35,
+    "view_posts": 25,
+    "scroll_comments": 20,
+    "vote": 5,
+    "save": 5,
+    "follow": 5,
+    "check_notifications": 5
+  },
+  "randomization": {
+    "delay_between_actions": {
+      "distribution": "exponential",
+      "mean_seconds": 4.5,
+      "min_seconds": 1,
+      "max_seconds": 12
+    },
+    "session_length_minutes": {
+      "min": 15,
+      "max": 45,
+      "distribution": "normal"
+    },
+    "jitter_percentage": 20
+  },
+  "safety_limits": {
+    "max_votes_per_session": 3,
+    "max_saves_per_session": 2,
+    "max_follows_per_session": 1,
+    "min_time_between_sessions_minutes": 30
+  }
+}

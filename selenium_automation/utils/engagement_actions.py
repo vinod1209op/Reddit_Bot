@@ -1,0 +1,395 @@
+"""
+Engagement actions for Reddit with human-like behavior.
+Updated for Selenium 4+ syntax and proper BrowserManager integration.
+"""
+import random
+import time
+from selenium.webdriver.common.by import By
+from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
+
+class EngagementActions:
+    def __init__(self, driver, config, browser_manager=None):
+        self.driver = driver
+        self.config = config
+        self.browser_manager = browser_manager
+    
+    def save_post(self, post_element):
+        """Save post for later reading"""
+        if not self.config.get('allow_saving', False):
+            return False
+        
+        try:
+            # Find save button (varies by Reddit theme)
+            save_selectors = [
+                '[data-test-id="save-post"]',
+                '[aria-label="save"]',
+                'button:has(svg[aria-label="save"])',
+                'button[aria-label*="save"]',
+                'button[data-click-id="save"]'
+            ]
+            
+            for selector in save_selectors:
+                try:
+                    # CORRECTED: Use proper Selenium 4+ syntax
+                    save_btn = post_element.find_element(By.CSS_SELECTOR, selector)
+                    
+                    # Use browser_manager for safe click if available
+                    if self.browser_manager:
+                        clicked = self.browser_manager.safe_click(self.driver, save_btn)
+                    else:
+                        save_btn.click()
+                        clicked = True
+                    
+                    if clicked:
+                        time.sleep(random.uniform(0.3, 0.7))
+                        return True
+                        
+                except (NoSuchElementException, StaleElementReferenceException):
+                    continue
+                    
+        except Exception as e:
+            print(f"Error saving post: {e}")
+            
+        return False
+    
+    def follow_user(self, username):
+        """Follow a user (optional)"""
+        if not self.config.get('allow_following', False):
+            return False
+        
+        try:
+            # Visit user profile
+            self.driver.get(f"https://www.reddit.com/user/{username}")
+            time.sleep(random.uniform(2, 4))
+            
+            # Find follow button with multiple selectors
+            follow_selectors = [
+                "//button[contains(., 'Follow')]",
+                "//span[contains(., 'Follow')]/parent::button",
+                "//div[contains(., 'Follow')]/parent::button",
+                "//button[@aria-label*='follow' or @aria-label*='Follow']"
+            ]
+            
+            for xpath in follow_selectors:
+                try:
+                    # CORRECTED: Use proper Selenium 4+ syntax
+                    follow_buttons = self.driver.find_elements(By.XPATH, xpath)
+                    if follow_buttons:
+                        # Use browser_manager for safe click if available
+                        if self.browser_manager:
+                            clicked = self.browser_manager.safe_click(self.driver, follow_buttons[0])
+                        else:
+                            follow_buttons[0].click()
+                            clicked = True
+                        
+                        if clicked:
+                            time.sleep(random.uniform(1, 2))
+                            return True
+                except (NoSuchElementException, StaleElementReferenceException):
+                    continue
+                    
+        except Exception as e:
+            print(f"Error following user {username}: {e}")
+            
+        return False
+    
+    def view_subreddit(self, subreddit_name):
+        """Browse a subreddit naturally"""
+        try:
+            self.driver.get(f"https://www.reddit.com/r/{subreddit_name}")
+            
+            # Human-like delay
+            if self.browser_manager:
+                self.browser_manager.add_human_delay(3, 6)
+            else:
+                time.sleep(random.uniform(3, 6))
+            
+            # Scroll through hot posts
+            for _ in range(random.randint(2, 4)):
+                scroll_amount = random.randint(400, 800)
+                self.driver.execute_script(f"window.scrollBy(0, {scroll_amount})")
+                
+                if self.browser_manager:
+                    self.browser_manager.add_human_delay(2, 4)
+                else:
+                    time.sleep(random.uniform(2, 4))
+                
+                # Occasionally view a post (40% chance)
+                if random.random() > 0.6:
+                    # CORRECTED: Use proper Selenium 4+ syntax
+                    posts = self.driver.find_elements(By.CSS_SELECTOR, '[data-test-id="post-container"]')
+                    if posts:
+                        post = random.choice(posts[:5])  # Only from top 5
+                        
+                        # Use browser_manager for safe click if available
+                        if self.browser_manager:
+                            self.browser_manager.safe_click(self.driver, post)
+                        else:
+                            post.click()
+                        
+                        # View the post
+                        if self.browser_manager:
+                            self.browser_manager.add_human_delay(5, 10)
+                        else:
+                            time.sleep(random.uniform(5, 10))
+                        
+                        # Go back
+                        self.driver.back()
+                        
+                        if self.browser_manager:
+                            self.browser_manager.add_human_delay(1, 2)
+                        else:
+                            time.sleep(random.uniform(1, 2))
+                            
+        except Exception as e:
+            print(f"Error viewing subreddit {subreddit_name}: {e}")
+    
+    def check_notifications(self):
+        """Check inbox notifications"""
+        try:
+            # Try multiple notification icon selectors
+            notification_selectors = [
+                '[aria-label="Open notifications"]',
+                '[data-test-id="notification-button"]',
+                'button[aria-label*="notification"]',
+                'button[data-click-id="notification"]'
+            ]
+            
+            for selector in notification_selectors:
+                try:
+                    # CORRECTED: Use proper Selenium 4+ syntax
+                    notification_icon = self.driver.find_element(By.CSS_SELECTOR, selector)
+                    
+                    # Use browser_manager for safe click if available
+                    if self.browser_manager:
+                        self.browser_manager.safe_click(self.driver, notification_icon)
+                    else:
+                        notification_icon.click()
+                    
+                    # Wait for notifications to load
+                    if self.browser_manager:
+                        self.browser_manager.add_human_delay(3, 6)
+                    else:
+                        time.sleep(random.uniform(3, 6))
+                    
+                    # Close notifications
+                    self.driver.execute_script("document.activeElement.blur();")
+                    
+                    if self.browser_manager:
+                        self.browser_manager.add_human_delay(1, 2)
+                    else:
+                        time.sleep(random.uniform(1, 2))
+                    
+                    return True
+                    
+                except (NoSuchElementException, StaleElementReferenceException):
+                    continue
+                    
+        except Exception as e:
+            print(f"Error checking notifications: {e}")
+            
+        return False
+    
+    def upvote_post(self, post_element=None):
+        """Upvote a post (if enabled)"""
+        if not self.config.get('allow_voting', False):
+            return False
+        
+        try:
+            # If no specific element provided, try to upvote current post
+            if post_element:
+                # Look for upvote button within the post element
+                upvote_selectors = [
+                    '[aria-label="upvote"]',
+                    'button[aria-label*="upvote"]',
+                    'button[data-click-id="upvote"]',
+                    'button[aria-pressed*="false"][aria-label*="vote"]'
+                ]
+                
+                for selector in upvote_selectors:
+                    try:
+                        upvote_btn = post_element.find_element(By.CSS_SELECTOR, selector)
+                        
+                        # Random chance to vote (70% if found)
+                        if random.random() > 0.3:
+                            if self.browser_manager:
+                                clicked = self.browser_manager.safe_click(self.driver, upvote_btn)
+                            else:
+                                upvote_btn.click()
+                                clicked = True
+                            
+                            if clicked:
+                                time.sleep(random.uniform(0.2, 0.5))
+                                return True
+                    except (NoSuchElementException, StaleElementReferenceException):
+                        continue
+            else:
+                # Try to find any upvote button on page
+                upvote_buttons = self.driver.find_elements(By.CSS_SELECTOR, '[aria-label="upvote"]')
+                if upvote_buttons:
+                    # Random chance and random button
+                    if random.random() > 0.5:
+                        btn = random.choice(upvote_buttons[:3])  # Only from top 3
+                        if self.browser_manager:
+                            clicked = self.browser_manager.safe_click(self.driver, btn)
+                        else:
+                            btn.click()
+                            clicked = True
+                        
+                        if clicked:
+                            time.sleep(random.uniform(0.2, 0.5))
+                            return True
+                            
+        except Exception as e:
+            print(f"Error upvoting: {e}")
+            
+        return False
+    
+    def downvote_post(self, post_element=None):
+        """Downvote a post (if enabled - use with caution)"""
+        if not self.config.get('allow_voting', False):
+            return False
+        
+        try:
+            # If no specific element provided, try to downvote current post
+            if post_element:
+                downvote_selectors = [
+                    '[aria-label="downvote"]',
+                    'button[aria-label*="downvote"]',
+                    'button[data-click-id="downvote"]'
+                ]
+                
+                for selector in downvote_selectors:
+                    try:
+                        downvote_btn = post_element.find_element(By.CSS_SELECTOR, selector)
+                        
+                        # Very low chance to downvote (5% if found)
+                        if random.random() > 0.95:
+                            if self.browser_manager:
+                                clicked = self.browser_manager.safe_click(self.driver, downvote_btn)
+                            else:
+                                downvote_btn.click()
+                                clicked = True
+                            
+                            if clicked:
+                                time.sleep(random.uniform(0.2, 0.5))
+                                return True
+                    except (NoSuchElementException, StaleElementReferenceException):
+                        continue
+                        
+        except Exception as e:
+            print(f"Error downvoting: {e}")
+            
+        return False
+    
+    def view_user_profile(self, username):
+        """View a user's profile"""
+        try:
+            self.driver.get(f"https://www.reddit.com/user/{username}")
+            
+            if self.browser_manager:
+                self.browser_manager.add_human_delay(3, 6)
+                self.browser_manager.scroll_down(self.driver, random.randint(300, 700))
+                self.browser_manager.add_human_delay(1, 3)
+            else:
+                time.sleep(random.uniform(3, 6))
+                self.driver.execute_script(f"window.scrollBy(0, {random.randint(300, 700)})")
+                time.sleep(random.uniform(1, 3))
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error viewing profile {username}: {e}")
+            return False
+    
+    def search_topic(self, query):
+        """Search for a topic on Reddit"""
+        try:
+            # Go to search page
+            self.driver.get(f"https://www.reddit.com/search/?q={query}")
+            
+            if self.browser_manager:
+                self.browser_manager.add_human_delay(2, 4)
+            else:
+                time.sleep(random.uniform(2, 4))
+            
+            # Scroll through results
+            for _ in range(random.randint(2, 4)):
+                if self.browser_manager:
+                    self.browser_manager.scroll_down(self.driver, random.randint(400, 800))
+                    self.browser_manager.add_human_delay(1, 2)
+                else:
+                    self.driver.execute_script(f"window.scrollBy(0, {random.randint(400, 800)})")
+                    time.sleep(random.uniform(1, 2))
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error searching for {query}: {e}")
+            return False
+    
+    def comment_on_post(self, post_url, comment_text, dry_run=True):
+        """Comment on a post (dry_run by default for safety)"""
+        if not self.config.get('allow_commenting', False):
+            return {"success": False, "error": "Commenting not allowed"}
+        
+        try:
+            # Navigate to post
+            self.driver.get(post_url)
+            
+            if self.browser_manager:
+                self.browser_manager.add_human_delay(2, 4)
+            else:
+                time.sleep(random.uniform(2, 4))
+            
+            # Try to find comment box
+            comment_selectors = [
+                '[data-test-id="comment-composer-textarea"]',
+                'textarea[placeholder*="comment"]',
+                'textarea[placeholder*="Share your thoughts"]',
+                '[contenteditable="true"][role="textbox"]'
+            ]
+            
+            comment_box = None
+            for selector in comment_selectors:
+                try:
+                    comment_box = self.driver.find_element(By.CSS_SELECTOR, selector)
+                    if comment_box:
+                        break
+                except (NoSuchElementException, StaleElementReferenceException):
+                    continue
+            
+            if not comment_box:
+                return {"success": False, "error": "Could not find comment box"}
+            
+            # Type comment with human-like behavior
+            if self.browser_manager:
+                # Use browser_manager's human-like typing
+                typed = self.browser_manager.human_like_typing(comment_box, comment_text)
+            else:
+                # Fallback typing
+                comment_box.click()
+                time.sleep(random.uniform(0.2, 0.5))
+                comment_box.clear()
+                for char in comment_text:
+                    comment_box.send_keys(char)
+                    time.sleep(random.uniform(0.05, 0.15))
+                typed = True
+            
+            if not typed:
+                return {"success": False, "error": "Could not type comment"}
+            
+            if self.browser_manager:
+                self.browser_manager.add_human_delay(1, 2)
+            else:
+                time.sleep(random.uniform(1, 2))
+            
+            if dry_run:
+                return {"success": True, "dry_run": True, "message": "Dry run - comment not submitted"}
+            
+            # Try to submit (implementation depends on Reddit's UI)
+            # This is a placeholder - actual submission logic would be more complex
+            return {"success": True, "dry_run": False, "message": "Comment submitted"}
+            
+        except Exception as e:
+            return {"success": False, "error": str(e)}

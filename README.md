@@ -38,6 +38,8 @@
      - `ENABLE_POSTING=1` to allow replies (keep off for dry-run)
      - `USE_LLM=1` + `OPENROUTER_API_KEY` to try LLM replies (falls back to stub if unavailable)
      - `RUN_ID` to tag runs in logs
+     - `SELENIUM_AUTO_SUBMIT_LIMIT` to cap Streamlit auto-submit per session
+     - `SEARCH_CACHE_TTL` (seconds) to cache Streamlit search results (0 disables)
    - Optional OpenRouter headers:
      - `OPENROUTER_BASE_URL`, `OPENAI_HTTP_REFERER`, `OPENAI_X_TITLE`
 3) (Optional) Configure scheduled scanning in `config/schedule.json`:
@@ -56,7 +58,7 @@
 - Selenium mode (manual login, scraping, optional reply staging):  
   `python unified_bot.py` → choose “Run Selenium Bot”, complete manual Google login, then use the menu to search posts. You can toggle body/comments capture in the prompts. Posting via Selenium is only manual: you must enter the post URL, reply text, and confirm; keep it dry-run unless you have moderator approval.
 - Streamlit UI (manual prefill, optional auto-submit):  
-  `streamlit run streamlit_app.py` → start the browser, search, draft a reply, and prefill in the live browser. Set `STREAMLIT_APP_PASSWORD` to gate access. Auto-submit is available but should be used only with approval and strict limits.
+  `streamlit run streamlit_app.py` → start the browser, search, draft a reply, and prefill in the live browser. Set `STREAMLIT_APP_PASSWORD` to gate access. Auto-submit is available but should be used only with approval and strict limits (cap with `SELENIUM_AUTO_SUBMIT_LIMIT`).
 - Night scanner (read-only, scheduled):  
   `python scripts/night_scanner.py` → scans within configured windows and logs matches; no replies or posting.
 
@@ -73,7 +75,12 @@
 - `selenium_automation/`: Browser-based helper for manual Google login and subreddit scraping.
 - `shared/`: Config loader, logging, and safety utilities used by both modes.
 - `config/`: Keywords/subreddits, rate limits, and credentials template.
+- `config/accounts.json` + `config/activity_schedule.json`: experimental multi-account activity configs (not used by the main flow).
 - `config/schedule.json`: time windows and settings for read-only scheduled scanning.
 - `streamlit_app.py`: Streamlit UI to search and prefill replies using Selenium.
 - `scripts/night_scanner.py`: read-only scheduled scanning with logs, summary, and queue.
+- `scripts/humanized_night_scanner.py`: experimental multi-account activity runner; not part of the main workflow and may require extra wiring.
 - `scripts/cleanup_logs.py`: optional helper to trim old log files (keeps recent by age/count).
+
+## Experimental (not wired into main flow)
+- `scripts/humanized_night_scanner.py` uses `config/accounts.json` + `config/activity_schedule.json` and the helpers in `selenium_automation/utils/human_simulator.py` and `selenium_automation/utils/engagement_actions.py`. It is not part of the main workflow and may require additional wiring before use.

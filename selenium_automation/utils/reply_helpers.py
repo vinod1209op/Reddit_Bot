@@ -522,6 +522,80 @@ return '';
         return ""
 
 
+def js_read_comment_text(driver) -> str:
+    """Read composer text via deep JS lookup (shadow DOM aware)."""
+    try:
+        return driver.execute_script(
+            """
+const prioritySelectors = [
+  'div[contenteditable="true"][data-lexical-editor="true"]',
+  'div[role="textbox"][data-lexical-editor="true"]',
+];
+const selectors = [
+  'textarea#innerTextArea',
+  'textarea[placeholder*="Share your thoughts"]',
+  'textarea[placeholder*="comment"]',
+  'textarea',
+  'div[role="textbox"][data-lexical-editor="true"]',
+  'div[contenteditable="true"][data-lexical-editor="true"]',
+  'div[role="textbox"]',
+  'div[contenteditable="true"]'
+];
+
+function isVisible(node) {
+  if (!node) return false;
+  const rect = node.getBoundingClientRect();
+  const style = window.getComputedStyle(node);
+  return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+}
+
+function findDeep(root) {
+  if (!root) return null;
+  for (const sel of prioritySelectors) {
+    const found = root.querySelector(sel);
+    if (found && isVisible(found)) return found;
+  }
+  for (const sel of selectors) {
+    const found = root.querySelector(sel);
+    if (found && isVisible(found)) return found;
+  }
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    if (node.shadowRoot) {
+      const shadowFound = findDeep(node.shadowRoot);
+      if (shadowFound) return shadowFound;
+    }
+  }
+  return null;
+}
+
+const loader = document.querySelector('shreddit-async-loader[bundlename="comment_composer"]');
+let target = (loader && findDeep(loader.shadowRoot || loader)) || null;
+if (!target) {
+  const comps = [
+    document.querySelector('shreddit-comment-composer'),
+    document.querySelector('shreddit-composer')
+  ];
+  for (const comp of comps) {
+    if (comp && comp.shadowRoot) {
+      target = findDeep(comp.shadowRoot);
+      if (target) break;
+    }
+  }
+}
+if (!target) {
+  target = findDeep(document);
+}
+if (!target) return '';
+if (target.value !== undefined) return target.value;
+return target.innerText || target.textContent || '';
+            """
+        ) or ""
+    except Exception:
+        return ""
+
+
 def get_composer_element(driver):
     """Return the composer editor element (shadow DOM) if present."""
     try:
@@ -542,6 +616,82 @@ return null;
     except Exception as e:
         logger.debug(f"Get composer element failed: {e}")
         return None
+
+
+def _normalize_text_for_compare(text: str) -> str:
+    return " ".join((text or "").split())
+
+
+def fill_modern_reddit_comment(driver, text: str) -> bool:
+    """Try multiple modern methods to fill the Reddit comment composer."""
+    target_text = (text or "").strip()
+    if not target_text:
+        return False
+
+    def read_current_text() -> str:
+        current = js_read_comment_text(driver) or ""
+        if current.strip():
+            return current
+        current = get_composer_text(driver) or ""
+        if current.strip():
+            return current
+        try:
+            element = js_find_comment_box(driver) or find_comment_area(driver)
+            if element:
+                return driver.execute_script(
+                    """
+const el = arguments[0];
+if (!el) return '';
+if (el.value !== undefined) return el.value;
+return el.innerText || el.textContent || '';
+                    """,
+                    element,
+                ) or ""
+        except Exception:
+            return ""
+        return ""
+
+    def matches(current: str) -> bool:
+        current_norm = _normalize_text_for_compare(current)
+        target_norm = _normalize_text_for_compare(target_text)
+        return bool(current_norm) and (target_norm == current_norm or target_norm in current_norm)
+
+    methods = [
+        lambda: js_fill_shreddit_composer(driver, target_text),
+        lambda: js_fill_composer_strict(driver, target_text),
+        lambda: js_set_comment_text(driver, target_text),
+        lambda: js_force_set_comment_text(driver, target_text),
+    ]
+
+    for method in methods:
+        try:
+            if method():
+                time.sleep(0.2)
+                current = read_current_text()
+                if matches(current):
+                    return True
+                return True
+        except Exception:
+            continue
+
+    element = js_find_comment_box(driver) or find_comment_area(driver)
+    if element:
+        try:
+            if fill_comment_box_via_keystrokes(driver, element, target_text):
+                current = read_current_text()
+                if matches(current):
+                    return True
+        except Exception:
+            pass
+        try:
+            if fill_comment_box(driver, element, target_text):
+                current = read_current_text()
+                if matches(current):
+                    return True
+        except Exception:
+            pass
+
+    return False
 
 
 def keystroke_fill_simple(driver, element, text: str) -> bool:

@@ -6,3 +6,4 @@
 - Scheduled scans are read-only; no automated commenting or posting.
 - Respect subreddit rules and moderators; comply with Reddit’s Responsible Builder Policy.
 - Keep volume low (approval caps, limited scans); avoid spammy behavior.
+- Experimental multi-account or humanized browsing scripts are not part of the core workflow and should not be used for automated engagement without explicit approval.

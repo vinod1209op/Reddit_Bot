@@ -17,6 +17,17 @@ if str(project_root) not in sys.path:
 # Setup logging
 logger = logging.getLogger(__name__)
 
+# Try to import Selenium components
+try:
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    SELENIUM_AVAILABLE = True
+except ImportError:
+    SELENIUM_AVAILABLE = False
+    logger.warning("Selenium not available")
+
+
 class BrowserManager:
     def __init__(self, headless=False):
         self.headless = headless
@@ -25,17 +36,33 @@ class BrowserManager:
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0"
         ]
+        self.wait_time = 10  # Default wait time
+
+    def _get_chrome_paths(self):
+        """Return (chromedriver_path, chrome_bin) if set and present."""
+        chromedriver_path = os.getenv("CHROMEDRIVER_PATH", "").strip()
+        chrome_bin = os.getenv("CHROME_BIN", "").strip()
+
+        if chromedriver_path and not os.path.exists(chromedriver_path):
+            logger.warning("CHROMEDRIVER_PATH not found: %s", chromedriver_path)
+            chromedriver_path = ""
+
+        if chrome_bin and not os.path.exists(chrome_bin):
+            logger.warning("CHROME_BIN not found: %s", chrome_bin)
+            chrome_bin = ""
+
+        return chromedriver_path, chrome_bin
     
     def create_driver(self, use_undetected=True):
         """Create Chrome driver"""
         try:
-            if use_undetected:
+            chromedriver_path, _ = self._get_chrome_paths()
+            if use_undetected and not chromedriver_path:
                 import undetected_chromedriver as uc
                 return self._create_undetected_driver(uc)
-            else:
-                from selenium import webdriver
-                from selenium.webdriver.chrome.options import Options
-                return self._create_regular_driver(webdriver, Options)
+            from selenium import webdriver
+            from selenium.webdriver.chrome.options import Options
+            return self._create_regular_driver(webdriver, Options)
         except ImportError as e:
             logger.error(f"Failed to import required modules: {e}")
             raise
@@ -43,6 +70,10 @@ class BrowserManager:
     def _create_undetected_driver(self, uc):
         """Create undetected Chrome driver"""
         options = uc.ChromeOptions()
+
+        chromedriver_path, chrome_bin = self._get_chrome_paths()
+        if chrome_bin:
+            options.binary_location = chrome_bin
         
         # Add arguments to mimic human behavior
         options.add_argument(f"user-agent={random.choice(self.user_agents)}")
@@ -74,11 +105,17 @@ class BrowserManager:
         else:
             options.add_argument("--start-maximized")
         
-        driver = uc.Chrome(
-            options=options,
-            suppress_welcome=True,
-            use_subprocess=False,
-        )
+        driver_kwargs = {
+            "options": options,
+            "suppress_welcome": True,
+            "use_subprocess": False,
+        }
+        if chromedriver_path:
+            driver_kwargs["driver_executable_path"] = chromedriver_path
+        if chrome_bin:
+            driver_kwargs["browser_executable_path"] = chrome_bin
+
+        driver = uc.Chrome(**driver_kwargs)
         
         # Execute CDP commands to avoid detection
         try:
@@ -101,6 +138,10 @@ class BrowserManager:
     def _create_regular_driver(self, webdriver, Options):
         """Create regular Selenium Chrome driver"""
         options = Options()
+
+        chromedriver_path, chrome_bin = self._get_chrome_paths()
+        if chrome_bin:
+            options.binary_location = chrome_bin
         
         # Add arguments
         options.add_argument(f"user-agent={random.choice(self.user_agents)}")
@@ -120,11 +161,22 @@ class BrowserManager:
         else:
             options.add_argument("--start-maximized")
         
+        if chromedriver_path:
+            try:
+                from selenium.webdriver.chrome.service import Service
+
+                service = Service(executable_path=chromedriver_path)
+                driver = webdriver.Chrome(service=service, options=options)
+                logger.info("Regular Chrome browser created with CHROMEDRIVER_PATH")
+                return driver
+            except Exception as chrome_error:
+                logger.error(f"CHROMEDRIVER_PATH failed: {chrome_error}")
+
         # Try to use webdriver-manager for automatic driver management
         try:
             from webdriver_manager.chrome import ChromeDriverManager
             from selenium.webdriver.chrome.service import Service
-            
+
             service = Service(ChromeDriverManager().install())
             driver = webdriver.Chrome(service=service, options=options)
             logger.info("Regular Chrome browser created with webdriver-manager")
@@ -144,6 +196,7 @@ class BrowserManager:
         delay = random.uniform(min_seconds, max_seconds)
         logger.debug(f"Adding human delay: {delay:.2f}s")
         time.sleep(delay)
+        return delay
     
     def human_like_typing(self, element, text):
         """Type text with human-like delays"""
@@ -167,20 +220,14 @@ class BrowserManager:
                 return True
             except:
                 return False
-
-# Import Selenium components here to avoid circular imports
-try:
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
-    SELENIUM_AVAILABLE = True
-except ImportError:
-    SELENIUM_AVAILABLE = False
-    logger.warning("Selenium not available")
-
-if SELENIUM_AVAILABLE:
-    def wait_for_element(self, driver, by, value, timeout=10):
+    
+    def wait_for_element(self, driver, by, value, timeout=None):
         """Wait for element to be present"""
+        if not SELENIUM_AVAILABLE:
+            logger.error("Selenium not available for wait_for_element")
+            return None
+        
+        timeout = timeout or self.wait_time
         try:
             wait = WebDriverWait(driver, timeout)
             element = wait.until(EC.presence_of_element_located((by, value)))
@@ -189,8 +236,13 @@ if SELENIUM_AVAILABLE:
             logger.warning(f"Element not found: {by}={value} - {e}")
             return None
     
-    def wait_for_clickable(self, driver, by, value, timeout=10):
+    def wait_for_clickable(self, driver, by, value, timeout=None):
         """Wait for element to be clickable"""
+        if not SELENIUM_AVAILABLE:
+            logger.error("Selenium not available for wait_for_clickable")
+            return None
+        
+        timeout = timeout or self.wait_time
         try:
             wait = WebDriverWait(driver, timeout)
             element = wait.until(EC.element_to_be_clickable((by, value)))
@@ -198,154 +250,196 @@ if SELENIUM_AVAILABLE:
         except Exception as e:
             logger.warning(f"Element not clickable: {by}={value} - {e}")
             return None
-else:
-    def wait_for_element(self, driver, by, value, timeout=10):
-        """Dummy function when selenium not available"""
-        logger.error("Selenium not available for wait_for_element")
-        return None
     
-    def wait_for_clickable(self, driver, by, value, timeout=10):
-        """Dummy function when selenium not available"""
-        logger.error("Selenium not available for wait_for_clickable")
-        return None
-
-def scroll_to_element(self, driver, element):
-    """Scroll to element smoothly"""
-    try:
-        driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
-        time.sleep(random.uniform(0.5, 1))
-        return True
-    except Exception as e:
-        logger.debug(f"Could not scroll to element: {e}")
-        return False
-
-def scroll_down(self, driver, pixels=500):
-    """Scroll down by pixels"""
-    try:
-        driver.execute_script(f"window.scrollBy(0, {pixels});")
-        time.sleep(random.uniform(0.5, 1))
-        return True
-    except Exception as e:
-        logger.debug(f"Could not scroll: {e}")
-        return False
-
-def take_screenshot(self, driver, filename="screenshot.png"):
-    """Take screenshot of current page"""
-    try:
-        # Create screenshots directory if it doesn't exist
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
-        driver.save_screenshot(filename)
-        logger.info(f"Screenshot saved: {filename}")
-        return True
-    except Exception as e:
-        logger.error(f"Failed to take screenshot: {e}")
-        return False
-
-def get_page_source_safely(self, driver):
-    """Get page source with error handling"""
-    try:
-        return driver.page_source
-    except Exception as e:
-        logger.error(f"Failed to get page source: {e}")
-        return ""
-
-def safe_click(self, driver, element):
-    """Safely click element with retry"""
-    try:
-        # Scroll to element first
-        self.scroll_to_element(driver, element)
-        
-        # Wait for clickable
-        time.sleep(random.uniform(0.5, 1))
-        
-        # Try to click
-        element.click()
-        return True
-    except Exception as e:
-        logger.warning(f"Click failed, trying JavaScript: {e}")
+    def scroll_to_element(self, driver, element):
+        """Scroll to element smoothly"""
         try:
-            driver.execute_script("arguments[0].click();", element)
+            driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
+            time.sleep(random.uniform(0.5, 1))
             return True
-        except Exception as js_e:
-            logger.error(f"JavaScript click also failed: {js_e}")
+        except Exception as e:
+            logger.debug(f"Could not scroll to element: {e}")
             return False
-
-def fill_form_field(self, driver, field_id, value):
-    """Fill form field with human-like behavior"""
-    element = self.wait_for_element(driver, By.ID, field_id)
-    if element:
-        return self.human_like_typing(element, value)
-    return False
-
-# Legacy function kept for backward compatibility
-def login_to_reddit(driver, username, password):
-    """
-    Log in to Reddit with human-like behavior
     
-    Note: Prefer using LoginManager class for better functionality
-    """
-    if not SELENIUM_AVAILABLE:
-        logger.error("Selenium not available for login_to_reddit")
-        return False
-    
-    logger.info("Logging in to Reddit...")
-    
-    # Go to login page
-    driver.get("https://www.reddit.com/login")
-    time.sleep(random.uniform(2, 4))
-    
-    try:
-        # Wait for username field
-        username_field = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, "loginUsername"))
-        )
-        
-        # Human-like typing for username
-        for char in username:
-            username_field.send_keys(char)
-            time.sleep(random.uniform(0.08, 0.15))
-        
-        time.sleep(random.uniform(0.5, 1))
-        
-        # Fill password
-        password_field = driver.find_element(By.ID, "loginPassword")
-        for char in password:
-            password_field.send_keys(char)
-            time.sleep(random.uniform(0.05, 0.12))
-        
-        time.sleep(random.uniform(0.5, 1.5))
-        
-        # Click login button
-        login_button = driver.find_element(By.XPATH, "//button[@type='submit']")
-        login_button.click()
-        
-        # Wait for login to complete
-        time.sleep(random.uniform(3, 6))
-        
-        # Verify login success
+    def scroll_down(self, driver, pixels=500):
+        """Scroll down by pixels"""
         try:
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.XPATH, "//button[@aria-label='User menu']"))
-            )
-            logger.info("Login successful!")
+            driver.execute_script(f"window.scrollBy(0, {pixels});")
+            time.sleep(random.uniform(0.5, 1))
             return True
-        except:
-            logger.warning("Login might have failed, checking URL...")
-            if "login" not in driver.current_url:
-                logger.info("Login successful (redirected)")
-                return True
+        except Exception as e:
+            logger.debug(f"Could not scroll: {e}")
             return False
+    
+    def take_screenshot(self, driver, filename="screenshot.png"):
+        """Take screenshot of current page"""
+        try:
+            # Create screenshots directory if it doesn't exist
+            os.makedirs(os.path.dirname(filename), exist_ok=True)
+            driver.save_screenshot(filename)
+            logger.info(f"Screenshot saved: {filename}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to take screenshot: {e}")
+            return False
+    
+    def get_page_source_safely(self, driver):
+        """Get page source with error handling"""
+        try:
+            return driver.page_source
+        except Exception as e:
+            logger.error(f"Failed to get page source: {e}")
+            return ""
+    
+    def safe_click(self, driver, element):
+        """Safely click element with retry"""
+        try:
+            # Scroll to element first
+            self.scroll_to_element(driver, element)
             
-    except Exception as e:
-        logger.error(f"Login error: {e}")
+            # Wait for clickable
+            time.sleep(random.uniform(0.5, 1))
+            
+            # Try to click
+            element.click()
+            return True
+        except Exception as e:
+            logger.warning(f"Click failed, trying JavaScript: {e}")
+            try:
+                driver.execute_script("arguments[0].click();", element)
+                return True
+            except Exception as js_e:
+                logger.error(f"JavaScript click also failed: {js_e}")
+                return False
+    
+    def fill_form_field(self, driver, field_id, value):
+        """Fill form field with human-like behavior"""
+        element = self.wait_for_element(driver, By.ID, field_id)
+        if element:
+            return self.human_like_typing(element, value)
         return False
+    
+    def randomize_fingerprint(self, driver):
+        """Randomize browser fingerprint to avoid detection"""
+        # Random viewport
+        viewports = [
+            (1920, 1080), (1366, 768), (1536, 864),
+            (1440, 900), (1280, 720), (1600, 900)
+        ]
+        width, height = random.choice(viewports)
+        driver.set_window_size(width, height)
+        
+        # Random user agent
+        user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:91.0) Gecko/20100101 Firefox/91.0"
+        ]
+        
+        # Use CDP to override user agent
+        try:
+            driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+                "userAgent": random.choice(user_agents)
+            })
+        except:
+            pass
+        
+        # Remove automation flags
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        
+        # Random timezone (via JavaScript)
+        timezones = ['America/Los_Angeles', 'America/New_York', 'Europe/London', 'Australia/Sydney']
+        driver.execute_script(f"""
+            Object.defineProperty(Intl.DateTimeFormat.prototype, 'resolvedOptions', {{
+                get() {{
+                    const result = Reflect.apply(Intl.DateTimeFormat.prototype.resolvedOptions, this, arguments);
+                    result.timeZone = '{random.choice(timezones)}';
+                    return result;
+                }}
+            }});
+        """)
+        
+        return True
 
-# Add methods to BrowserManager class
-BrowserManager.wait_for_element = wait_for_element
-BrowserManager.wait_for_clickable = wait_for_clickable
-BrowserManager.scroll_to_element = scroll_to_element
-BrowserManager.scroll_down = scroll_down
-BrowserManager.take_screenshot = take_screenshot
-BrowserManager.get_page_source_safely = get_page_source_safely
-BrowserManager.safe_click = safe_click
-BrowserManager.fill_form_field = fill_form_field
+    @staticmethod
+    def login_to_reddit(driver, username, password):
+        """
+        Log in to Reddit with human-like behavior
+
+        Note: Prefer using LoginManager class for better functionality
+        """
+        if not SELENIUM_AVAILABLE:
+            logger.error("Selenium not available for login_to_reddit")
+            return False
+
+        logger.info("Logging in to Reddit...")
+
+        # Go to login page
+        driver.get("https://www.reddit.com/login")
+        time.sleep(random.uniform(2, 4))
+
+        try:
+            # Wait for username field
+            username_field = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.ID, "loginUsername"))
+            )
+
+            # Human-like typing for username
+            for char in username:
+                username_field.send_keys(char)
+                time.sleep(random.uniform(0.08, 0.15))
+
+            time.sleep(random.uniform(0.5, 1))
+
+            # Fill password
+            password_field = driver.find_element(By.ID, "loginPassword")
+            for char in password:
+                password_field.send_keys(char)
+                time.sleep(random.uniform(0.05, 0.12))
+
+            time.sleep(random.uniform(0.5, 1.5))
+
+            # Click login button
+            login_button = driver.find_element(By.XPATH, "//button[@type='submit']")
+            login_button.click()
+
+            # Wait for login to complete
+            time.sleep(random.uniform(3, 6))
+
+            # Verify login success
+            try:
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, "//button[@aria-label='User menu']"))
+                )
+                logger.info("Login successful!")
+                return True
+            except Exception:
+                logger.warning("Login might have failed, checking URL...")
+                if "login" not in driver.current_url:
+                    logger.info("Login successful (redirected)")
+                    return True
+                return False
+        except Exception as e:
+            logger.error(f"Login error: {e}")
+            return False
+    
+    def human_like_pause(self, min_seconds=1, max_seconds=5):
+        """Human-like pause with exponential distribution"""
+        pause = random.expovariate(1.0/3)  # Mean 3 seconds
+        pause = max(min_seconds, min(pause, max_seconds))
+        time.sleep(pause)
+        return pause
+    
+    def close_driver(self, driver):
+        """Safely close the driver with cleanup"""
+        if driver:
+            try:
+                driver.quit()
+            except:
+                pass
+
+
+# Legacy function kept for backward compatibility (keep outside class)
+def login_to_reddit(driver, username, password):
+    return BrowserManager.login_to_reddit(driver, username, password)
