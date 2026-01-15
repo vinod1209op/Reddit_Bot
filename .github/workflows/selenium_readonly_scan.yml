@@ -6,6 +6,15 @@ on:
     - cron: "0 10 * * *"
     - cron: "0 7 * * *"
   workflow_dispatch:
+    inputs:
+      force_run:
+        description: "Override schedule and run immediately (00:00-23:59)"
+        required: false
+        default: "false"
+      windows:
+        description: "Custom scan windows (HH:MM-HH:MM, comma-separated, no spaces). Overrides force_run if set."
+        required: false
+        default: ""
 
 jobs:
   selenium_scan:
@@ -56,7 +65,17 @@ jobs:
           CHROMEDRIVER_PATH: /usr/bin/chromedriver
           COOKIE_PATH: data/gha_cookies.pkl
         run: |
-          python scripts/night_scanner.py --mode selenium --schedule-path config/schedule.json
+          RUN_WINDOWS=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            WINDOWS_INPUT="${{ github.event.inputs.windows }}"
+            WINDOWS_INPUT="${WINDOWS_INPUT// /}"
+            if [ -n "$WINDOWS_INPUT" ]; then
+              RUN_WINDOWS="--windows $WINDOWS_INPUT"
+            elif [ "${{ github.event.inputs.force_run }}" = "true" ]; then
+              RUN_WINDOWS="--windows 00:00-23:59"
+            fi
+          fi
+          python scripts/night_scanner.py --mode selenium --schedule-path config/schedule.json $RUN_WINDOWS
 
       - name: Upload scan results
         if: always()
