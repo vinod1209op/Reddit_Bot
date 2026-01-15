@@ -17,6 +17,12 @@ if str(project_root) not in sys.path:
 # Setup logging
 logger = logging.getLogger(__name__)
 
+def _env_flag(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return str(value).strip().lower() in ("1", "true", "yes", "y", "on")
+
 # Try to import Selenium components
 try:
     from selenium.webdriver.common.by import By
@@ -29,8 +35,19 @@ except ImportError:
 
 
 class BrowserManager:
-    def __init__(self, headless=False):
+    def __init__(self, headless=False, stealth_mode=None, randomize_fingerprint=None, use_undetected=None):
         self.headless = headless
+        self.stealth_mode = _env_flag("SELENIUM_STEALTH", True) if stealth_mode is None else bool(stealth_mode)
+        self.randomize_fingerprint_enabled = (
+            _env_flag("SELENIUM_RANDOMIZE_FINGERPRINT", True)
+            if randomize_fingerprint is None
+            else bool(randomize_fingerprint)
+        )
+        self.use_undetected_default = (
+            _env_flag("SELENIUM_USE_UNDETECTED", True)
+            if use_undetected is None
+            else bool(use_undetected)
+        )
         self.user_agents = [
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
@@ -53,9 +70,11 @@ class BrowserManager:
 
         return chromedriver_path, chrome_bin
     
-    def create_driver(self, use_undetected=True):
+    def create_driver(self, use_undetected=None):
         """Create Chrome driver"""
         try:
+            if use_undetected is None:
+                use_undetected = self.use_undetected_default
             chromedriver_path, _ = self._get_chrome_paths()
             if use_undetected and not chromedriver_path:
                 import undetected_chromedriver as uc
@@ -75,9 +94,10 @@ class BrowserManager:
         if chrome_bin:
             options.binary_location = chrome_bin
         
-        # Add arguments to mimic human behavior
-        options.add_argument(f"user-agent={random.choice(self.user_agents)}")
-        options.add_argument("--disable-blink-features=AutomationControlled")
+        # Add arguments to mimic human behavior (when stealth is enabled)
+        if self.stealth_mode:
+            options.add_argument(f"user-agent={random.choice(self.user_agents)}")
+            options.add_argument("--disable-blink-features=AutomationControlled")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-gpu")
@@ -87,9 +107,10 @@ class BrowserManager:
         options.add_argument("--ignore-ssl-errors")
         options.add_argument("--allow-insecure-localhost")
         
-        # Exclude automation detection
-        options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        options.add_experimental_option('useAutomationExtension', False)
+        # Exclude automation detection (stealth only)
+        if self.stealth_mode:
+            options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            options.add_experimental_option('useAutomationExtension', False)
         
         # Add stealth settings
         prefs = {
@@ -117,20 +138,21 @@ class BrowserManager:
 
         driver = uc.Chrome(**driver_kwargs)
         
-        # Execute CDP commands to avoid detection
-        try:
-            driver.execute_cdp_cmd("Network.setUserAgentOverride", {
-                "userAgent": random.choice(self.user_agents)
-            })
-            driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-                "source": """
+        # Execute CDP commands to avoid detection (stealth only)
+        if self.stealth_mode:
+            try:
+                driver.execute_cdp_cmd("Network.setUserAgentOverride", {
+                    "userAgent": random.choice(self.user_agents)
+                })
+                driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+                    "source": """
                     Object.defineProperty(navigator, 'webdriver', {
                         get: () => undefined
                     });
-                """
-            })
-        except:
-            pass
+                    """
+                })
+            except:
+                pass
         
         logger.info("Undetected Chrome browser created successfully")
         return driver
@@ -143,9 +165,10 @@ class BrowserManager:
         if chrome_bin:
             options.binary_location = chrome_bin
         
-        # Add arguments
-        options.add_argument(f"user-agent={random.choice(self.user_agents)}")
-        options.add_argument("--disable-blink-features=AutomationControlled")
+        # Add arguments (stealth only)
+        if self.stealth_mode:
+            options.add_argument(f"user-agent={random.choice(self.user_agents)}")
+            options.add_argument("--disable-blink-features=AutomationControlled")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-gpu")
@@ -321,6 +344,8 @@ class BrowserManager:
     
     def randomize_fingerprint(self, driver):
         """Randomize browser fingerprint to avoid detection"""
+        if not self.stealth_mode or not self.randomize_fingerprint_enabled:
+            return False
         # Random viewport
         viewports = [
             (1920, 1080), (1366, 768), (1536, 864),

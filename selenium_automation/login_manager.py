@@ -30,7 +30,7 @@ class LoginManager:
         """Create a new browser driver using BrowserManager"""
         if not self.browser_manager or self.browser_manager.headless != headless:
             self.browser_manager = BrowserManager(headless=headless)
-        self.driver = self.browser_manager.create_driver(use_undetected=True)
+        self.driver = self.browser_manager.create_driver(use_undetected=self.browser_manager.use_undetected_default)
         
         # Randomize fingerprint to avoid detection
         self.browser_manager.randomize_fingerprint(self.driver)

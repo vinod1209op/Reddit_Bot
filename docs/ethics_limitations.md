@@ -8,7 +8,7 @@
 - Transparent intent: educational, harm-reduction-oriented, neutral tone; suggest professional help for personal guidance.
 
 ## Privacy & Data Handling
-- Data stored locally in CSVs and JSON (`bot_logs.csv`, `bot_metrics.csv`, `logs/night_scan.csv`, `logs/night_scan_summary.csv`, `logs/night_queue.json`); no external storage.
+- Data stored locally in CSVs and JSON (`bot_logs.csv`, `bot_metrics.csv`, `logs/night_scan_summary.csv`, `logs/night_queue.json`); no external storage.
 - Collected fields: post/comment IDs, titles, matched keywords, reply text, approval decisions, basic engagement (score/replies).
 - No user PII collected beyond public Reddit content; avoid logging usernames.
 

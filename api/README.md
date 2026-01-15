@@ -18,4 +18,4 @@ Outputs:
 - `bot_metrics.csv`: engagement metrics for posted comments (step 4).
 
 Related tooling:
-- `scripts/night_scanner.py` provides scheduled, read-only scans (no posting) and logs matches to `logs/night_scan.csv`.
+- `scripts/night_scanner.py` provides scheduled, read-only scans (no posting) and queues matches to `logs/night_queue.json`.

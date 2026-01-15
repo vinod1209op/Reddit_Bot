@@ -80,6 +80,9 @@ class ConfigManager:
             "chromedriver_path": os.getenv("CHROMEDRIVER_PATH", ""),
             "chromedriver_version": os.getenv("CHROMEDRIVER_VERSION", ""),
             "cookie_file": os.getenv("COOKIE_PATH", "cookies.pkl"),
+            "use_undetected": os.getenv("SELENIUM_USE_UNDETECTED", "1").lower() in ("true", "1", "yes", "y", "on"),
+            "stealth_mode": os.getenv("SELENIUM_STEALTH", "1").lower() in ("true", "1", "yes", "y", "on"),
+            "randomize_fingerprint": os.getenv("SELENIUM_RANDOMIZE_FINGERPRINT", "1").lower() in ("true", "1", "yes", "y", "on"),
         }
         
         # Bot settings

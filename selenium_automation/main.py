@@ -80,13 +80,24 @@ class RedditAutomation:
         try:
             # Get settings from config
             headless = False
+            stealth_mode = True
+            randomize_fingerprint = True
+            use_undetected = True
             if self.config and hasattr(self.config, "selenium_settings"):
                 ss = self.config.selenium_settings
                 if isinstance(ss, dict):
                     headless = ss.get("headless", False)
+                    stealth_mode = ss.get("stealth_mode", True)
+                    randomize_fingerprint = ss.get("randomize_fingerprint", True)
+                    use_undetected = ss.get("use_undetected", True)
             
             # Create BrowserManager
-            self.browser_manager = BrowserManager(headless=headless)
+            self.browser_manager = BrowserManager(
+                headless=headless,
+                stealth_mode=stealth_mode,
+                randomize_fingerprint=randomize_fingerprint,
+                use_undetected=use_undetected,
+            )
             
             # Create LoginManager (share BrowserManager; driver set after setup)
             self.login_manager = LoginManager(browser_manager=self.browser_manager)

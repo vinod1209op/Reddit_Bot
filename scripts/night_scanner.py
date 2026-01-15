@@ -9,12 +9,11 @@ Usage examples:
   python scripts/night_scanner.py --schedule-path "config/schedule.json"
 
 Notes:
-- This script only scans and logs matches. It never generates replies or posts.
+- This script only scans and queues matches. It never generates replies or posts.
 - Schedule it via cron/Task Scheduler and run it periodically (e.g., every 15-30 minutes).
 - Precedence: CLI args > env vars > schedule.json (if present).
 """
 import argparse
-import csv
 import json
 import os
 import random
@@ -22,7 +21,7 @@ import sys
 import time as time_mod
 from datetime import datetime, time, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from urllib.parse import urlparse, urlunparse
 
 try:
@@ -54,21 +53,6 @@ MOCK_POSTS: List[Mapping[str, str]] = [
         "score": 5,
         "body": "This one should not match unless keywords change.",
     },
-]
-
-LOG_HEADER = [
-    "run_id",
-    "timestamp_utc",
-    "timestamp_local",
-    "timezone",
-    "scan_window",
-    "mode",
-    "subreddit",
-    "post_id",
-    "title",
-    "matched_keywords",
-    "url",
-    "method",
 ]
 
 SUMMARY_HEADER = [
@@ -203,67 +187,6 @@ def scan_posts(
         if hits:
             yield info, hits
 
-def make_match_key_from_info(info: Mapping[str, str]) -> str:
-    key_part = info.get("id") or normalize_reddit_url(info.get("url", "")) or info.get("title") or ""
-    if not key_part:
-        return ""
-    return f"{info.get('subreddit', '')}|{key_part}"
-
-
-def load_existing_match_keys(path: Path) -> Set[str]:
-    if not path.exists():
-        return set()
-    keys: Set[str] = set()
-    try:
-        with path.open(newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                url = normalize_reddit_url(row.get("url", ""))
-                key_part = row.get("post_id") or url or row.get("title") or ""
-                if not key_part:
-                    continue
-                subreddit = row.get("subreddit", "")
-                keys.add(f"{subreddit}|{key_part}")
-    except Exception as exc:
-        print(f"Could not read existing log {path}: {exc}")
-    return keys
-
-
-def log_match(
-    path: Path,
-    run_id: str,
-    tz_name: str,
-    scan_window: str,
-    mode: str,
-    info: Mapping[str, str],
-    hits: Sequence[str],
-    method: str,
-    known_keys: Optional[Set[str]] = None,
-) -> None:
-    if known_keys is not None:
-        key = make_match_key_from_info(info)
-        if not key:
-            return
-        if key in known_keys:
-            return
-        known_keys.add(key)
-    local_time = datetime.now(ZoneInfo(tz_name)).isoformat()
-    row = {
-        "run_id": run_id,
-        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        "timestamp_local": local_time,
-        "timezone": tz_name,
-        "scan_window": scan_window,
-        "mode": mode,
-        "subreddit": info.get("subreddit", ""),
-        "post_id": info.get("id", ""),
-        "title": info.get("title", ""),
-        "matched_keywords": ",".join(hits),
-        "url": info.get("url", ""),
-        "method": method,
-    }
-    append_log(path, row, LOG_HEADER)
-
 def log_summary(
     path: Path,
     run_id: str,
@@ -371,11 +294,6 @@ def main() -> None:
         help="Scan mode (default: auto)",
     )
     parser.add_argument(
-        "--log-path",
-        default=os.getenv("SCAN_LOG_PATH", "logs/night_scan.csv"),
-        help="CSV log path",
-    )
-    parser.add_argument(
         "--queue-path",
         default=os.getenv("SCAN_QUEUE_PATH", QUEUE_DEFAULT_PATH),
         help="JSON queue path (default: logs/night_queue.json)",
@@ -391,7 +309,7 @@ def main() -> None:
     parser.add_argument(
         "--reset-logs",
         action="store_true",
-        help="Overwrite match/summary logs for this run",
+        help="Overwrite summary log for this run (queue is preserved)",
     )
     args = parser.parse_args()
 
@@ -411,8 +329,6 @@ def main() -> None:
         args.limit = int(schedule["limit"])
     if "mode" in schedule and not _cli_flag_present("--mode") and not os.getenv("SCAN_MODE"):
         args.mode = str(schedule["mode"])
-    if "log_path" in schedule and not _cli_flag_present("--log-path") and not os.getenv("SCAN_LOG_PATH"):
-        args.log_path = str(schedule["log_path"])
     if "queue_path" in schedule and not _cli_flag_present("--queue-path") and not os.getenv("SCAN_QUEUE_PATH"):
         args.queue_path = str(schedule["queue_path"])
     if "summary_path" in schedule and not _cli_flag_present("--summary-path") and not os.getenv("SCAN_SUMMARY_PATH"):
@@ -446,17 +362,12 @@ def main() -> None:
     if args.max_subreddits > 0:
         subreddits = subreddits[: args.max_subreddits]
 
-    log_path = Path(args.log_path)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
     queue_path = Path(args.queue_path)
     summary_path = Path(args.summary_path)
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     if args.reset_logs:
-        if log_path.exists():
-            log_path.unlink()
         if summary_path.exists():
             summary_path.unlink()
-    known_keys = load_existing_match_keys(log_path)
     run_id = os.getenv("RUN_ID") or now_local.isoformat()
 
     mode = args.mode
@@ -514,7 +425,6 @@ def main() -> None:
                             "url": normalize_reddit_url(post.get("url", "")),
                         }
                         method = post.get("method", "selenium")
-                        log_match(log_path, run_id, args.timezone, active_window[2], mode, info, hits, method, known_keys)
                         add_to_queue(queue_path, run_id, args.timezone, active_window[2], mode, info, hits, method)
                 log_summary(
                     summary_path,
@@ -528,7 +438,7 @@ def main() -> None:
                 )
         finally:
             bot.close()
-        print(f"Scan complete. Logged matches to {log_path}.")
+        print(f"Scan complete. Logged queue to {queue_path}.")
         return
 
     if mode == "mock":
@@ -538,7 +448,6 @@ def main() -> None:
             matched_count = 0
             for info, hits in scan_posts(MOCK_POSTS, keywords, subreddit):
                 matched_count += 1
-                log_match(log_path, run_id, args.timezone, active_window[2], "mock", info, hits, "mock", known_keys)
                 add_to_queue(queue_path, run_id, args.timezone, active_window[2], "mock", info, hits, "mock")
             log_summary(
                 summary_path,
@@ -550,7 +459,7 @@ def main() -> None:
                 scanned_count,
                 matched_count,
             )
-        print(f"Mock scan complete. Logged matches to {log_path}.")
+        print(f"Mock scan complete. Logged queue to {queue_path}.")
         return
 
     # API mode
@@ -574,7 +483,6 @@ def main() -> None:
             hits = matched_keywords(combined, keywords)
             if hits:
                 matched_count += 1
-                log_match(log_path, run_id, args.timezone, active_window[2], mode, info, hits, "api", known_keys)
                 add_to_queue(queue_path, run_id, args.timezone, active_window[2], mode, info, hits, "api")
         log_summary(
             summary_path,
@@ -587,7 +495,7 @@ def main() -> None:
             matched_count,
         )
 
-    print(f"Scan complete. Logged matches to {log_path}.")
+    print(f"Scan complete. Logged queue to {queue_path}.")
 
 
 if __name__ == "__main__":

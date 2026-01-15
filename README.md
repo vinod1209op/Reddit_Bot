@@ -44,7 +44,7 @@
      - `OPENROUTER_BASE_URL`, `OPENAI_HTTP_REFERER`, `OPENAI_X_TITLE`
 3) (Optional) Configure scheduled scanning in `config/schedule.json`:
    - Define `scan_windows` and `timezone` for read-only night scans.
-   - Set `mode`, `limit`, `log_path`, `summary_path`, and `queue_path` if needed.
+   - Set `mode`, `limit`, `summary_path`, and `queue_path` if needed.
 
 ## How to run (by step)
 - Step 1 (auth + basic read):  
@@ -60,13 +60,21 @@
 - Streamlit UI (manual prefill, optional auto-submit):  
   `streamlit run streamlit_app.py` → start the browser, search, draft a reply, and prefill in the live browser. Set `STREAMLIT_APP_PASSWORD` to gate access. Auto-submit is available but should be used only with approval and strict limits (cap with `SELENIUM_AUTO_SUBMIT_LIMIT`).
 - Night scanner (read-only, scheduled):  
-  `python scripts/night_scanner.py` → scans within configured windows and logs matches; no replies or posting.
+  `python scripts/night_scanner.py` → scans within configured windows and queues matches; no replies or posting.
+
+## GitHub Actions (read-only Selenium scan)
+To run scheduled, read-only Selenium scans in GitHub Actions (using `.github/workflows/selenium_readonly_scan.yml`):
+- Add a GitHub Actions secret named `REDDIT_COOKIES_BASE64` that contains a base64-encoded cookie file (example commands):
+  - macOS: `base64 -b 0 cookies.pkl > /tmp/reddit_cookies.b64`
+  - Linux: `base64 -w 0 cookies.pkl > /tmp/reddit_cookies.b64`
+  - Copy the file contents into the Actions secret value.
+- Review/adjust the cron schedule in `.github/workflows/selenium_readonly_scan.yml` to match your desired time windows (cron is UTC; update for DST as needed).
+- Trigger the workflow once manually in GitHub Actions to verify cookies and Chromium setup.
 
 ## Logs / data
 - `bot_logs.csv`: per match/reply attempt (run_id, mode, subreddit, post_id, title, matched_keywords, reply_text, approved, posted, comment_id, error).
 - `bot_metrics.csv`: per posted comment check (timestamp_checked_utc, run_id, subreddit, post_id, comment_id, title, matched_keywords, score, replies_count, error).
 - `data/post_state.json`: Streamlit UI state for submitted/ignored posts.
-- `logs/night_scan.csv`: read-only scan matches (night_scanner).
 - `logs/night_scan_summary.csv`: per-subreddit scan summary counts.
 - `logs/night_queue.json`: review queue of matched posts.
 

@@ -27,7 +27,7 @@
 - **Logging**: `bot_step3_replies.py` appends to `bot_logs.csv` (run_id, mode, post metadata, matched keywords, reply text, approval decision, posted flag, comment_id, error).
 - **Metrics**: `bot_step4_metrics.py` reads `bot_logs.csv`, fetches posted comments, records score and replies_count to `bot_metrics.csv`.
 - **Selenium mode (manual)**: `selenium_automation/main.py` opens a real browser for manual Google login and subreddit scraping, using `BrowserManager` for driver setup and small per-action delays/scrolls. `search_posts(..., include_body=True, include_comments=True)` can click into posts to grab body text and a few top comments (best-effort), and normalizes URLs to `https://www.reddit.com`. `reply_to_post(url, text, dry_run=True)` stages a reply but defaults to dry-run; flip only after human review and subreddit approval. A Streamlit UI (`streamlit_app.py`) is available for search + prefill, with optional auto-submit.
-- **Scheduled read-only scans**: `scripts/night_scanner.py` runs within configured windows (`config/schedule.json`), scans only, and logs matches to `logs/night_scan.csv` plus summaries to `logs/night_scan_summary.csv` and a review queue at `logs/night_queue.json`.
+- **Scheduled read-only scans**: `scripts/night_scanner.py` runs within configured windows (`config/schedule.json`), scans only, and writes a review queue at `logs/night_queue.json` plus summaries to `logs/night_scan_summary.csv`.
 - **Experimental (not part of main flow)**: `scripts/humanized_night_scanner.py` plus `config/accounts.json` and `config/activity_schedule.json` use `selenium_automation/utils/human_simulator.py` and `selenium_automation/utils/engagement_actions.py`. These are not wired into the standard workflow and should be treated as research-only prototypes.
 
 ## Run Instructions (short)
@@ -47,6 +47,5 @@
 ## Data Collected
 - `bot_logs.csv`: per match/reply attempt (run_id, mode, subreddit, post_id, title, matched_keywords, reply_text, approved, posted, comment_id, error).
 - `bot_metrics.csv`: per posted comment check (timestamp_checked_utc, run_id, subreddit, post_id, comment_id, title, matched_keywords, score, replies_count, error).
-- `logs/night_scan.csv`: per-match log for scheduled scans (read-only).
 - `logs/night_scan_summary.csv`: per-subreddit scan counts (scanned vs matched).
 - `logs/night_queue.json`: review queue for matched posts.
