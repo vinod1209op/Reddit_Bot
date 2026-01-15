@@ -34,6 +34,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y chromium chromium-driver
+          if command -v chromium >/dev/null 2>&1; then chromium --version; fi
+          if command -v chromium-browser >/dev/null 2>&1; then chromium-browser --version; fi
+          if command -v google-chrome >/dev/null 2>&1; then google-chrome --version; fi
+          if command -v chromedriver >/dev/null 2>&1; then chromedriver --version; fi
 
       - name: Install Python dependencies
         run: |
@@ -52,6 +56,31 @@ jobs:
           mkdir -p data
           echo "$REDDIT_COOKIES_BASE64" | base64 -d > data/gha_cookies.pkl
 
+      - name: Detect Chrome paths
+        run: |
+          CHROME_BIN=""
+          if command -v chromium >/dev/null 2>&1; then
+            CHROME_BIN="$(command -v chromium)"
+          elif command -v chromium-browser >/dev/null 2>&1; then
+            CHROME_BIN="$(command -v chromium-browser)"
+          elif command -v google-chrome >/dev/null 2>&1; then
+            CHROME_BIN="$(command -v google-chrome)"
+          fi
+          if [ -n "$CHROME_BIN" ]; then
+            echo "CHROME_BIN=$CHROME_BIN" >> $GITHUB_ENV
+            echo "Using CHROME_BIN=$CHROME_BIN"
+          else
+            echo "Chrome binary not found" >&2
+            exit 1
+          fi
+          if command -v chromedriver >/dev/null 2>&1; then
+            echo "CHROMEDRIVER_PATH=$(command -v chromedriver)" >> $GITHUB_ENV
+            echo "Using CHROMEDRIVER_PATH=$(command -v chromedriver)"
+          else
+            echo "Chromedriver not found" >&2
+            exit 1
+          fi
+
       - name: Run night scanner (read-only)
         env:
           BOT_MODE: selenium
@@ -61,8 +90,6 @@ jobs:
           SELENIUM_USE_UNDETECTED: "0"
           SELENIUM_STEALTH: "0"
           SELENIUM_RANDOMIZE_FINGERPRINT: "0"
-          CHROME_BIN: /usr/bin/chromium
-          CHROMEDRIVER_PATH: /usr/bin/chromedriver
           COOKIE_PATH: data/gha_cookies.pkl
         run: |
           RUN_WINDOWS=""
