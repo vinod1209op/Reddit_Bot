@@ -134,11 +134,6 @@ class BrowserManager:
         options.add_argument("--ignore-ssl-errors")
         options.add_argument("--allow-insecure-localhost")
         
-        # Exclude automation detection (stealth only)
-        if self.stealth_mode:
-            options.add_experimental_option("excludeSwitches", ["enable-automation"])
-            options.add_experimental_option('useAutomationExtension', False)
-        
         # Add stealth settings
         prefs = {
             "credentials_enable_service": False,
@@ -208,11 +203,6 @@ class BrowserManager:
         options.add_argument("--lang=en-US,en;q=0.9")
         options.add_argument("--accept-lang=en-US,en;q=0.9")
 
-        options.add_experimental_option("excludeSwitches", [
-            "enable-automation",
-            "enable-logging",
-            "disable-popup-blocking"
-        ])
         options.add_experimental_option("useAutomationExtension", False)
 
         user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
