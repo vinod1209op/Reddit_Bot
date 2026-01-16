@@ -639,7 +639,13 @@ class RedditAutomation:
             
             # Find post elements
             posts = self._scrape_modern_reddit_posts(subreddit, limit)
-            
+            if not posts:
+                logger.warning("No posts found via modern selectors; falling back to old.reddit.com")
+                self.driver.get(f"https://old.reddit.com/r/{subreddit}/new")
+                self._delay(0.6, 1.1, "old_subreddit_load")
+                self._dismiss_popups(old_reddit=True)
+                posts = self._scrape_old_reddit_posts(subreddit, limit)
+
             # Enrich posts if needed
             if (include_body or include_comments) and posts:
                 logger.info("Enriching posts with body/comments...")
@@ -662,31 +668,83 @@ class RedditAutomation:
             return []
 
     def _wait_for_reddit_content(self, timeout: int = 30) -> bool:
-        """Wait for modern Reddit content to render."""
+        """Wait for modern Reddit content to render, retrying across selectors."""
         if not self.driver or not self.browser_manager:
             return False
 
         selectors = [
-            "shreddit-feed",
             "shreddit-post",
+            "shreddit-feed",
+            "div[data-testid='post-container']",
             "[data-testid='post-container']",
             "article[data-click-id='background']",
             "article",
+            "div.Post",
         ]
-        per_try = max(2, min(5, int(timeout / max(1, len(selectors)))))
+        attempts = max(3, min(6, timeout // 5 or 3))
+        per_attempt_timeout = max(3, timeout // attempts)
 
-        for selector in selectors:
-            try:
-                element = self.browser_manager.wait_for_element(
-                    self.driver, By.CSS_SELECTOR, selector, timeout=per_try
-                )
-                if element:
-                    self._delay(0.8, 1.6, "react_hydration")
-                    return True
-            except Exception:
-                continue
+        for attempt in range(attempts):
+            for selector in selectors:
+                try:
+                    element = self.browser_manager.wait_for_element(
+                        self.driver, By.CSS_SELECTOR, selector, timeout=per_attempt_timeout
+                    )
+                    if element:
+                        self._delay(0.8, 1.6, "react_hydration")
+                        logger.info(f"Found Reddit content via selector: {selector}")
+                        return True
+                except Exception:
+                    continue
 
+            if attempt < attempts - 1:
+                logger.info(f"No content found on attempt {attempt + 1}/{attempts}, retrying...")
+                time.sleep(2)
+
+        if self._check_body_has_content():
+            return True
+
+        self._debug_log_selector_counts(selectors)
+        self._save_content_screenshot()
         return False
+
+    def _check_body_has_content(self, min_chars: int = 80) -> bool:
+        """Treat the run as successful if the page body has readable text."""
+        if not self.driver:
+            return False
+        try:
+            body = self.driver.find_element(By.TAG_NAME, "body")
+            text = (body.text or "").strip()
+            if len(text) >= min_chars:
+                logger.info("Body text appears to have content; proceeding.")
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _debug_log_selector_counts(self, selectors):
+        """Log counts for selectors (debug) to understand what rendered."""
+        if not self.driver:
+            return
+        try:
+            for selector in selectors:
+                count = len(self.driver.find_elements(By.CSS_SELECTOR, selector))
+                logger.debug(f"Selector coverage: {selector} -> {count}")
+        except Exception as exc:
+            logger.debug(f"Selector count logging failed: {exc}")
+
+    def _save_content_screenshot(self):
+        """Capture a screenshot when content detection keeps timing out."""
+        if not self.driver or not self.browser_manager:
+            return
+        try:
+            logs_dir = Path(__file__).parent.parent / "logs"
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            filename = logs_dir / f"content_timeout_{int(time.time())}.png"
+            self.browser_manager.take_screenshot(self.driver, str(filename))
+            logger.info(f"Saved debug screenshot: {filename}")
+        except Exception as exc:
+            logger.debug(f"Failed to save debug screenshot: {exc}")
 
     def _scroll_to_load_posts(self, desired_count: int = 20) -> int:
         """Scroll to trigger Reddit's lazy loading."""
@@ -758,6 +816,29 @@ class RedditAutomation:
     def _scrape_posts_from_page(self, subreddit: str, limit: int) -> List[Dict[str, Any]]:
         """Scrape posts from current page"""
         return self._scrape_modern_reddit_posts(subreddit, limit)
+
+    def _scrape_old_reddit_posts(self, subreddit: str, limit: int) -> List[Dict[str, Any]]:
+        """Scrape posts from old.reddit.com."""
+        if not self.driver:
+            return []
+
+        posts: List[Dict[str, Any]] = []
+        selector = "div.thing"
+        try:
+            elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+            for element in elements:
+                if len(posts) >= limit:
+                    break
+                try:
+                    post = self._extract_old_reddit_post(element, subreddit)
+                    if post:
+                        posts.append(post)
+                except Exception as exc:
+                    logger.debug(f"Old Reddit extraction error: {exc}")
+        except Exception as exc:
+            logger.debug(f"Old Reddit page scraping failed: {exc}")
+
+        return self._dedupe_posts(posts)[:limit]
 
     def _extract_from_shreddit_posts(self, subreddit: str, limit: int) -> List[Dict[str, Any]]:
         """Extract posts from shreddit-post elements via shadow DOM."""
