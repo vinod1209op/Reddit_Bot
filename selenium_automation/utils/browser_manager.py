@@ -8,6 +8,13 @@ import time
 import logging
 from pathlib import Path
 
+try:
+    from tor_proxy import tor_proxy
+    TOR_AVAILABLE = True
+except ImportError:
+    TOR_AVAILABLE = False
+    logger.warning("TorProxy not available")
+
 # Fix import path - add parent directory to sys.path
 current_dir = Path(__file__).parent
 project_root = current_dir.parent.parent  # Go up two levels to Reddit_Bot
@@ -54,6 +61,7 @@ class BrowserManager:
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0"
         ]
         self.wait_time = 10  # Default wait time
+        self.use_tor = _env_flag("USE_TOR_PROXY", False)
 
     def _get_chrome_paths(self):
         """Return (chromedriver_path, chrome_bin) if set and present."""
@@ -71,17 +79,34 @@ class BrowserManager:
         return chromedriver_path, chrome_bin
     
     def create_driver(self, use_undetected=None):
-        """Create Chrome driver"""
+        """Create Chrome driver with optional undetected mode."""
         try:
             if use_undetected is None:
                 use_undetected = self.use_undetected_default
+
             chromedriver_path, _ = self._get_chrome_paths()
-            if use_undetected and not chromedriver_path:
+            ci_mode = os.getenv("CI", "").lower() == "true"
+            if ci_mode:
+                use_undetected = True
+                logger.info("CI detected: forcing undetected-chromedriver")
+
+            if self.use_tor and TOR_AVAILABLE and ci_mode:
+                logger.info("Starting Tor proxy for CI...")
+                tor_proxy.start()
+
+            if use_undetected:
                 import undetected_chromedriver as uc
-                return self._create_undetected_driver(uc)
-            from selenium import webdriver
-            from selenium.webdriver.chrome.options import Options
-            return self._create_regular_driver(webdriver, Options)
+                driver = (
+                    self._create_undetected_driver_ci(uc)
+                    if ci_mode
+                    else self._create_undetected_driver(uc)
+                )
+            else:
+                from selenium import webdriver
+                from selenium.webdriver.chrome.options import Options
+                driver = self._create_regular_driver(webdriver, Options)
+
+            return driver
         except ImportError as e:
             logger.error(f"Failed to import required modules: {e}")
             raise
@@ -93,6 +118,8 @@ class BrowserManager:
         chromedriver_path, chrome_bin = self._get_chrome_paths()
         if chrome_bin:
             options.binary_location = chrome_bin
+        self._apply_tor_proxy_to_options(options)
+        self._apply_tor_proxy_to_options(options)
         
         # Add arguments to mimic human behavior (when stealth is enabled)
         if self.stealth_mode:
@@ -156,6 +183,103 @@ class BrowserManager:
         
         logger.info("Undetected Chrome browser created successfully")
         return driver
+
+    def _apply_tor_proxy_to_options(self, options):
+        """Add Tor proxy settings to Chrome options if enabled."""
+        if self.use_tor and TOR_AVAILABLE and hasattr(tor_proxy, "proxy_url"):
+            options.add_argument(f"--proxy-server={tor_proxy.proxy_url}")
+            logger.info(f"Applying Tor proxy to browser options: {tor_proxy.proxy_url}")
+
+    def _create_undetected_driver_ci(self, uc):
+        """Create undetected Chrome driver optimized for CI."""
+        options = uc.ChromeOptions()
+
+        chromedriver_path, chrome_bin = self._get_chrome_paths()
+        if chrome_bin:
+            options.binary_location = chrome_bin
+
+        options.add_argument("--headless=new")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_argument("--disable-blink-features")
+        options.add_argument("--window-size=1920,1080")
+        options.add_argument("--lang=en-US,en;q=0.9")
+        options.add_argument("--accept-lang=en-US,en;q=0.9")
+
+        options.add_experimental_option("excludeSwitches", [
+            "enable-automation",
+            "enable-logging",
+            "disable-popup-blocking"
+        ])
+        options.add_experimental_option("useAutomationExtension", False)
+
+        user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        options.add_argument(f"user-agent={user_agent}")
+
+        prefs = {
+            "credentials_enable_service": False,
+            "profile.password_manager_enabled": False,
+            "profile.default_content_setting_values.notifications": 2,
+            "profile.default_content_setting_values.popups": 2,
+            "profile.default_content_setting_values.geolocation": 2,
+            "profile.default_content_setting_values.cookies": 1,
+            "enable_do_not_track": True,
+        }
+        options.add_experimental_option("prefs", prefs)
+
+        driver_kwargs = {
+            "options": options,
+            "use_subprocess": False,
+            "version_main": 120,
+        }
+        if chromedriver_path:
+            driver_kwargs["driver_executable_path"] = chromedriver_path
+
+        driver = uc.Chrome(**driver_kwargs)
+
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": """
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5]
+            });
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US', 'en']
+            });
+
+            window.chrome = {
+                runtime: {},
+                loadTimes: function(){},
+                csi: function(){},
+                app: {}
+            };
+
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = (parameters) => (
+                parameters.name === 'notifications' ?
+                    Promise.resolve({ state: Notification.permission }) :
+                    originalQuery(parameters)
+            );
+            """
+        })
+
+        driver.execute_cdp_cmd("Network.setUserAgentOverride", {
+            "userAgent": user_agent,
+            "platform": "Win32"
+        })
+
+        driver.execute_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+        """)
+
+        logger.info("Created anti-block Chrome driver for CI")
+        return driver
     
     def _create_regular_driver(self, webdriver, Options):
         """Create regular Selenium Chrome driver"""
@@ -164,6 +288,7 @@ class BrowserManager:
         chromedriver_path, chrome_bin = self._get_chrome_paths()
         if chrome_bin:
             options.binary_location = chrome_bin
+        self._apply_tor_proxy_to_options(options)
         
         # Add arguments (stealth only)
         if self.stealth_mode:
@@ -462,6 +587,8 @@ class BrowserManager:
     
     def close_driver(self, driver):
         """Safely close the driver with cleanup"""
+        if self.use_tor and TOR_AVAILABLE:
+            tor_proxy.stop()
         if driver:
             try:
                 driver.quit()

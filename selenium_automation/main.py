@@ -622,7 +622,12 @@ class RedditAutomation:
         
         try:
             # Navigate to subreddit
-            self.driver.get(f"https://www.reddit.com/r/{subreddit}/new")
+            target_url = (
+                f"https://old.reddit.com/r/{subreddit}/new"
+                if os.getenv("CI", "").lower() == "true"
+                else f"https://www.reddit.com/r/{subreddit}/new"
+            )
+            self.driver.get(target_url)
             self._delay(0.8, 1.4, "subreddit_load")
             
             # Wait for dynamic content to load
@@ -681,25 +686,18 @@ class RedditAutomation:
             "article",
             "div.Post",
         ]
-        attempts = max(3, min(6, timeout // 5 or 3))
-        per_attempt_timeout = max(3, timeout // attempts)
-
-        for attempt in range(attempts):
-            for selector in selectors:
-                try:
-                    element = self.browser_manager.wait_for_element(
-                        self.driver, By.CSS_SELECTOR, selector, timeout=per_attempt_timeout
-                    )
-                    if element:
-                        self._delay(0.8, 1.6, "react_hydration")
-                        logger.info(f"Found Reddit content via selector: {selector}")
-                        return True
-                except Exception:
-                    continue
-
-            if attempt < attempts - 1:
-                logger.info(f"No content found on attempt {attempt + 1}/{attempts}, retrying...")
-                time.sleep(2)
+        per_attempt_timeout = max(3, timeout)
+        for selector in selectors:
+            try:
+                element = self.browser_manager.wait_for_element(
+                    self.driver, By.CSS_SELECTOR, selector, timeout=per_attempt_timeout
+                )
+                if element:
+                    self._delay(0.8, 1.6, "react_hydration")
+                    logger.info(f"Found Reddit content via selector: {selector}")
+                    return True
+            except Exception:
+                continue
 
         if self._check_body_has_content():
             return True

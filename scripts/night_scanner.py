@@ -446,6 +446,14 @@ def main() -> None:
         def run_selenium_scan(account: str, cookie_path: str) -> None:
             if cookie_path:
                 config.selenium_settings["cookie_file"] = cookie_path
+            try:
+                from tor_proxy import tor_proxy
+                tor_enabled = os.getenv("USE_TOR_PROXY", "0") == "1"
+            except ImportError:
+                tor_enabled = False
+
+            if tor_enabled:
+                config.selenium_settings["use_tor"] = True
 
             bot = RedditAutomation(config=config)
             if not bot.setup():
@@ -455,6 +463,9 @@ def main() -> None:
                 print(f"Cookie login failed for account {account or 'default'}; skipping.")
                 bot.close()
                 return
+
+            if tor_enabled:
+                time_mod.sleep(15)
 
             try:
                 for subreddit in subreddits:

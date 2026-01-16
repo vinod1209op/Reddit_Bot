@@ -80,29 +80,36 @@ jobs:
             } > config/credentials.env
           fi
 
-      - name: Run night scanner (read-only)
+      - name: Setup Tor proxy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tor
+          sudo service tor start
+          sleep 10
+          curl --socks5 127.0.0.1:9050 http://httpbin.org/ip
+
+      - name: Run night scanner with Tor
         env:
           BOT_MODE: selenium
           ENABLE_POSTING: "0"
           USE_LLM: "0"
           SELENIUM_HEADLESS: "1"
-          SELENIUM_USE_UNDETECTED: "0"
-          SELENIUM_STEALTH: "0" 
-          SELENIUM_RANDOMIZE_FINGERPRINT: "0"
+          SELENIUM_USE_UNDETECTED: "1"
+          SELENIUM_STEALTH: "1"
+          SELENIUM_RANDOMIZE_FINGERPRINT: "1"
           SELENIUM_CONTENT_TIMEOUT: "60"
-          COOKIE_PATH: data/gha_cookies.pkl
+          USE_TOR_PROXY: "1"
+          CI: "true"
+          SCAN_LIMIT: "3"
+          SCAN_MAX_SUBREDDITS: "2"
         run: |
-          RUN_WINDOWS=""
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            WINDOWS_INPUT="${{ github.event.inputs.windows }}"
-            WINDOWS_INPUT="${WINDOWS_INPUT// /}"
-            if [ -n "$WINDOWS_INPUT" ]; then
-              RUN_WINDOWS="--windows $WINDOWS_INPUT"
-            elif [ "${{ github.event.inputs.force_run }}" = "true" ]; then
-              RUN_WINDOWS="--windows 00:00-23:59"
-            fi
-          fi
-          python scripts/night_scanner.py --mode selenium --schedule-path config/schedule.json $RUN_WINDOWS
+          echo "Starting Tor-based scan..."
+          python scripts/night_scanner.py \
+            --mode selenium \
+            --limit 3 \
+            --max-subreddits 2 \
+            --jitter-min 10 \
+            --jitter-max 20
 
       - name: Upload scan results
         if: always()
