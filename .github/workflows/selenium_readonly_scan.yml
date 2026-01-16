@@ -89,6 +89,7 @@ jobs:
           SELENIUM_USE_UNDETECTED: "0"
           SELENIUM_STEALTH: "0"
           SELENIUM_RANDOMIZE_FINGERPRINT: "0"
+          SELENIUM_CONTENT_TIMEOUT: "45"
           COOKIE_PATH: data/gha_cookies.pkl
         run: |
           RUN_WINDOWS=""

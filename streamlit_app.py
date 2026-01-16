@@ -142,8 +142,183 @@ def save_post_state(state: dict) -> None:
 
 def main() -> None:
     st.set_page_config(page_title="Reddit Reply Helper", layout="wide")
-    st.title("Reddit Reply Helper")
-    st.caption("Search → draft → fill (optionally auto-submit). Keep runs short to avoid session timeouts.")
+    st.markdown(
+        """
+        <style>
+        @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap");
+        :root {
+            --bg-1: #f4f1ea;
+            --bg-2: #e7f2ee;
+            --ink-1: #1e2a35;
+            --ink-2: #4b5b6b;
+            --accent: #1f8a70;
+            --accent-2: #f2a154;
+            --card: rgba(255, 255, 255, 0.9);
+            --border: rgba(30, 42, 53, 0.08);
+            --shadow: 0 10px 30px rgba(30, 42, 53, 0.08);
+            --radius: 18px;
+        }
+
+        html, body, [data-testid="stAppViewContainer"] {
+            background: radial-gradient(1200px 600px at 10% -10%, #ffffff 0%, var(--bg-1) 40%, var(--bg-2) 100%);
+            color: var(--ink-1);
+            font-family: "IBM Plex Sans", sans-serif;
+        }
+
+        [data-testid="stSidebar"] {
+            background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(245, 242, 236, 0.95));
+            border-right: 1px solid var(--border);
+        }
+
+        .block-container {
+            padding-top: 2.2rem;
+            max-width: 1200px;
+        }
+
+        h1, h2, h3, h4 {
+            font-family: "Space Grotesk", sans-serif;
+            color: var(--ink-1);
+            letter-spacing: -0.02em;
+        }
+
+        h1 {
+            font-size: 2.7rem;
+            margin-bottom: 0.4rem;
+        }
+
+        h2 {
+            font-size: 1.4rem;
+            margin-top: 2rem;
+        }
+
+        .hero {
+            background: linear-gradient(120deg, rgba(31, 138, 112, 0.12), rgba(242, 161, 84, 0.14));
+            border: 1px solid var(--border);
+            border-radius: calc(var(--radius) + 4px);
+            padding: 1.6rem 1.8rem;
+            box-shadow: var(--shadow);
+            animation: rise 0.6s ease-out;
+        }
+
+        .hero__badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.2rem 0.7rem;
+            background: rgba(31, 138, 112, 0.12);
+            color: var(--accent);
+            border-radius: 999px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .hero__subtitle {
+            color: var(--ink-2);
+            margin-top: 0.4rem;
+            font-size: 1rem;
+        }
+
+        .status-row {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-weight: 600;
+            color: var(--ink-1);
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #8b98a7;
+            box-shadow: 0 0 0 4px rgba(139, 152, 167, 0.12);
+        }
+
+        .status-dot.ok {
+            background: #31b072;
+            box-shadow: 0 0 0 4px rgba(49, 176, 114, 0.18);
+        }
+
+        .card-surface {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1.2rem;
+            box-shadow: var(--shadow);
+            animation: fadeIn 0.6s ease-out;
+        }
+
+        div[data-testid="stForm"], div[data-testid="stExpander"] {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 0.6rem 0.8rem;
+            box-shadow: var(--shadow);
+        }
+
+        div.stButton > button {
+            background: linear-gradient(120deg, var(--accent), #2aa385);
+            color: #fff;
+            border: none;
+            border-radius: 12px;
+            padding: 0.45rem 1rem;
+            font-weight: 600;
+            transition: transform 0.15s ease, box-shadow 0.2s ease;
+            box-shadow: 0 6px 14px rgba(31, 138, 112, 0.2);
+        }
+
+        div.stButton > button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 18px rgba(31, 138, 112, 0.25);
+        }
+
+        input, textarea {
+            border-radius: 12px !important;
+        }
+
+        div[data-baseweb="input"] input,
+        div[data-baseweb="textarea"] textarea,
+        div[data-baseweb="select"] > div {
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid var(--border);
+        }
+
+        hr {
+            border: none;
+            height: 1px;
+            background: linear-gradient(90deg, rgba(31,138,112,0.0), rgba(31,138,112,0.35), rgba(31,138,112,0.0));
+        }
+
+        @keyframes rise {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @media (max-width: 900px) {
+            .block-container { padding-top: 1.4rem; }
+            h1 { font-size: 2.1rem; }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        """
+        <div class="hero">
+            <span class="hero__badge">Selenium workspace</span>
+            <h1>Reddit Reply Helper</h1>
+            <div class="hero__subtitle">Search -> draft -> fill (optional auto-submit). Keep runs short to avoid session timeouts.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     if not require_auth():
         return
@@ -162,7 +337,12 @@ def main() -> None:
         bot_active = bool(st.session_state.get("bot"))
         bot = st.session_state.get("bot")
         driver_alive = bool(getattr(bot, "driver", None) and getattr(getattr(bot, "driver", None), "session_id", None))
-        st.write(f"{'🟢 Ready' if bot_active else '🔴 Not started'}")
+        status_text = "Ready" if bot_active else "Not started"
+        status_class = "ok" if bot_active else ""
+        st.markdown(
+            f"<div class='status-row'><span class='status-dot {status_class}'></span>{status_text}</div>",
+            unsafe_allow_html=True,
+        )
         if driver_alive:
             current_url = getattr(getattr(bot, "driver", None), "current_url", "") or ""
             st.caption(f"Driver alive • {current_url[:40] + '...' if len(current_url) > 43 else current_url}")

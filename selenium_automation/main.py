@@ -626,7 +626,8 @@ class RedditAutomation:
             self._delay(0.8, 1.4, "subreddit_load")
             
             # Wait for dynamic content to load
-            if not self._wait_for_reddit_content(timeout=15):
+            wait_timeout = int(os.getenv("SELENIUM_CONTENT_TIMEOUT", "30") or 30)
+            if not self._wait_for_reddit_content(timeout=wait_timeout):
                 logger.warning("Timed out waiting for modern Reddit content; scraping anyway.")
             
             # Dismiss popups
@@ -660,7 +661,7 @@ class RedditAutomation:
             logger.error(f"Search error: {e}")
             return []
 
-    def _wait_for_reddit_content(self, timeout: int = 15) -> bool:
+    def _wait_for_reddit_content(self, timeout: int = 30) -> bool:
         """Wait for modern Reddit content to render."""
         if not self.driver or not self.browser_manager:
             return False
