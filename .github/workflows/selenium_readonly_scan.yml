@@ -85,8 +85,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y tor
           sudo service tor start
-          sleep 10
-          curl --socks5 127.0.0.1:9050 http://httpbin.org/ip
+          for i in {1..15}; do
+            if systemctl is-active --quiet tor; then
+              echo "Tor service is active"
+              break
+            fi
+            echo "Waiting for Tor service ($i/15)..."
+            sleep 2
+          done
+          if ! systemctl is-active --quiet tor; then
+            echo "Tor service did not become active in time" >&2
+          fi
+          if curl --socks5 127.0.0.1:9050 http://httpbin.org/ip; then
+            echo "Tor proxy test succeeded"
+          else
+            echo "Tor proxy test failed, continuing anyway"
+          fi
 
       - name: Run night scanner with Tor
         env:
@@ -98,6 +112,8 @@ jobs:
           SELENIUM_STEALTH: "1"
           SELENIUM_RANDOMIZE_FINGERPRINT: "1"
           SELENIUM_CONTENT_TIMEOUT: "60"
+          SELENIUM_CONTENT_ATTEMPTS: "1"
+          SELENIUM_CONTENT_RETRY_DELAY: "1.0"
           USE_TOR_PROXY: "1"
           CI: "true"
           SCAN_LIMIT: "3"

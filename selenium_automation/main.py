@@ -630,9 +630,15 @@ class RedditAutomation:
             self.driver.get(target_url)
             self._delay(0.8, 1.4, "subreddit_load")
             
-            # Wait for dynamic content to load
+            # Wait for dynamic content to load (configurable retries)
             wait_timeout = int(os.getenv("SELENIUM_CONTENT_TIMEOUT", "30") or 30)
-            if not self._wait_for_reddit_content(timeout=wait_timeout):
+            max_attempts = int(os.getenv("SELENIUM_CONTENT_ATTEMPTS", "1") or 1)
+            retry_delay = float(os.getenv("SELENIUM_CONTENT_RETRY_DELAY", "1.0") or 1.0)
+            if not self._wait_for_reddit_content(
+                timeout=wait_timeout,
+                max_attempts=max_attempts,
+                retry_delay=retry_delay,
+            ):
                 logger.warning("Timed out waiting for modern Reddit content; scraping anyway.")
             
             # Dismiss popups
@@ -672,11 +678,36 @@ class RedditAutomation:
             logger.error(f"Search error: {e}")
             return []
 
-    def _wait_for_reddit_content(self, timeout: int = 30) -> bool:
-        """Wait for modern Reddit content to render, retrying across selectors."""
+    def _wait_for_reddit_content(
+        self,
+        timeout: int = 30,
+        max_attempts: int = 1,
+        retry_delay: float = 1.0,
+    ) -> bool:
+        """Wait for modern Reddit content to render, with optional retries."""
         if not self.driver or not self.browser_manager:
             return False
 
+        max_attempts = max(1, max_attempts)
+        retry_delay = max(0.0, retry_delay)
+
+        for attempt in range(max_attempts):
+            last_attempt = attempt == max_attempts - 1
+            if self._try_detect_reddit_content(timeout, capture_debug=last_attempt):
+                return True
+
+            if not last_attempt:
+                logger.info(f"No content found on attempt {attempt + 1}/{max_attempts}, retrying...")
+                self._delay(retry_delay, retry_delay + 0.5, "content_retry")
+
+        return False
+
+    def _try_detect_reddit_content(
+        self,
+        timeout: int,
+        capture_debug: bool = True,
+    ) -> bool:
+        """Single-pass detection of modern Reddit selectors."""
         selectors = [
             "shreddit-post",
             "shreddit-feed",
@@ -702,8 +733,10 @@ class RedditAutomation:
         if self._check_body_has_content():
             return True
 
-        self._debug_log_selector_counts(selectors)
-        self._save_content_screenshot()
+        if capture_debug:
+            self._debug_log_selector_counts(selectors)
+            self._save_content_screenshot()
+
         return False
 
     def _check_body_has_content(self, min_chars: int = 80) -> bool:
