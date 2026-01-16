@@ -147,26 +147,102 @@ def main() -> None:
         <style>
         @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap");
         :root {
-            --bg-1: #f4f1ea;
-            --bg-2: #e7f2ee;
-            --ink-1: #1e2a35;
-            --ink-2: #4b5b6b;
-            --accent: #1f8a70;
-            --accent-2: #f2a154;
-            --card: rgba(255, 255, 255, 0.9);
-            --border: rgba(30, 42, 53, 0.08);
-            --shadow: 0 10px 30px rgba(30, 42, 53, 0.08);
+            --background: #fbf7ff;
+            --foreground: #3b2a63;
+            --card: #ffffff;
+            --card-foreground: #3b2a63;
+            --muted: #f7f1ff;
+            --muted-foreground: #6c6f9f;
+            --primary: #7c3aed;
+            --primary-foreground: #ffffff;
+            --accent: #8b5cf6;
+            --accent-2: #a855f7;
+            --border: #d9c7f5;
+            --ring: #d4bfff;
+            --sidebar: #faf5ff;
+            --sidebar-foreground: #3b2a63;
+            --chart-1: oklch(0.646 0.222 41.116);
+            --chart-2: oklch(0.6 0.118 184.704);
+            --chart-3: oklch(0.398 0.07 227.392);
+            --chart-4: oklch(0.828 0.189 84.429);
+            --chart-5: oklch(0.769 0.188 70.08);
+            --shadow: 0 12px 28px rgba(59, 42, 99, 0.1);
             --radius: 18px;
+
+            --core-purple-1: #3b2a63;
+            --core-purple-2: #4a2f8f;
+            --core-purple-3: #5b35b0;
+            --core-purple-4: #5b3ba4;
+            --core-purple-5: #6a3fc6;
+            --core-purple-6: #6f4bb3;
+            --core-purple-7: #7a5bcf;
+            --core-purple-8: #7b5cb8;
+
+            --purple-surface-1: #d9c7f5;
+            --purple-surface-2: #d4bfff;
+            --purple-surface-3: #dcc7ff;
+            --purple-surface-4: #e5d8ff;
+            --purple-surface-5: #e5dcff;
+            --purple-surface-6: #e9d5ff;
+            --purple-surface-7: #eadcff;
+            --purple-surface-8: #eadcf7;
+            --purple-surface-9: #e6d7ff;
+            --purple-surface-10: #f0e5ff;
+            --purple-surface-11: #f3e9ff;
+            --purple-surface-12: #f4ecff;
+            --purple-surface-13: #f6efff;
+            --purple-surface-14: #f6f0ff;
+            --purple-surface-15: #f7f0ff;
+            --purple-surface-16: #f7f1ff;
+            --purple-surface-17: #f8f5ff;
+            --purple-surface-18: #faf5ff;
+            --purple-surface-19: #fbf7ff;
+
+            --chart-series-1: #7c3aed;
+            --chart-series-2: #8b5cf6;
+            --chart-series-3: #a78bfa;
+            --chart-series-4: #a855f7;
+            --chart-series-5: #c084fc;
+
+            --dark-surface-1: #1a0f2b;
+            --dark-surface-2: #1b0f2b;
+            --dark-surface-3: #201338;
+            --dark-surface-4: #23143c;
+            --dark-surface-5: #24133b;
+
+            --blue-1: #0b7bb5;
+            --blue-2: #0f2740;
+            --blue-3: #9cd3ff;
+            --blue-4: #e6f5ff;
+
+            --warm-1: #cb912f;
+            --warm-2: #f6c28b;
+            --warm-3: #f8f1e7;
+            --warm-4: #f5ebff;
+            --warm-5: #f9f1ff;
+            --warm-6: #fdf7f0;
+
+            --neutral-1: #ccc;
+            --neutral-2: #fff;
+            --neutral-3: #ffffff;
+
+            --email-1: #181b46;
+            --email-2: #6c6f9f;
+            --email-3: #ab4eb8;
+            --email-4: #cb912f;
+            --email-5: #eadcf7;
+            --email-6: #eaf0f6;
+            --email-7: #ffffff;
         }
 
         html, body, [data-testid="stAppViewContainer"] {
-            background: radial-gradient(1200px 600px at 10% -10%, #ffffff 0%, var(--bg-1) 40%, var(--bg-2) 100%);
-            color: var(--ink-1);
+            background: radial-gradient(1200px 600px at 12% -10%, #ffffff 0%, var(--muted) 45%, #fdf7f0 100%);
+            color: var(--foreground);
             font-family: "IBM Plex Sans", sans-serif;
         }
 
         [data-testid="stSidebar"] {
-            background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(245, 242, 236, 0.95));
+            background: linear-gradient(180deg, var(--sidebar), #f6efff);
             border-right: 1px solid var(--border);
         }
 
@@ -177,7 +253,7 @@ def main() -> None:
 
         h1, h2, h3, h4 {
             font-family: "Space Grotesk", sans-serif;
-            color: var(--ink-1);
+            color: var(--foreground);
             letter-spacing: -0.02em;
         }
 
@@ -192,8 +268,8 @@ def main() -> None:
         }
 
         .hero {
-            background: linear-gradient(120deg, rgba(31, 138, 112, 0.12), rgba(242, 161, 84, 0.14));
-            border: 1px solid var(--border);
+            background: linear-gradient(120deg, #f5ebff, #fdf7f0);
+            border: 1px solid #eadcff;
             border-radius: calc(var(--radius) + 4px);
             padding: 1.6rem 1.8rem;
             box-shadow: var(--shadow);
@@ -205,8 +281,8 @@ def main() -> None:
             align-items: center;
             gap: 0.4rem;
             padding: 0.2rem 0.7rem;
-            background: rgba(31, 138, 112, 0.12);
-            color: var(--accent);
+            background: #eadcff;
+            color: var(--primary);
             border-radius: 999px;
             font-size: 0.78rem;
             font-weight: 600;
@@ -215,7 +291,7 @@ def main() -> None:
         }
 
         .hero__subtitle {
-            color: var(--ink-2);
+            color: var(--muted-foreground);
             margin-top: 0.4rem;
             font-size: 1rem;
         }
@@ -225,7 +301,7 @@ def main() -> None:
             align-items: center;
             gap: 0.5rem;
             font-weight: 600;
-            color: var(--ink-1);
+            color: var(--foreground);
         }
 
         .status-dot {
@@ -242,8 +318,8 @@ def main() -> None:
         }
 
         .card-surface {
-            background: var(--card);
-            border: 1px solid var(--border);
+            background: #ffffff;
+            border: 1px solid #e5d8ff;
             border-radius: var(--radius);
             padding: 1.2rem;
             box-shadow: var(--shadow);
@@ -251,27 +327,27 @@ def main() -> None:
         }
 
         div[data-testid="stForm"], div[data-testid="stExpander"] {
-            background: var(--card);
-            border: 1px solid var(--border);
+            background: #ffffff;
+            border: 1px solid #e5d8ff;
             border-radius: var(--radius);
             padding: 0.6rem 0.8rem;
             box-shadow: var(--shadow);
         }
 
         div.stButton > button {
-            background: linear-gradient(120deg, var(--accent), #2aa385);
+            background: linear-gradient(120deg, #7c3aed, #8b5cf6);
             color: #fff;
             border: none;
             border-radius: 12px;
             padding: 0.45rem 1rem;
             font-weight: 600;
             transition: transform 0.15s ease, box-shadow 0.2s ease;
-            box-shadow: 0 6px 14px rgba(31, 138, 112, 0.2);
+            box-shadow: 0 10px 20px rgba(124, 58, 237, 0.22);
         }
 
         div.stButton > button:hover {
             transform: translateY(-1px);
-            box-shadow: 0 10px 18px rgba(31, 138, 112, 0.25);
+            box-shadow: 0 14px 22px rgba(124, 58, 237, 0.26);
         }
 
         input, textarea {
@@ -281,14 +357,14 @@ def main() -> None:
         div[data-baseweb="input"] input,
         div[data-baseweb="textarea"] textarea,
         div[data-baseweb="select"] > div {
-            background: rgba(255, 255, 255, 0.9);
-            border: 1px solid var(--border);
+            background: #ffffff;
+            border: 1px solid #eadcff;
         }
 
         hr {
             border: none;
             height: 1px;
-            background: linear-gradient(90deg, rgba(31,138,112,0.0), rgba(31,138,112,0.35), rgba(31,138,112,0.0));
+            background: linear-gradient(90deg, rgba(124, 58, 237, 0.0), rgba(124, 58, 237, 0.35), rgba(124, 58, 237, 0.0));
         }
 
         @keyframes rise {

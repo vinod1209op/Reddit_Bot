@@ -21,7 +21,7 @@ import sys
 import time as time_mod
 from datetime import datetime, time, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 from urllib.parse import urlparse, urlunparse
 
 try:
@@ -57,6 +57,7 @@ MOCK_POSTS: List[Mapping[str, str]] = [
 
 SUMMARY_HEADER = [
     "run_id",
+    "account",
     "timestamp_utc",
     "timestamp_local",
     "timezone",
@@ -166,6 +167,29 @@ def extract_schedule_windows(schedule: Dict[str, Any]) -> Tuple[Optional[str], O
     return (", ".join(parts) if parts else None), tz_name
 
 
+def load_accounts(path: Path, names_filter: Optional[Set[str]] = None) -> List[Dict[str, Any]]:
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        print(f"Could not read accounts file {path}: {exc}")
+        return []
+    if not isinstance(data, list):
+        print(f"Accounts file {path} should contain a JSON list.")
+        return []
+    accounts = []
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("name", "") or "").strip()
+        if names_filter and name not in names_filter:
+            continue
+        cookies_path = str(entry.get("cookies_path") or entry.get("cookie_path") or "").strip()
+        accounts.append({"name": name, "cookies_path": cookies_path})
+    return accounts
+
+
 def scan_posts(
     posts: Iterable,
     keywords: Sequence[str],
@@ -190,6 +214,7 @@ def scan_posts(
 def log_summary(
     path: Path,
     run_id: str,
+    account: str,
     tz_name: str,
     scan_window: str,
     mode: str,
@@ -200,6 +225,7 @@ def log_summary(
     local_time = datetime.now(ZoneInfo(tz_name)).isoformat()
     row = {
         "run_id": run_id,
+        "account": account,
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "timestamp_local": local_time,
         "timezone": tz_name,
@@ -238,6 +264,7 @@ def queue_key(entry: Mapping[str, Any]) -> str:
 def add_to_queue(
     path: Path,
     run_id: str,
+    account: str,
     tz_name: str,
     scan_window: str,
     mode: str,
@@ -252,6 +279,7 @@ def add_to_queue(
         return
     entry = {
         "run_id": run_id,
+        "account": account,
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "timestamp_local": datetime.now(ZoneInfo(tz_name)).isoformat(),
         "timezone": tz_name,
@@ -307,6 +335,16 @@ def main() -> None:
     parser.add_argument("--jitter-max", type=float, default=float(os.getenv("SCAN_JITTER_MAX", "8")))
     parser.add_argument("--max-subreddits", type=int, default=int(os.getenv("SCAN_MAX_SUBREDDITS", "0")))
     parser.add_argument(
+        "--accounts-path",
+        default=os.getenv("SCAN_ACCOUNTS_PATH", ""),
+        help="Optional accounts JSON for multi-account selenium scans",
+    )
+    parser.add_argument(
+        "--account-names",
+        default=os.getenv("SCAN_ACCOUNT_NAMES", ""),
+        help="Comma-separated account names to include (optional)",
+    )
+    parser.add_argument(
         "--reset-logs",
         action="store_true",
         help="Overwrite summary log for this run (queue is preserved)",
@@ -341,6 +379,10 @@ def main() -> None:
         args.max_subreddits = int(schedule["max_subreddits"])
     if "reset_logs" in schedule and not _cli_flag_present("--reset-logs") and not os.getenv("SCAN_RESET_LOGS"):
         args.reset_logs = _truthy(schedule["reset_logs"])
+    if "accounts_path" in schedule and not _cli_flag_present("--accounts-path") and not os.getenv("SCAN_ACCOUNTS_PATH"):
+        args.accounts_path = str(schedule["accounts_path"])
+    if "account_names" in schedule and not _cli_flag_present("--account-names") and not os.getenv("SCAN_ACCOUNT_NAMES"):
+        args.account_names = str(schedule["account_names"])
 
     tz = ZoneInfo(args.timezone)
     now_local = datetime.now(tz)
@@ -393,51 +435,88 @@ def main() -> None:
 
     if mode == "selenium":
         from selenium_automation.main import RedditAutomation
+        account_names = {name.strip() for name in args.account_names.split(",") if name.strip()}
+        accounts = []
+        if args.accounts_path:
+            accounts = load_accounts(Path(args.accounts_path), account_names or None)
+            if not accounts:
+                print(f"No accounts loaded from {args.accounts_path}. Exiting.")
+                return
 
-        bot = RedditAutomation(config=config)
-        if not bot.setup():
-            print("Browser setup failed; exiting.")
-            return
-        if not bot.login(use_cookies_only=True):
-            print("Cookie login failed or not available; exiting to avoid prompts.")
-            bot.close()
-            return
+        def run_selenium_scan(account: str, cookie_path: str) -> None:
+            if cookie_path:
+                config.selenium_settings["cookie_file"] = cookie_path
 
-        try:
-            for subreddit in subreddits:
-                jitter_sleep(args.jitter_min, args.jitter_max)
-                posts = bot.search_posts(subreddit=subreddit, limit=args.limit, include_body=False, include_comments=False)
-                scanned_count = 0
-                matched_count = 0
-                for post in posts:
-                    scanned_count += 1
-                    title = post.get("title", "")
-                    body = post.get("body", "")
-                    combined = f"{title} {body}".lower()
-                    hits = matched_keywords(combined, keywords)
-                    if hits:
-                        matched_count += 1
-                        info = {
-                            "id": post.get("id", ""),
-                            "subreddit": post.get("subreddit", subreddit),
-                            "title": title,
-                            "body": body,
-                            "url": normalize_reddit_url(post.get("url", "")),
-                        }
-                        method = post.get("method", "selenium")
-                        add_to_queue(queue_path, run_id, args.timezone, active_window[2], mode, info, hits, method)
-                log_summary(
-                    summary_path,
-                    run_id,
-                    args.timezone,
-                    active_window[2],
-                    mode,
-                    subreddit,
-                    scanned_count,
-                    matched_count,
-                )
-        finally:
-            bot.close()
+            bot = RedditAutomation(config=config)
+            if not bot.setup():
+                print(f"Browser setup failed for account {account or 'default'}; skipping.")
+                return
+            if not bot.login(use_cookies_only=True):
+                print(f"Cookie login failed for account {account or 'default'}; skipping.")
+                bot.close()
+                return
+
+            try:
+                for subreddit in subreddits:
+                    jitter_sleep(args.jitter_min, args.jitter_max)
+                    posts = bot.search_posts(subreddit=subreddit, limit=args.limit, include_body=False, include_comments=False)
+                    scanned_count = 0
+                    matched_count = 0
+                    for post in posts:
+                        scanned_count += 1
+                        title = post.get("title", "")
+                        body = post.get("body", "")
+                        combined = f"{title} {body}".lower()
+                        hits = matched_keywords(combined, keywords)
+                        if hits:
+                            matched_count += 1
+                            info = {
+                                "id": post.get("id", ""),
+                                "subreddit": post.get("subreddit", subreddit),
+                                "title": title,
+                                "body": body,
+                                "url": normalize_reddit_url(post.get("url", "")),
+                            }
+                            method = post.get("method", "selenium")
+                            add_to_queue(
+                                queue_path,
+                                run_id,
+                                account,
+                                args.timezone,
+                                active_window[2],
+                                mode,
+                                info,
+                                hits,
+                                method,
+                            )
+                    log_summary(
+                        summary_path,
+                        run_id,
+                        account,
+                        args.timezone,
+                        active_window[2],
+                        mode,
+                        subreddit,
+                        scanned_count,
+                        matched_count,
+                    )
+            finally:
+                bot.close()
+
+        if accounts:
+            for account in accounts:
+                account_name = account.get("name", "")
+                cookie_path = account.get("cookies_path", "")
+                if not cookie_path:
+                    print(f"Skipping account {account_name or '(unnamed)'}: missing cookies_path.")
+                    continue
+                if not Path(cookie_path).exists():
+                    print(f"Skipping account {account_name or '(unnamed)'}: cookie file not found at {cookie_path}.")
+                    continue
+                run_selenium_scan(account_name, cookie_path)
+        else:
+            run_selenium_scan("", config.selenium_settings.get("cookie_file", "cookies.pkl"))
+
         print(f"Scan complete. Logged queue to {queue_path}.")
         return
 
@@ -448,10 +527,11 @@ def main() -> None:
             matched_count = 0
             for info, hits in scan_posts(MOCK_POSTS, keywords, subreddit):
                 matched_count += 1
-                add_to_queue(queue_path, run_id, args.timezone, active_window[2], "mock", info, hits, "mock")
+                add_to_queue(queue_path, run_id, "", args.timezone, active_window[2], "mock", info, hits, "mock")
             log_summary(
                 summary_path,
                 run_id,
+                "",
                 args.timezone,
                 active_window[2],
                 "mock",
@@ -483,10 +563,11 @@ def main() -> None:
             hits = matched_keywords(combined, keywords)
             if hits:
                 matched_count += 1
-                add_to_queue(queue_path, run_id, args.timezone, active_window[2], mode, info, hits, "api")
+                add_to_queue(queue_path, run_id, "", args.timezone, active_window[2], mode, info, hits, "api")
         log_summary(
             summary_path,
             run_id,
+            "",
             args.timezone,
             active_window[2],
             mode,

@@ -1,4 +1,6 @@
 {
+  "timezone": "America/Los_Angeles",
+  "login_method": "cookies_then_google",
   "time_windows": [
     {
       "name": "early_morning",
@@ -17,6 +19,10 @@
       "actions": ["browse", "view_posts", "scroll", "vote", "save", "follow"]
     }
   ],
+  "allow_voting": false,
+  "allow_saving": false,
+  "allow_following": false,
+  "allow_notifications_check": true,
   "activity_mix": {
     "browse_subreddit": 35,
     "view_posts": 25,
@@ -25,6 +31,50 @@
     "save": 5,
     "follow": 5,
     "check_notifications": 5
+  },
+  "profiles": {
+    "researcher": {
+      "activity_mix": {
+        "browse_subreddit": 30,
+        "view_posts": 40,
+        "scroll_comments": 25,
+        "check_notifications": 5
+      },
+      "randomization": {
+        "session_length_minutes": {
+          "min": 20,
+          "max": 45
+        }
+      }
+    },
+    "casual_reader": {
+      "activity_mix": {
+        "browse_subreddit": 45,
+        "view_posts": 25,
+        "scroll_comments": 20,
+        "check_notifications": 10
+      },
+      "randomization": {
+        "session_length_minutes": {
+          "min": 10,
+          "max": 30
+        }
+      }
+    },
+    "night_owl": {
+      "activity_mix": {
+        "browse_subreddit": 30,
+        "view_posts": 30,
+        "scroll_comments": 30,
+        "check_notifications": 10
+      },
+      "randomization": {
+        "session_length_minutes": {
+          "min": 25,
+          "max": 60
+        }
+      }
+    }
   },
   "randomization": {
     "delay_between_actions": {
