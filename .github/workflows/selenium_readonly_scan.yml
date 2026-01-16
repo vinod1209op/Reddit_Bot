@@ -120,12 +120,20 @@ jobs:
           SCAN_MAX_SUBREDDITS: "0"
         run: |
           echo "Starting Tor-based scan..."
+          WINDOWS_ARG=""
+          if [ -n "${{ github.event.inputs.windows }}" ]; then
+            WINDOWS_ARG="--windows ${{ github.event.inputs.windows }}"
+          elif [ "${{ github.event.inputs.force_run }}" = "true" ]; then
+            WINDOWS_ARG="--windows 00:00-23:59"
+          fi
+
           python scripts/night_scanner.py \
             --mode selenium \
             --limit 25 \
             --max-subreddits 0 \
             --jitter-min 10 \
-            --jitter-max 20
+            --jitter-max 20 \
+            $WINDOWS_ARG
 
       - name: Upload scan results
         if: always()
