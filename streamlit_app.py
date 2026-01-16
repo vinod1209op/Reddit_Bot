@@ -58,6 +58,13 @@ def ensure_bot(cfg: ConfigManager) -> Optional[RedditAutomation]:
     # Login best-effort (may rely on saved cookies)
     if not bot.login():
         st.warning("Login might be required; ensure cookies/creds are valid.")
+    else:
+        try:
+            cookie_path = PROJECT_ROOT / "cookies.pkl"
+            bot.save_login_cookies(str(cookie_path))
+            st.info(f"Cookies saved to {cookie_path}")
+        except Exception:
+            st.warning("Logged in, but could not save cookies.")
 
     st.session_state.bot = bot
     return bot

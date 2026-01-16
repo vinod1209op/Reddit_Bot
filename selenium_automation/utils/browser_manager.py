@@ -256,7 +256,9 @@ class BrowserManager:
             element = wait.until(EC.presence_of_element_located((by, value)))
             return element
         except Exception as e:
-            logger.warning(f"Element not found: {by}={value} - {e}")
+            warn = _env_flag("SELENIUM_WAIT_WARN", False)
+            level = logging.WARNING if warn else logging.DEBUG
+            logger.log(level, f"Element not found: {by}={value} - {e}")
             return None
     
     def wait_for_clickable(self, driver, by, value, timeout=None):
@@ -271,7 +273,9 @@ class BrowserManager:
             element = wait.until(EC.element_to_be_clickable((by, value)))
             return element
         except Exception as e:
-            logger.warning(f"Element not clickable: {by}={value} - {e}")
+            warn = _env_flag("SELENIUM_WAIT_WARN", False)
+            level = logging.WARNING if warn else logging.DEBUG
+            logger.log(level, f"Element not clickable: {by}={value} - {e}")
             return None
     
     def scroll_to_element(self, driver, element):
