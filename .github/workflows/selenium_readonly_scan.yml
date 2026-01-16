@@ -116,14 +116,14 @@ jobs:
           SELENIUM_CONTENT_RETRY_DELAY: "1.0"
           USE_TOR_PROXY: "1"
           CI: "true"
-          SCAN_LIMIT: "3"
-          SCAN_MAX_SUBREDDITS: "2"
+          SCAN_LIMIT: "25"
+          SCAN_MAX_SUBREDDITS: "0"
         run: |
           echo "Starting Tor-based scan..."
           python scripts/night_scanner.py \
             --mode selenium \
-            --limit 3 \
-            --max-subreddits 2 \
+            --limit 25 \
+            --max-subreddits 0 \
             --jitter-min 10 \
             --jitter-max 20
 
