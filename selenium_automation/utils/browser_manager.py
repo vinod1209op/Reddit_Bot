@@ -229,22 +229,35 @@ class BrowserManager:
 
         driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
             "source": """
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined
+            const defineProp = (target, name, descriptor) => {
+                try {
+                    Object.defineProperty(target, name, descriptor);
+                } catch (err) {
+                    if (err && err.message && err.message.includes('Cannot redefine property')) {
+                        return;
+                    }
+                    throw err;
+                }
+            };
+
+            defineProp(navigator, 'webdriver', {
+                get: () => undefined,
+                configurable: true
             });
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5]
+            defineProp(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5],
+                configurable: true
             });
-            Object.defineProperty(navigator, 'languages', {
-                get: () => ['en-US', 'en']
+            defineProp(navigator, 'languages', {
+                get: () => ['en-US', 'en'],
+                configurable: true
             });
 
-            window.chrome = {
-                runtime: {},
-                loadTimes: function(){},
-                csi: function(){},
-                app: {}
-            };
+            window.chrome = window.chrome || {};
+            window.chrome.runtime = window.chrome.runtime || {};
+            window.chrome.loadTimes = function(){};
+            window.chrome.csi = function(){};
+            window.chrome.app = window.chrome.app || {};
 
             const originalQuery = window.navigator.permissions.query;
             window.navigator.permissions.query = (parameters) => (
@@ -261,9 +274,12 @@ class BrowserManager:
         })
 
         driver.execute_script("""
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined
-            });
+            if (!Object.getOwnPropertyDescriptor(navigator, 'webdriver')?.configurable) {
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined,
+                    configurable: true
+                });
+            }
         """)
 
         logger.info("Created anti-block Chrome driver for CI")
