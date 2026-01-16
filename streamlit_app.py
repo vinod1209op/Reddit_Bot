@@ -149,7 +149,7 @@ def main() -> None:
         :root {
             --background: #fbf7ff;
             --foreground: #3b2a63;
-            --card: #ffffff;
+            --card: #f6efff;
             --card-foreground: #3b2a63;
             --muted: #f7f1ff;
             --muted-foreground: #6c6f9f;
@@ -318,7 +318,7 @@ def main() -> None:
         }
 
         .card-surface {
-            background: #ffffff;
+            background: var(--card);
             border: 1px solid #e5d8ff;
             border-radius: var(--radius);
             padding: 1.2rem;
@@ -327,7 +327,7 @@ def main() -> None:
         }
 
         div[data-testid="stForm"], div[data-testid="stExpander"] {
-            background: #ffffff;
+            background: var(--card);
             border: 1px solid #e5d8ff;
             border-radius: var(--radius);
             padding: 0.6rem 0.8rem;
@@ -357,7 +357,7 @@ def main() -> None:
         div[data-baseweb="input"] input,
         div[data-baseweb="textarea"] textarea,
         div[data-baseweb="select"] > div {
-            background: #ffffff;
+            background: var(--card);
             border: 1px solid #eadcff;
         }
 

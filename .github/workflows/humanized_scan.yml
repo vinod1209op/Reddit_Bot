@@ -1,4 +1,4 @@
-name: Reddit Selenium Read-Only Scan
+name: Reddit Humanized Scan
 
 on:
   schedule:
@@ -17,9 +17,9 @@ on:
         default: ""
 
 jobs:
-  selenium_scan:
+  humanized_scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - name: Checkout
@@ -107,7 +107,7 @@ jobs:
             echo "Tor proxy test failed, continuing anyway"
           fi
 
-      - name: Run night scanner with Tor
+      - name: Run humanized night scanner with Tor
         env:
           BOT_MODE: selenium
           ENABLE_POSTING: "0"
@@ -124,27 +124,20 @@ jobs:
           SCAN_LIMIT: "25"
           SCAN_MAX_SUBREDDITS: "0"
         run: |
-          echo "Starting Tor-based scan..."
+          echo "Starting humanized scan..."
           WINDOWS_ARG=""
           if [ -n "${{ github.event.inputs.windows }}" ]; then
             WINDOWS_ARG="--windows ${{ github.event.inputs.windows }}"
           elif [ "${{ github.event.inputs.force_run }}" = "true" ]; then
             WINDOWS_ARG="--windows 00:00-23:59"
           fi
-
-          python scripts/night_scanner.py \
-            --mode selenium \
-            --limit 25 \
-            --max-subreddits 0 \
-            --jitter-min 10 \
-            --jitter-max 20 \
-            $WINDOWS_ARG
+          python scripts/humanized_night_scanner.py $WINDOWS_ARG
 
       - name: Upload scan results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: scan-results
+          name: humanized-scan-results
           path: |
             logs/
             data/

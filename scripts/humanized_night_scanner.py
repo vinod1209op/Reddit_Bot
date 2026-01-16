@@ -9,7 +9,6 @@ Updated to use refactored BrowserManager and LoginManager classes.
 import copy
 import time
 import random
-import json
 import os
 from datetime import datetime
 from pathlib import Path
@@ -26,7 +25,14 @@ from selenium_automation.utils.engagement_actions import EngagementActions
 from selenium_automation.login_manager import LoginManager
 from selenium_automation.utils.browser_manager import BrowserManager
 from shared.config_manager import ConfigManager
+from shared.scan_store import (
+    build_run_paths,
+    load_seen,
+    QUEUE_DEFAULT_PATH,
+    SEEN_DEFAULT_PATH,
+)
 from shared.logger import UnifiedLogger
+from session_scanner import run_session_scan
 
 ACTION_ALIASES = {
     "browse": "browse_subreddit",
@@ -153,6 +159,7 @@ class HumanizedNightScanner:
             # Create BrowserManager with account-specific settings
             headless = resolve_headless(self.activity_config)
             use_undetected = resolve_use_undetected(self.activity_config)
+            os.environ["USE_TOR_PROXY"] = "1"
             self.browser_manager = BrowserManager(headless=headless)
             
             # Get driver with optional undetected Chrome
@@ -264,9 +271,13 @@ class HumanizedNightScanner:
                 'subreddits_browsed': 0
             }
             
-            # Load target subreddits
-            config_manager = ConfigManager()
-            subreddits = config_manager.load_json('config/subreddits.json')
+            # Load target subreddits (allow per-account sharding)
+            subreddits = self.account.get("subreddits")
+            if not isinstance(subreddits, list) or not subreddits:
+                config_manager = ConfigManager()
+                subreddits = config_manager.load_json('config/subreddits.json')
+            if not isinstance(subreddits, list):
+                subreddits = []
             
             self.logger.info(f"Starting {session_length} minute session for {self.account.get('name')}")
             
@@ -320,7 +331,7 @@ class HumanizedNightScanner:
         """Browse a subreddit with human-like behavior"""
         try:
             # Navigate to subreddit
-            self.driver.get(f"https://www.reddit.com/r/{subreddit_name}")
+            self.driver.get(f"https://old.reddit.com/r/{subreddit_name}")
             
             # Human-like delay
             self.browser_manager.add_human_delay(2, 4)
@@ -342,35 +353,26 @@ class HumanizedNightScanner:
     def view_random_posts(self):
         """Find and view random posts on current page"""
         try:
-            # Try multiple selectors for posts
-            selectors = [
-                '[data-test-id="post-container"]',
-                'article',
-                'shreddit-post',
-                'div.Post'
-            ]
-            
-            for selector in selectors:
-                try:
-                    posts = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                    if posts:
-                        # Take a random post from top 10
-                        post = random.choice(posts[:min(10, len(posts))])
-                        
-                        # Human-like reading sequence
-                        if self.human_sim:
-                            self.human_sim.read_post_sequence(post)
-                        else:
-                            # Fallback
-                            self.browser_manager.safe_click(self.driver, post)
-                            self.browser_manager.add_human_delay(3, 8)
-                            self.driver.back()
-                            self.browser_manager.add_human_delay(1, 2)
-                        
-                        return True
-                except:
-                    continue
-            
+            posts = self.driver.find_elements(By.CSS_SELECTOR, "div.thing")
+            if posts:
+                post = random.choice(posts[:min(10, len(posts))])
+                target = None
+                for selector in ("a.title", "a.comments"):
+                    try:
+                        target = post.find_element(By.CSS_SELECTOR, selector)
+                        break
+                    except Exception:
+                        continue
+                target = target or post
+
+                if self.human_sim:
+                    self.human_sim.read_post_sequence(target)
+                else:
+                    self.browser_manager.safe_click(self.driver, target)
+                    self.browser_manager.add_human_delay(3, 8)
+                    self.driver.back()
+                    self.browser_manager.add_human_delay(1, 2)
+                return True
             return False
             
         except Exception as e:
@@ -396,10 +398,18 @@ class HumanizedNightScanner:
     def view_random_post_in_current_subreddit(self):
         """View a random post in the current subreddit"""
         try:
-            posts = self.driver.find_elements(By.CSS_SELECTOR, '[data-test-id="post-container"]')
+            posts = self.driver.find_elements(By.CSS_SELECTOR, "div.thing")
             if posts:
                 post = random.choice(posts[:5])  # Only from top 5
-                self.browser_manager.safe_click(self.driver, post)
+                target = None
+                for selector in ("a.title", "a.comments"):
+                    try:
+                        target = post.find_element(By.CSS_SELECTOR, selector)
+                        break
+                    except Exception:
+                        continue
+                target = target or post
+                self.browser_manager.safe_click(self.driver, target)
                 self.browser_manager.add_human_delay(3, 6)
                 
                 # Scroll through the post
@@ -423,7 +433,7 @@ class HumanizedNightScanner:
                 return False
             
             # Find upvote buttons
-            upvote_buttons = self.driver.find_elements(By.CSS_SELECTOR, '[aria-label="upvote"]')
+            upvote_buttons = self.driver.find_elements(By.CSS_SELECTOR, "div.thing div.arrow.up")
             if upvote_buttons:
                 # Random chance to vote (30%)
                 if random.random() > 0.7:
@@ -474,27 +484,10 @@ class HumanizedNightScanner:
             # Check if notifications checking is allowed
             if not self.activity_config.get('allow_notifications_check', True):
                 return
-            
-            # Try to find notification bell
-            notification_selectors = [
-                '[aria-label="Open notifications"]',
-                '[data-test-id="notification-button"]',
-                'button[aria-label*="notification"]'
-            ]
-            
-            for selector in notification_selectors:
-                try:
-                    bell = self.driver.find_element(By.CSS_SELECTOR, selector)
-                    if bell:
-                        self.browser_manager.safe_click(self.driver, bell)
-                        self.browser_manager.add_human_delay(2, 4)
-                        
-                        # Close notifications
-                        self.driver.execute_script("document.activeElement.blur();")
-                        self.browser_manager.add_human_delay(1, 2)
-                        break
-                except:
-                    continue
+            self.driver.get("https://old.reddit.com/message/unread")
+            self.browser_manager.add_human_delay(2, 4)
+            self.driver.back()
+            self.browser_manager.add_human_delay(1, 2)
                     
         except Exception as e:
             self.logger.debug(f"Error checking notifications: {e}")
@@ -544,7 +537,28 @@ class MultiAccountOrchestrator:
         self.logger = UnifiedLogger("MultiAccountOrchestrator").get_logger()
         self.base_activity_config = activity_config or self.config_manager.load_json('config/activity_schedule.json') or {}
         self.active_window = active_window
+        self.scan_config = self.config_manager.load_all()
+        self.scan_schedule = self.config_manager.load_json("config/schedule.json") or {}
         self.accounts = self.load_accounts()
+        self.run_id = os.getenv("RUN_ID") or datetime.now().isoformat()
+        _, self.run_queue_path, self.run_summary_path = build_run_paths(self.run_id)
+        self.run_summary_path.parent.mkdir(parents=True, exist_ok=True)
+        self.queue_path = Path(os.getenv("SCAN_QUEUE_PATH", self.scan_schedule.get("queue_path", QUEUE_DEFAULT_PATH)))
+        self.summary_path = Path(os.getenv("SCAN_SUMMARY_PATH", self.scan_schedule.get("summary_path", "logs/night_scan_summary.csv")))
+        self.summary_path.parent.mkdir(parents=True, exist_ok=True)
+        self.seen_path = Path(os.getenv("SEEN_POSTS_PATH", SEEN_DEFAULT_PATH))
+        self.seen = set(load_seen(self.seen_path))
+        self.scan_limit = int(os.getenv("SCAN_LIMIT", self.scan_schedule.get("limit", 25)))
+        self.max_subreddits = int(os.getenv("SCAN_MAX_SUBREDDITS", self.scan_schedule.get("max_subreddits", 0)))
+        self.keywords = self.scan_config.bot_settings.get("keywords") or self.scan_config.default_keywords
+        schedule_tz = self.scan_schedule.get("timezone") or "America/Los_Angeles"
+        if self.active_window and self.active_window.get("timezone"):
+            schedule_tz = self.active_window["timezone"]
+        self.tz_name = schedule_tz
+        if self.active_window and self.active_window.get("start") and self.active_window.get("end"):
+            self.scan_window = f"{self.active_window['start']}-{self.active_window['end']}"
+        else:
+            self.scan_window = "manual"
     
     def load_accounts(self):
         """Load accounts from config"""
@@ -636,7 +650,7 @@ class MultiAccountOrchestrator:
         if not self.accounts:
             self.logger.error("No accounts configured")
             return
-        
+
         for account in self.accounts:
             scanner = None
             try:
@@ -664,6 +678,33 @@ class MultiAccountOrchestrator:
                     
                     if actions:
                         self.logger.info(f"Session completed for {account.get('name')}: {actions}")
+
+                    account_subreddits = account.get("subreddits") or (
+                        self.scan_config.bot_settings.get("subreddits") or self.scan_config.default_subreddits
+                    )
+                    if self.max_subreddits > 0:
+                        account_subreddits = account_subreddits[: self.max_subreddits]
+
+                    run_session_scan(
+                        driver=scanner.driver,
+                        browser_manager=scanner.browser_manager,
+                        login_manager=scanner.login_manager,
+                        config=self.scan_config,
+                        subreddits=account_subreddits,
+                        keywords=self.keywords,
+                        limit=self.scan_limit,
+                        queue_path=self.queue_path,
+                        summary_path=self.summary_path,
+                        run_queue_path=self.run_queue_path,
+                        run_summary_path=self.run_summary_path,
+                        seen=self.seen,
+                        seen_path=self.seen_path,
+                        run_id=self.run_id,
+                        account=account.get("name", ""),
+                        tz_name=self.tz_name,
+                        scan_window=self.scan_window,
+                        mode="selenium",
+                    )
                     
                     # Save cookies for next time
                     if scanner.login_manager and cookie_file:

@@ -19,10 +19,9 @@ import os
 import random
 import sys
 import time as time_mod
-from datetime import datetime, time, timezone
+from datetime import datetime, time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
-from urllib.parse import urlparse, urlunparse
 
 try:
     from zoneinfo import ZoneInfo
@@ -35,7 +34,18 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from shared.config_manager import ConfigManager
-from shared.api_utils import append_log, fetch_posts, matched_keywords, normalize_post, make_reddit_client
+from shared.api_utils import fetch_posts, matched_keywords, normalize_post, make_reddit_client
+from shared.scan_store import (
+    add_to_queue,
+    build_run_paths,
+    load_seen,
+    normalize_reddit_url,
+    save_seen,
+    seen_key,
+    log_summary,
+    QUEUE_DEFAULT_PATH,
+    SEEN_DEFAULT_PATH,
+)
 
 
 MOCK_POSTS: List[Mapping[str, str]] = [
@@ -54,21 +64,6 @@ MOCK_POSTS: List[Mapping[str, str]] = [
         "body": "This one should not match unless keywords change.",
     },
 ]
-
-SUMMARY_HEADER = [
-    "run_id",
-    "account",
-    "timestamp_utc",
-    "timestamp_local",
-    "timezone",
-    "scan_window",
-    "mode",
-    "subreddit",
-    "posts_scanned",
-    "matches_logged",
-]
-
-QUEUE_DEFAULT_PATH = "logs/night_queue.json"
 
 def parse_time(value: str) -> time:
     return datetime.strptime(value.strip(), "%H:%M").time()
@@ -104,19 +99,7 @@ def jitter_sleep(min_s: float, max_s: float) -> None:
     delay = random.uniform(max(0, min_s), max(min_s, max_s))
     time_mod.sleep(delay)
 
-def normalize_reddit_url(url: str) -> str:
-    if not url:
-        return url
-    trimmed = url.strip()
-    if not trimmed or "reddit.com" not in trimmed:
-        return trimmed
-    if "://" not in trimmed:
-        trimmed = f"https://{trimmed.lstrip('/')}"
-    parsed = urlparse(trimmed)
-    if "reddit.com" not in parsed.netloc:
-        return trimmed
-    normalized = parsed._replace(scheme="https", netloc="www.reddit.com")
-    return urlunparse(normalized)
+ 
 
 def _truthy(value: Any) -> bool:
     if value is None:
@@ -210,92 +193,6 @@ def scan_posts(
         hits = matched_keywords(combined, keywords)
         if hits:
             yield info, hits
-
-def log_summary(
-    path: Path,
-    run_id: str,
-    account: str,
-    tz_name: str,
-    scan_window: str,
-    mode: str,
-    subreddit: str,
-    posts_scanned: int,
-    matches_logged: int,
-) -> None:
-    local_time = datetime.now(ZoneInfo(tz_name)).isoformat()
-    row = {
-        "run_id": run_id,
-        "account": account,
-        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        "timestamp_local": local_time,
-        "timezone": tz_name,
-        "scan_window": scan_window,
-        "mode": mode,
-        "subreddit": subreddit,
-        "posts_scanned": str(posts_scanned),
-        "matches_logged": str(matches_logged),
-    }
-    append_log(path, row, SUMMARY_HEADER)
-
-def load_queue(path: Path) -> List[Dict[str, Any]]:
-    if not path.exists():
-        return []
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception as exc:
-        print(f"Could not read queue file {path}: {exc}")
-        return []
-    if isinstance(data, list):
-        return data
-    print(f"Queue file {path} should contain a JSON list.")
-    return []
-
-
-def write_queue(path: Path, entries: List[Dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(entries, indent=2), encoding="utf-8")
-
-
-def queue_key(entry: Mapping[str, Any]) -> str:
-    url = normalize_reddit_url(entry.get("url", ""))
-    return entry.get("post_id") or url or entry.get("title") or ""
-
-
-def add_to_queue(
-    path: Path,
-    run_id: str,
-    account: str,
-    tz_name: str,
-    scan_window: str,
-    mode: str,
-    info: Mapping[str, str],
-    hits: Sequence[str],
-    method: str,
-) -> None:
-    entries = load_queue(path)
-    existing = {queue_key(e) for e in entries}
-    key = info.get("id") or info.get("url") or info.get("title") or ""
-    if not key or key in existing:
-        return
-    entry = {
-        "run_id": run_id,
-        "account": account,
-        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        "timestamp_local": datetime.now(ZoneInfo(tz_name)).isoformat(),
-        "timezone": tz_name,
-        "scan_window": scan_window,
-        "mode": mode,
-        "subreddit": info.get("subreddit", ""),
-        "post_id": info.get("id", ""),
-        "title": info.get("title", ""),
-        "matched_keywords": list(hits),
-        "url": info.get("url", ""),
-        "method": method,
-        "status": "pending",
-    }
-    entries.append(entry)
-    write_queue(path, entries)
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Time-windowed read-only scanner.")
@@ -406,11 +303,15 @@ def main() -> None:
 
     queue_path = Path(args.queue_path)
     summary_path = Path(args.summary_path)
+    seen_path = Path(os.getenv("SEEN_POSTS_PATH", SEEN_DEFAULT_PATH))
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     if args.reset_logs:
         if summary_path.exists():
             summary_path.unlink()
     run_id = os.getenv("RUN_ID") or now_local.isoformat()
+    _, run_queue_path, run_summary_path = build_run_paths(run_id)
+    run_summary_path.parent.mkdir(parents=True, exist_ok=True)
+    seen = set(load_seen(seen_path))
 
     mode = args.mode
     if mode == "auto":
@@ -474,23 +375,39 @@ def main() -> None:
                     scanned_count = 0
                     matched_count = 0
                     for post in posts:
-                        scanned_count += 1
                         title = post.get("title", "")
                         body = post.get("body", "")
+                        info = {
+                            "id": post.get("id", ""),
+                            "subreddit": post.get("subreddit", subreddit),
+                            "title": title,
+                            "body": body,
+                            "url": normalize_reddit_url(post.get("url", "")),
+                        }
+                        key = seen_key(info)
+                        if key and key in seen:
+                            continue
+                        if key:
+                            seen.add(key)
+                        scanned_count += 1
                         combined = f"{title} {body}".lower()
                         hits = matched_keywords(combined, keywords)
                         if hits:
                             matched_count += 1
-                            info = {
-                                "id": post.get("id", ""),
-                                "subreddit": post.get("subreddit", subreddit),
-                                "title": title,
-                                "body": body,
-                                "url": normalize_reddit_url(post.get("url", "")),
-                            }
                             method = post.get("method", "selenium")
                             add_to_queue(
                                 queue_path,
+                                run_id,
+                                account,
+                                args.timezone,
+                                active_window[2],
+                                mode,
+                                info,
+                                hits,
+                                method,
+                            )
+                            add_to_queue(
+                                run_queue_path,
                                 run_id,
                                 account,
                                 args.timezone,
@@ -511,6 +428,18 @@ def main() -> None:
                         scanned_count,
                         matched_count,
                     )
+                    log_summary(
+                        run_summary_path,
+                        run_id,
+                        account,
+                        args.timezone,
+                        active_window[2],
+                        mode,
+                        subreddit,
+                        scanned_count,
+                        matched_count,
+                    )
+                    save_seen(seen_path, seen)
             finally:
                 bot.close()
 
@@ -528,17 +457,24 @@ def main() -> None:
         else:
             run_selenium_scan("", config.selenium_settings.get("cookie_file", "cookies.pkl"))
 
-        print(f"Scan complete. Logged queue to {queue_path}.")
+        print(f"Scan complete. Logged queue to {queue_path} and {run_queue_path}.")
         return
 
     if mode == "mock":
         for subreddit in subreddits:
             jitter_sleep(args.jitter_min, args.jitter_max)
-            scanned_count = len(MOCK_POSTS)
+            scanned_count = 0
             matched_count = 0
             for info, hits in scan_posts(MOCK_POSTS, keywords, subreddit):
+                key = seen_key(info)
+                if key and key in seen:
+                    continue
+                if key:
+                    seen.add(key)
+                scanned_count += 1
                 matched_count += 1
                 add_to_queue(queue_path, run_id, "", args.timezone, active_window[2], "mock", info, hits, "mock")
+                add_to_queue(run_queue_path, run_id, "", args.timezone, active_window[2], "mock", info, hits, "mock")
             log_summary(
                 summary_path,
                 run_id,
@@ -550,7 +486,19 @@ def main() -> None:
                 scanned_count,
                 matched_count,
             )
-        print(f"Mock scan complete. Logged queue to {queue_path}.")
+            log_summary(
+                run_summary_path,
+                run_id,
+                "",
+                args.timezone,
+                active_window[2],
+                "mock",
+                subreddit,
+                scanned_count,
+                matched_count,
+            )
+            save_seen(seen_path, seen)
+        print(f"Mock scan complete. Logged queue to {queue_path} and {run_queue_path}.")
         return
 
     # API mode
@@ -560,7 +508,6 @@ def main() -> None:
         scanned_count = 0
         matched_count = 0
         for post in posts:
-            scanned_count += 1
             info = normalize_post(post, subreddit)
             url = getattr(post, "url", "") or ""
             if not url and isinstance(post, Mapping):
@@ -570,11 +517,18 @@ def main() -> None:
                 url = f"https://www.reddit.com{permalink}"
             if url:
                 info["url"] = normalize_reddit_url(url)
+            key = seen_key(info)
+            if key and key in seen:
+                continue
+            if key:
+                seen.add(key)
+            scanned_count += 1
             combined = f"{info['title']} {info['body']}".lower()
             hits = matched_keywords(combined, keywords)
             if hits:
                 matched_count += 1
                 add_to_queue(queue_path, run_id, "", args.timezone, active_window[2], mode, info, hits, "api")
+                add_to_queue(run_queue_path, run_id, "", args.timezone, active_window[2], mode, info, hits, "api")
         log_summary(
             summary_path,
             run_id,
@@ -586,8 +540,20 @@ def main() -> None:
             scanned_count,
             matched_count,
         )
+        log_summary(
+            run_summary_path,
+            run_id,
+            "",
+            args.timezone,
+            active_window[2],
+            mode,
+            subreddit,
+            scanned_count,
+            matched_count,
+        )
+        save_seen(seen_path, seen)
 
-    print(f"Scan complete. Logged queue to {queue_path}.")
+    print(f"Scan complete. Logged queue to {queue_path} and {run_queue_path}.")
 
 
 if __name__ == "__main__":

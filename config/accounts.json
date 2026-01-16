@@ -46,29 +46,5 @@
       "viewport": "1366x768",
       "timezone": "America/Los_Angeles"
     }
-  },
-  {
-    "name": "account5",
-    "email_env_var": "REDDIT_EMAIL_5",
-    "password_env_var": "REDDIT_PASSWORD_5",
-    "cookies_path": "data/cookies_account5.pkl",
-    "activity_profile": "casual_reader",
-    "browser_fingerprint": {
-      "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/605.1.15",
-      "viewport": "1280x800",
-      "timezone": "America/Los_Angeles"
-    }
-  },
-  {
-    "name": "account6",
-    "email_env_var": "REDDIT_EMAIL_6",
-    "password_env_var": "REDDIT_PASSWORD_6",
-    "cookies_path": "data/cookies_account6.pkl",
-    "activity_profile": "night_owl",
-    "browser_fingerprint": {
-      "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
-      "viewport": "1600x900",
-      "timezone": "America/Los_Angeles"
-    }
   }
 ]

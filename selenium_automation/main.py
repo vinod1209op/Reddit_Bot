@@ -686,7 +686,22 @@ class RedditAutomation:
             if not title:
                 return None
             
-            # Extract post ID from URL
+            # Prefer the comments permalink for ID + URL (external links won't have /comments/).
+            comments_url = ""
+            for selector in ("a.comments", "a[href*='/comments/']"):
+                try:
+                    comments_link = element.find_element(By.CSS_SELECTOR, selector)
+                    href = comments_link.get_attribute("href") or ""
+                    if "/comments/" in href:
+                        comments_url = href
+                        break
+                except Exception:
+                    continue
+
+            if comments_url:
+                url = comments_url
+
+            # Extract post ID from permalink
             if "/comments/" in url:
                 post_id = url.split("/comments/")[1].split("/")[0]
             
