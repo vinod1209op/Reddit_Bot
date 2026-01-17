@@ -34,20 +34,41 @@ jobs:
           - account: account2
             windows: "12:00-14:00"
             cron: "0 20 * * *"
-    if: >
-      (github.event_name == 'workflow_dispatch' && (github.event.inputs.account == '' || github.event.inputs.account == matrix.account))
-      || (github.event_name == 'schedule' && github.event.schedule == matrix.cron)
-
     steps:
+      - name: Gate run by schedule/account
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SCHEDULE: ${{ github.event.schedule }}
+          DISPATCH_ACCOUNT: ${{ github.event.inputs.account }}
+          MATRIX_ACCOUNT: ${{ matrix.account }}
+          MATRIX_CRON: ${{ matrix.cron }}
+        run: |
+          should_run=false
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ -z "$DISPATCH_ACCOUNT" ] || [ "$DISPATCH_ACCOUNT" = "$MATRIX_ACCOUNT" ]; then
+              should_run=true
+            fi
+          elif [ "$EVENT_NAME" = "schedule" ]; then
+            if [ "$EVENT_SCHEDULE" = "$MATRIX_CRON" ]; then
+              should_run=true
+            fi
+          fi
+          echo "should_run=$should_run" >> "$GITHUB_OUTPUT"
+
       - name: Checkout
         uses: actions/checkout@v4
+        if: steps.gate.outputs.should_run == 'true'
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+        if: steps.gate.outputs.should_run == 'true'
 
       - name: Install Chrome and ChromeDriver
+        if: steps.gate.outputs.should_run == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y wget unzip
@@ -70,12 +91,14 @@ jobs:
           echo "CHROMEDRIVER_PATH=/usr/local/bin/chromedriver" >> $GITHUB_ENV
 
       - name: Install Python dependencies
+        if: steps.gate.outputs.should_run == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-selenium.txt
 
       - name: Restore cookie files
+        if: steps.gate.outputs.should_run == 'true'
         env:
           COOKIES_BUNDLE_BASE64: ${{ secrets.COOKIES_BUNDLE_BASE64 }}
           REDDIT_COOKIES_BASE64: ${{ secrets.REDDIT_COOKIES_BASE64 }}
@@ -92,6 +115,7 @@ jobs:
           fi
 
       - name: Create minimal env file
+        if: steps.gate.outputs.should_run == 'true'
         run: |
           mkdir -p config
           if [ ! -f config/credentials.env ]; then
@@ -103,6 +127,7 @@ jobs:
           fi
 
       - name: Setup Tor proxy
+        if: steps.gate.outputs.should_run == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y tor
@@ -125,6 +150,7 @@ jobs:
           fi
 
       - name: Run night scanner with Tor
+        if: steps.gate.outputs.should_run == 'true'
         env:
           BOT_MODE: selenium
           ENABLE_POSTING: "0"
@@ -162,7 +188,7 @@ jobs:
             $WINDOWS_ARG
 
       - name: Upload scan results
-        if: always()
+        if: steps.gate.outputs.should_run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: scan-results
