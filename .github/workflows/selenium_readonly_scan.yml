@@ -187,6 +187,16 @@ jobs:
             --account-names ${{ matrix.account }} \
             $WINDOWS_ARG
 
+      - name: Upload logs to Supabase
+        if: steps.gate.outputs.should_run == 'true'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET }}
+          SUPABASE_PREFIX: scan-results/${{ matrix.account }}
+        run: |
+          python scripts/upload_logs_supabase.py
+
       - name: Upload scan results
         if: steps.gate.outputs.should_run == 'true'
         uses: actions/upload-artifact@v4

@@ -137,6 +137,15 @@ jobs:
           fi
           python scripts/humanized_night_scanner.py $WINDOWS_ARG
 
+      - name: Upload logs to Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET }}
+          SUPABASE_PREFIX: scan-results/humanized
+        run: |
+          python scripts/upload_logs_supabase.py
+
       - name: Upload scan results
         if: always()
         uses: actions/upload-artifact@v4

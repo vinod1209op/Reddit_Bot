@@ -10,6 +10,7 @@ import copy
 import time
 import random
 import os
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -18,6 +19,11 @@ try:
     from zoneinfo import ZoneInfo
 except Exception:  # pragma: no cover - fallback for older Python
     ZoneInfo = None  # type: ignore
+
+# Ensure project root on path
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from selenium.webdriver.common.by import By
 from selenium_automation.utils.human_simulator import HumanSimulator
