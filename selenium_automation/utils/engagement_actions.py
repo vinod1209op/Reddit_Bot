@@ -21,11 +21,9 @@ class EngagementActions:
         try:
             # Find save button (varies by Reddit theme)
             save_selectors = [
-                '[data-test-id="save-post"]',
-                '[aria-label="save"]',
-                'button:has(svg[aria-label="save"])',
-                'button[aria-label*="save"]',
-                'button[data-click-id="save"]'
+                "a.save-button",
+                "a[onclick*='save']",
+                "button[aria-label*='save']"
             ]
             
             for selector in save_selectors:
@@ -59,7 +57,7 @@ class EngagementActions:
         
         try:
             # Visit user profile
-            self.driver.get(f"https://www.reddit.com/user/{username}")
+            self.driver.get(f"https://old.reddit.com/user/{username}")
             time.sleep(random.uniform(2, 4))
             
             # Find follow button with multiple selectors
@@ -96,7 +94,7 @@ class EngagementActions:
     def view_subreddit(self, subreddit_name):
         """Browse a subreddit naturally"""
         try:
-            self.driver.get(f"https://www.reddit.com/r/{subreddit_name}")
+            self.driver.get(f"https://old.reddit.com/r/{subreddit_name}")
             
             # Human-like delay
             if self.browser_manager:
@@ -117,15 +115,20 @@ class EngagementActions:
                 # Occasionally view a post (40% chance)
                 if random.random() > 0.6:
                     # CORRECTED: Use proper Selenium 4+ syntax
-                    posts = self.driver.find_elements(By.CSS_SELECTOR, '[data-test-id="post-container"]')
+                    posts = self.driver.find_elements(By.CSS_SELECTOR, "div.thing")
                     if posts:
                         post = random.choice(posts[:5])  # Only from top 5
+                        target = None
+                        try:
+                            target = post.find_element(By.CSS_SELECTOR, "a.title")
+                        except Exception:
+                            target = post
                         
                         # Use browser_manager for safe click if available
                         if self.browser_manager:
-                            self.browser_manager.safe_click(self.driver, post)
+                            self.browser_manager.safe_click(self.driver, target)
                         else:
-                            post.click()
+                            target.click()
                         
                         # View the post
                         if self.browser_manager:
@@ -147,43 +150,16 @@ class EngagementActions:
     def check_notifications(self):
         """Check inbox notifications"""
         try:
-            # Try multiple notification icon selectors
-            notification_selectors = [
-                '[aria-label="Open notifications"]',
-                '[data-test-id="notification-button"]',
-                'button[aria-label*="notification"]',
-                'button[data-click-id="notification"]'
-            ]
-            
-            for selector in notification_selectors:
-                try:
-                    # CORRECTED: Use proper Selenium 4+ syntax
-                    notification_icon = self.driver.find_element(By.CSS_SELECTOR, selector)
-                    
-                    # Use browser_manager for safe click if available
-                    if self.browser_manager:
-                        self.browser_manager.safe_click(self.driver, notification_icon)
-                    else:
-                        notification_icon.click()
-                    
-                    # Wait for notifications to load
-                    if self.browser_manager:
-                        self.browser_manager.add_human_delay(3, 6)
-                    else:
-                        time.sleep(random.uniform(3, 6))
-                    
-                    # Close notifications
-                    self.driver.execute_script("document.activeElement.blur();")
-                    
-                    if self.browser_manager:
-                        self.browser_manager.add_human_delay(1, 2)
-                    else:
-                        time.sleep(random.uniform(1, 2))
-                    
-                    return True
-                    
-                except (NoSuchElementException, StaleElementReferenceException):
-                    continue
+            self.driver.get("https://old.reddit.com/message/unread")
+            if self.browser_manager:
+                self.browser_manager.add_human_delay(3, 6)
+                self.driver.back()
+                self.browser_manager.add_human_delay(1, 2)
+            else:
+                time.sleep(random.uniform(3, 6))
+                self.driver.back()
+                time.sleep(random.uniform(1, 2))
+            return True
                     
         except Exception as e:
             print(f"Error checking notifications: {e}")
@@ -200,10 +176,8 @@ class EngagementActions:
             if post_element:
                 # Look for upvote button within the post element
                 upvote_selectors = [
-                    '[aria-label="upvote"]',
-                    'button[aria-label*="upvote"]',
-                    'button[data-click-id="upvote"]',
-                    'button[aria-pressed*="false"][aria-label*="vote"]'
+                    "div.arrow.up",
+                    "button[aria-label*='upvote']"
                 ]
                 
                 for selector in upvote_selectors:
@@ -225,7 +199,7 @@ class EngagementActions:
                         continue
             else:
                 # Try to find any upvote button on page
-                upvote_buttons = self.driver.find_elements(By.CSS_SELECTOR, '[aria-label="upvote"]')
+                upvote_buttons = self.driver.find_elements(By.CSS_SELECTOR, "div.arrow.up")
                 if upvote_buttons:
                     # Random chance and random button
                     if random.random() > 0.5:
@@ -254,9 +228,8 @@ class EngagementActions:
             # If no specific element provided, try to downvote current post
             if post_element:
                 downvote_selectors = [
-                    '[aria-label="downvote"]',
-                    'button[aria-label*="downvote"]',
-                    'button[data-click-id="downvote"]'
+                    "div.arrow.down",
+                    "button[aria-label*='downvote']"
                 ]
                 
                 for selector in downvote_selectors:
@@ -285,7 +258,7 @@ class EngagementActions:
     def view_user_profile(self, username):
         """View a user's profile"""
         try:
-            self.driver.get(f"https://www.reddit.com/user/{username}")
+            self.driver.get(f"https://old.reddit.com/user/{username}")
             
             if self.browser_manager:
                 self.browser_manager.add_human_delay(3, 6)
@@ -306,7 +279,7 @@ class EngagementActions:
         """Search for a topic on Reddit"""
         try:
             # Go to search page
-            self.driver.get(f"https://www.reddit.com/search/?q={query}")
+            self.driver.get(f"https://old.reddit.com/search?q={query}")
             
             if self.browser_manager:
                 self.browser_manager.add_human_delay(2, 4)
@@ -344,9 +317,9 @@ class EngagementActions:
             
             # Try to find comment box
             comment_selectors = [
-                '[data-test-id="comment-composer-textarea"]',
-                'textarea[placeholder*="comment"]',
-                'textarea[placeholder*="Share your thoughts"]',
+                "textarea[name='text']",
+                "textarea#comment",
+                "textarea[placeholder*='comment']",
                 '[contenteditable="true"][role="textbox"]'
             ]
             

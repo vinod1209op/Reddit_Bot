@@ -186,7 +186,7 @@ def scan_posts(
             url = post.get("url", "") or ""
         permalink = getattr(post, "permalink", "") or ""
         if permalink and not url:
-            url = f"https://www.reddit.com{permalink}"
+            url = f"https://old.reddit.com{permalink}"
         if url:
             info["url"] = normalize_reddit_url(url)
         combined = f"{info['title']} {info['body']}".lower()
@@ -514,7 +514,7 @@ def main() -> None:
                 url = post.get("url", "") or ""
             permalink = getattr(post, "permalink", "") or ""
             if permalink and not url:
-                url = f"https://www.reddit.com{permalink}"
+                url = f"https://old.reddit.com{permalink}"
             if url:
                 info["url"] = normalize_reddit_url(url)
             key = seen_key(info)

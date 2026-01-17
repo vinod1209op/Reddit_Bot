@@ -331,7 +331,7 @@ class HumanizedNightScanner:
         """Browse a subreddit with human-like behavior"""
         try:
             # Navigate to subreddit
-            self.driver.get(f"https://www.reddit.com/r/{subreddit_name}")
+            self.driver.get(f"https://old.reddit.com/r/{subreddit_name}")
             
             # Human-like delay
             self.browser_manager.add_human_delay(2, 4)
@@ -353,35 +353,29 @@ class HumanizedNightScanner:
     def view_random_posts(self):
         """Find and view random posts on current page"""
         try:
-            # Try multiple selectors for posts
-            selectors = [
-                '[data-test-id="post-container"]',
-                'article',
-                'shreddit-post',
-                'div.Post'
-            ]
-            
-            for selector in selectors:
-                try:
-                    posts = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                    if posts:
-                        # Take a random post from top 10
-                        post = random.choice(posts[:min(10, len(posts))])
-                        
-                        # Human-like reading sequence
-                        if self.human_sim:
-                            self.human_sim.read_post_sequence(post)
-                        else:
-                            # Fallback
-                            self.browser_manager.safe_click(self.driver, post)
-                            self.browser_manager.add_human_delay(3, 8)
-                            self.driver.back()
-                            self.browser_manager.add_human_delay(1, 2)
-                        
-                        return True
-                except:
-                    continue
-            
+            posts = self.driver.find_elements(By.CSS_SELECTOR, "div.thing")
+            if posts:
+                post = random.choice(posts[:min(10, len(posts))])
+                target = None
+                for selector in ("a.title", "a.comments"):
+                    try:
+                        target = post.find_element(By.CSS_SELECTOR, selector)
+                        break
+                    except Exception:
+                        continue
+                target = target or post
+
+                # Human-like reading sequence
+                if self.human_sim:
+                    self.human_sim.read_post_sequence(target)
+                else:
+                    # Fallback
+                    self.browser_manager.safe_click(self.driver, target)
+                    self.browser_manager.add_human_delay(3, 8)
+                    self.driver.back()
+                    self.browser_manager.add_human_delay(1, 2)
+                
+                return True
             return False
             
         except Exception as e:
@@ -407,10 +401,18 @@ class HumanizedNightScanner:
     def view_random_post_in_current_subreddit(self):
         """View a random post in the current subreddit"""
         try:
-            posts = self.driver.find_elements(By.CSS_SELECTOR, '[data-test-id="post-container"]')
+            posts = self.driver.find_elements(By.CSS_SELECTOR, "div.thing")
             if posts:
                 post = random.choice(posts[:5])  # Only from top 5
-                self.browser_manager.safe_click(self.driver, post)
+                target = None
+                for selector in ("a.title", "a.comments"):
+                    try:
+                        target = post.find_element(By.CSS_SELECTOR, selector)
+                        break
+                    except Exception:
+                        continue
+                target = target or post
+                self.browser_manager.safe_click(self.driver, target)
                 self.browser_manager.add_human_delay(3, 6)
                 
                 # Scroll through the post
@@ -434,7 +436,7 @@ class HumanizedNightScanner:
                 return False
             
             # Find upvote buttons
-            upvote_buttons = self.driver.find_elements(By.CSS_SELECTOR, '[aria-label="upvote"]')
+            upvote_buttons = self.driver.find_elements(By.CSS_SELECTOR, "div.thing div.arrow.up")
             if upvote_buttons:
                 # Random chance to vote (30%)
                 if random.random() > 0.7:
@@ -485,27 +487,10 @@ class HumanizedNightScanner:
             # Check if notifications checking is allowed
             if not self.activity_config.get('allow_notifications_check', True):
                 return
-            
-            # Try to find notification bell
-            notification_selectors = [
-                '[aria-label="Open notifications"]',
-                '[data-test-id="notification-button"]',
-                'button[aria-label*="notification"]'
-            ]
-            
-            for selector in notification_selectors:
-                try:
-                    bell = self.driver.find_element(By.CSS_SELECTOR, selector)
-                    if bell:
-                        self.browser_manager.safe_click(self.driver, bell)
-                        self.browser_manager.add_human_delay(2, 4)
-                        
-                        # Close notifications
-                        self.driver.execute_script("document.activeElement.blur();")
-                        self.browser_manager.add_human_delay(1, 2)
-                        break
-                except:
-                    continue
+            self.driver.get("https://old.reddit.com/message/unread")
+            self.browser_manager.add_human_delay(2, 4)
+            self.driver.back()
+            self.browser_manager.add_human_delay(1, 2)
                     
         except Exception as e:
             self.logger.debug(f"Error checking notifications: {e}")

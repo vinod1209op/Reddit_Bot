@@ -39,7 +39,7 @@ def normalize_reddit_url(url: str) -> str:
     parsed = urlparse(trimmed)
     if "reddit.com" not in parsed.netloc:
         return trimmed
-    normalized = parsed._replace(scheme="https", netloc="www.reddit.com")
+    normalized = parsed._replace(scheme="https", netloc="old.reddit.com")
     return urlunparse(normalized)
 
 

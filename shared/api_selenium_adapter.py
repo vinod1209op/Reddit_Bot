@@ -225,19 +225,19 @@ class RedditBotAdapter:
             
             driver = self.selenium_bot.driver
             
-            # Navigate to subreddit
+            # Navigate to subreddit (old Reddit)
             if subreddit:
-                url = f"https://www.reddit.com/r/{subreddit}/new"
+                url = f"https://old.reddit.com/r/{subreddit}/new"
             else:
                 # Use first subreddit from config
                 subreddits = self.config.bot_settings.get("subreddits", ["test"])
-                url = f"https://www.reddit.com/r/{subreddits[0]}/new"
+                url = f"https://old.reddit.com/r/{subreddits[0]}/new"
             
             driver.get(url)
             
             # Wait for page load
             WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.TAG_NAME, "article"))
+                EC.presence_of_element_located((By.CSS_SELECTOR, "div.thing"))
             )
             
             # Scroll to load more posts
@@ -245,18 +245,16 @@ class RedditBotAdapter:
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(2)
             
-            # Find posts - modern Reddit structure
+            # Find posts - old Reddit structure
             posts = []
-            post_elements = driver.find_elements(By.TAG_NAME, "article")[:limit * 2]
+            post_elements = driver.find_elements(By.CSS_SELECTOR, "div.thing")[:limit * 2]
             
             for element in post_elements:
                 try:
                     # Try multiple selectors for title
                     title = ""
                     title_selectors = [
-                        "h3", 
-                        "[slot='title']", 
-                        ".font-semibold",
+                        "a.title",
                         "a[href*='/comments/']"
                     ]
                     
@@ -277,13 +275,20 @@ class RedditBotAdapter:
                     keywords_to_check = keywords or self.config.bot_settings.get("keywords", [])
                     
                     if any(keyword.lower() in title_lower for keyword in keywords_to_check):
-                        # Get post ID from URL or element
+                        # Get post ID from comments permalink when possible
+                        href = ""
+                        post_id = ""
                         try:
-                            link_elem = element.find_element(By.CSS_SELECTOR, "a[href*='/comments/']")
-                            href = link_elem.get_attribute("href")
-                            post_id = href.split("/comments/")[1].split("/")[0] if "/comments/" in href else ""
-                        except:
-                            post_id = ""
+                            link_elem = element.find_element(By.CSS_SELECTOR, "a.comments")
+                            href = link_elem.get_attribute("href") or ""
+                        except Exception:
+                            try:
+                                link_elem = element.find_element(By.CSS_SELECTOR, "a[href*='/comments/']")
+                                href = link_elem.get_attribute("href") or ""
+                            except Exception:
+                                href = ""
+                        if "/comments/" in href:
+                            post_id = href.split("/comments/")[1].split("/")[0]
                         
                         posts.append({
                             "id": post_id,
@@ -292,9 +297,9 @@ class RedditBotAdapter:
                             "subreddit": subreddit or "",
                             "score": 0,
                             "author": "",
-                            "url": href if 'href' in locals() else "",
+                            "url": href,
                             "raw": element,
-                            "method": "selenium"
+                            "method": "selenium-old"
                         })
                         
                         if len(posts) >= limit:
@@ -431,7 +436,7 @@ class RedditBotAdapter:
                 subreddit = post.get('subreddit', '')
                 post_id = post.get('id', '')
                 if subreddit and post_id:
-                    driver.get(f"https://www.reddit.com/r/{subreddit}/comments/{post_id}/")
+                    driver.get(f"https://old.reddit.com/r/{subreddit}/comments/{post_id}/")
                 else:
                     return {"success": False, "error": "No valid URL for post"}
             
@@ -445,9 +450,9 @@ class RedditBotAdapter:
             
             # Look for reply button/textarea
             reply_selectors = [
-                "button[data-testid='comment-reply-button']",
-                "button:contains('Reply')",
-                "textarea[placeholder='What are your thoughts?']",
+                "textarea[name='text']",
+                "textarea#comment",
+                "textarea[placeholder*='comment']",
                 "[contenteditable='true']"
             ]
             

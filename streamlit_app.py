@@ -513,7 +513,7 @@ def main() -> None:
                 pid = post.get("id")
                 sub = post.get("subreddit")
                 if pid and sub:
-                    url = f"https://www.reddit.com/r/{sub}/comments/{pid}/"
+                    url = f"https://old.reddit.com/r/{sub}/comments/{pid}/"
             subreddit = post.get("subreddit", "")
             st.markdown(f"**{idx}. {title}**  _(r/{subreddit})_")
             if url:

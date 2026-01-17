@@ -102,13 +102,13 @@ class HumanSimulator:
     def safe_upvote(self):
         """Safely upvote current post (if enabled)"""
         try:
-            # CORRECTED: Use proper Selenium 4+ syntax
-            upvote_buttons = self.driver.find_elements(By.CSS_SELECTOR, '[aria-label="upvote"]')
+            upvote_buttons = self.driver.find_elements(By.CSS_SELECTOR, "div.arrow.up")
             if upvote_buttons and random.random() > 0.3:  # 70% chance to upvote if button found
+                target = upvote_buttons[0]
                 if self.browser_manager:
-                    self.browser_manager.safe_click(self.driver, upvote_buttons[0])
+                    self.browser_manager.safe_click(self.driver, target)
                 else:
-                    upvote_buttons[0].click()
+                    target.click()
                 time.sleep(random.uniform(0.2, 0.5))
                 return True
         except Exception as e:
@@ -218,7 +218,7 @@ class HumanSimulator:
         # Find comments section and scroll through it
         try:
             # Try to find comments
-            comments_sections = self.driver.find_elements(By.CSS_SELECTOR, '[data-test-id="comment"]')
+            comments_sections = self.driver.find_elements(By.CSS_SELECTOR, "div.comment")
             if comments_sections:
                 # Scroll through first few comments
                 for _ in range(random.randint(2, 5)):
@@ -260,16 +260,21 @@ class HumanSimulator:
             ])
             
             if activity_type == "browse_homepage":
-                self.driver.get("https://www.reddit.com")
+                self.driver.get("https://old.reddit.com")
                 self.human_scroll(random.randint(3, 7))
                 activities_log.append("browsed homepage")
                 
             elif activity_type == "read_post":
                 # Try to find and read a post
-                posts = self.driver.find_elements(By.CSS_SELECTOR, '[data-test-id="post-container"]')
+                posts = self.driver.find_elements(By.CSS_SELECTOR, "div.thing")
                 if posts:
                     post = random.choice(posts[:5])
-                    self.read_post_sequence(post)
+                    target = None
+                    try:
+                        target = post.find_element(By.CSS_SELECTOR, "a.title")
+                    except Exception:
+                        target = post
+                    self.read_post_sequence(target)
                     activities_log.append("read post")
             
             # Random delay between activities

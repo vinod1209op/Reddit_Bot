@@ -103,7 +103,7 @@ def run_selenium_mode(config):
                     if len(title) > 60:
                         title = title[:57] + "..."
                     subreddit = post.get('subreddit', 'unknown')
-                    url = post.get('url') or f"https://reddit.com/r/{subreddit}"
+                    url = post.get('url') or f"https://old.reddit.com/r/{subreddit}"
                     print(f"{i}. r/{subreddit}: {title}\n   {url}")
                 print("-"*50)
             

@@ -286,12 +286,12 @@ class RedditAutomation:
             trimmed = "/" + trimmed
         if not trimmed.startswith("/"):
             trimmed = "/" + trimmed
-        normalized = urljoin("https://www.reddit.com", trimmed)
+        normalized = urljoin("https://old.reddit.com", trimmed)
         return RedditAutomation._normalize_reddit_url(normalized)
     
     @staticmethod
     def _normalize_reddit_url(url: str) -> str:
-        """Normalize Reddit URLs to https://www.reddit.com/... when possible."""
+        """Normalize Reddit URLs to https://old.reddit.com/... when possible."""
         if not url:
             return url
         trimmed = url.strip()
@@ -305,7 +305,7 @@ class RedditAutomation:
             return trimmed
         if "reddit.com" not in parsed.netloc:
             return trimmed
-        normalized = parsed._replace(scheme="https", netloc="www.reddit.com")
+        normalized = parsed._replace(scheme="https", netloc="old.reddit.com")
         return urlunparse(normalized)
     
     def generate_llm_reply(self, context: str) -> Optional[str]:
@@ -408,12 +408,21 @@ class RedditAutomation:
                         title = title_el.text
                 except:
                     pass
+                if not title:
+                    try:
+                        title_el = self.browser_manager.wait_for_element(
+                            self.driver, By.CSS_SELECTOR, "a.title", timeout=2
+                        )
+                        if title_el:
+                            title = title_el.text
+                    except Exception:
+                        pass
                 
                 # Try to get body
                 body_selectors = [
-                    "div[data-click-id='text']",
-                    "div[data-test-id='post-content']",
-                    "div[slot='body']",
+                    "div.usertext-body",
+                    "div.expando div.md",
+                    "div.md",
                 ]
                 
                 for selector in body_selectors:
@@ -558,7 +567,7 @@ class RedditAutomation:
         
         try:
             # Navigate to messages page
-            self.driver.get("https://www.reddit.com/message/unread")
+            self.driver.get("https://old.reddit.com/message/unread")
             self._delay(0.4, 0.9, "messages_load")
             
             # Check if logged in
@@ -566,20 +575,8 @@ class RedditAutomation:
                 logger.warning("Not logged in; skipping messages.")
                 return []
             
-            # Simple check for messages
-            try:
-                if self.browser_manager:
-                    element = self.browser_manager.wait_for_element(
-                        self.driver, 
-                        By.CSS_SELECTOR, 
-                        "[data-testid='inbox']",
-                        timeout=5
-                    )
-                    if element:
-                        logger.info("At messages page")
-            except Exception as e:
-                logger.debug(f"Message check: {e}")
-            
+            # Simple check for messages (old Reddit inbox page)
+            logger.info("At messages page (old Reddit)")
             return []  # Return empty list for now
         
         except Exception as e:
@@ -772,8 +769,9 @@ class RedditAutomation:
             if include_body:
                 body_text = ""
                 body_selectors = [
-                    "div[data-test-id='post-content']",
-                    "div[data-click-id='text']",
+                    "div.usertext-body",
+                    "div.expando div.md",
+                    "div.md",
                 ]
                 
                 for selector in body_selectors:
@@ -797,7 +795,7 @@ class RedditAutomation:
                 comments = []
                 try:
                     comment_divs = self.driver.find_elements(
-                        By.CSS_SELECTOR, "div[data-test-id='comment']"
+                        By.CSS_SELECTOR, "div.comment div.md"
                     )
                     for div in comment_divs[:comments_limit]:
                         try:
