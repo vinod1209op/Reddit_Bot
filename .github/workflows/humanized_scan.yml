@@ -2,11 +2,14 @@ name: Reddit Humanized Scan
 
 on:
   schedule:
-    # 02:00 and 23:00 America/Los_Angeles (UTC offsets vary with DST)
-    - cron: "0 10 * * *"
-    - cron: "0 7 * * *"
+    # Late night only (America/Los_Angeles; UTC offset varies with DST)
+    - cron: "0 6 * * *"
   workflow_dispatch:
     inputs:
+      account:
+        description: "Account name to run (default: account3)"
+        required: false
+        default: "account3"
       force_run:
         description: "Override schedule and run immediately (00:00-23:59)"
         required: false
@@ -123,6 +126,7 @@ jobs:
           CI: "true"
           SCAN_LIMIT: "25"
           SCAN_MAX_SUBREDDITS: "0"
+          HUMANIZED_ACCOUNT_NAMES: ${{ github.event.inputs.account || 'account3' }}
         run: |
           echo "Starting humanized scan..."
           WINDOWS_ARG=""

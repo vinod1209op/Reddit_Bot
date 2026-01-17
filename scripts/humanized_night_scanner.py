@@ -31,6 +31,8 @@ from shared.scan_store import (
     QUEUE_DEFAULT_PATH,
     SEEN_DEFAULT_PATH,
 )
+from shared.console_tee import enable_console_tee
+from shared.scan_shards import compute_scan_shard
 from shared.logger import UnifiedLogger
 from session_scanner import run_session_scan
 
@@ -567,7 +569,9 @@ class MultiAccountOrchestrator:
         """Load accounts from config"""
         try:
             accounts = self.config_manager.load_json('config/accounts.json')
-            
+            if not isinstance(accounts, list):
+                accounts = []
+
             # Load credentials from environment variables
             for account in accounts:
                 email_var = account.get('email_env_var')
@@ -583,7 +587,16 @@ class MultiAccountOrchestrator:
                     account['google_email'] = os.getenv(google_email_var, '')
                 if google_password_var:
                     account['google_password'] = os.getenv(google_password_var, '')
-            
+
+            names_env = os.getenv("HUMANIZED_ACCOUNT_NAMES") or os.getenv("SCAN_ACCOUNT_NAMES") or ""
+            names = {name.strip() for name in names_env.split(",") if name.strip()}
+            if names:
+                filtered = [account for account in accounts if account.get("name") in names]
+                if not filtered:
+                    self.logger.warning(f"No accounts matched HUMANIZED_ACCOUNT_NAMES={names_env}")
+                else:
+                    accounts = filtered
+
             return accounts
             
         except Exception as e:
@@ -654,7 +667,8 @@ class MultiAccountOrchestrator:
             self.logger.error("No accounts configured")
             return
 
-        for account in self.accounts:
+        total_accounts = len(self.accounts)
+        for idx, account in enumerate(self.accounts):
             scanner = None
             try:
                 self.logger.info(f"Starting session for {account.get('name', 'unknown')}")
@@ -688,6 +702,13 @@ class MultiAccountOrchestrator:
                     if self.max_subreddits > 0:
                         account_subreddits = account_subreddits[: self.max_subreddits]
 
+                    sort, time_range, page_offset = compute_scan_shard(idx, total_accounts)
+                    self.logger.info(
+                        f"Scan shard for {account.get('name', '')}: sort={sort}, time={time_range or 'none'}, page_offset={page_offset}"
+                    )
+                    self.logger.info(
+                        f"Subreddits for {account.get('name', '')}: {', '.join(account_subreddits)}"
+                    )
                     run_session_scan(
                         driver=scanner.driver,
                         browser_manager=scanner.browser_manager,
@@ -707,6 +728,9 @@ class MultiAccountOrchestrator:
                         tz_name=self.tz_name,
                         scan_window=self.scan_window,
                         mode="selenium",
+                        sort=sort,
+                        time_range=time_range or "",
+                        page_offset=page_offset,
                     )
                     
                     # Save cookies for next time
@@ -743,6 +767,7 @@ def check_time_window(activity_config: Optional[Dict[str, Any]] = None) -> bool:
 
 
 if __name__ == "__main__":
+    enable_console_tee(os.getenv("CONSOLE_LOG_PATH", "logs/selenium_automation.log"))
     print("=" * 60)
     print("Humanized Night Scanner")
     print("=" * 60)

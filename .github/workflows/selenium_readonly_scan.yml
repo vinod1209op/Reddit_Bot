@@ -2,11 +2,15 @@ name: Reddit Selenium Read-Only Scan
 
 on:
   schedule:
-    # 02:00 and 23:00 America/Los_Angeles (UTC offsets vary with DST)
-    - cron: "0 10 * * *"
-    - cron: "0 7 * * *"
+    # Separate account windows (America/Los_Angeles; UTC offsets vary with DST)
+    - cron: "0 13 * * *" # account1: 05:00 PT
+    - cron: "0 20 * * *" # account2: 12:00 PT
   workflow_dispatch:
     inputs:
+      account:
+        description: "Account name to run (account1/account2/account3)"
+        required: false
+        default: "account1"
       force_run:
         description: "Override schedule and run immediately (00:00-23:59)"
         required: false
@@ -20,6 +24,19 @@ jobs:
   selenium_scan:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - account: account1
+            windows: "05:00-07:00"
+            cron: "0 13 * * *"
+          - account: account2
+            windows: "12:00-14:00"
+            cron: "0 20 * * *"
+    if: >
+      (github.event_name == 'workflow_dispatch' && (github.event.inputs.account == '' || github.event.inputs.account == matrix.account))
+      || (github.event_name == 'schedule' && github.event.schedule == matrix.cron)
 
     steps:
       - name: Checkout
@@ -130,6 +147,8 @@ jobs:
             WINDOWS_ARG="--windows ${{ github.event.inputs.windows }}"
           elif [ "${{ github.event.inputs.force_run }}" = "true" ]; then
             WINDOWS_ARG="--windows 00:00-23:59"
+          elif [ -n "${{ matrix.windows }}" ]; then
+            WINDOWS_ARG="--windows ${{ matrix.windows }}"
           fi
 
           python scripts/night_scanner.py \
@@ -138,6 +157,8 @@ jobs:
             --max-subreddits 0 \
             --jitter-min 10 \
             --jitter-max 20 \
+            --accounts-path config/accounts.json \
+            --account-names ${{ matrix.account }} \
             $WINDOWS_ARG
 
       - name: Upload scan results

@@ -1,3 +1,4 @@
+import csv
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,6 +23,10 @@ SUMMARY_HEADER = [
     "subreddit",
     "posts_scanned",
     "matches_logged",
+    "scan_sort",
+    "scan_time_range",
+    "scan_page_offset",
+    "subreddit_set",
 ]
 
 QUEUE_DEFAULT_PATH = "logs/night_queue.json"
@@ -77,6 +82,10 @@ def add_to_queue(
     info: Mapping[str, str],
     hits: Sequence[str],
     method: str,
+    scan_sort: str = "",
+    scan_time_range: str = "",
+    scan_page_offset: int = 0,
+    subreddit_set: str = "",
 ) -> None:
     entries = load_queue(path)
     existing = {queue_key(e) for e in entries}
@@ -99,9 +108,38 @@ def add_to_queue(
         "url": info.get("url", ""),
         "method": method,
         "status": "pending",
+        "scan_sort": scan_sort,
+        "scan_time_range": scan_time_range,
+        "scan_page_offset": scan_page_offset,
+        "subreddit_set": subreddit_set,
     }
     entries.append(entry)
     write_queue(path, entries)
+
+
+def _append_summary(path: Path, row: Mapping[str, Any]) -> None:
+    if not path.exists():
+        append_log(path, row, SUMMARY_HEADER)
+        return
+
+    with path.open("r", encoding="utf-8") as handle:
+        first_line = handle.readline().strip()
+    expected_header = ",".join(SUMMARY_HEADER)
+    if not first_line:
+        append_log(path, row, SUMMARY_HEADER)
+        return
+    if first_line != expected_header:
+        rows = []
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle)
+            for existing in reader:
+                rows.append(existing)
+        with path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=SUMMARY_HEADER)
+            writer.writeheader()
+            for existing in rows:
+                writer.writerow(existing)
+    append_log(path, row, SUMMARY_HEADER)
 
 
 def log_summary(
@@ -114,6 +152,10 @@ def log_summary(
     subreddit: str,
     posts_scanned: int,
     matches_logged: int,
+    scan_sort: str = "",
+    scan_time_range: str = "",
+    scan_page_offset: int = 0,
+    subreddit_set: str = "",
 ) -> None:
     tzinfo = ZoneInfo(tz_name) if ZoneInfo else None
     local_time = datetime.now(tzinfo).isoformat() if tzinfo else datetime.now().isoformat()
@@ -128,8 +170,12 @@ def log_summary(
         "subreddit": subreddit,
         "posts_scanned": str(posts_scanned),
         "matches_logged": str(matches_logged),
+        "scan_sort": scan_sort,
+        "scan_time_range": scan_time_range,
+        "scan_page_offset": str(scan_page_offset),
+        "subreddit_set": subreddit_set,
     }
-    append_log(path, row, SUMMARY_HEADER)
+    _append_summary(path, row)
 
 
 def load_seen(path: Path) -> List[str]:

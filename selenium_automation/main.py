@@ -588,7 +588,10 @@ class RedditAutomation:
                     limit: int = 20,
                     include_body: bool = False,
                     include_comments: bool = False,
-                    comments_limit: int = 3) -> List[Dict[str, Any]]:
+                    comments_limit: int = 3,
+                    sort: str = "new",
+                    time_range: Optional[str] = None,
+                    page_offset: int = 0) -> List[Dict[str, Any]]:
         """
         Search for posts in subreddits.
         """
@@ -605,13 +608,27 @@ class RedditAutomation:
         
         try:
             # Always use old Reddit for scraping to avoid modern UI volatility.
-            target_url = f"https://old.reddit.com/r/{subreddit}/new"
+            target_url = self._build_old_reddit_url(subreddit, sort, time_range)
+            logger.info(f"Loading {target_url}")
             self.driver.get(target_url)
             self._delay(0.6, 1.1, "old_subreddit_load")
 
             # Dismiss any old Reddit popups (rare but possible).
             self._dismiss_popups(old_reddit=True)
             self._delay(0.3, 0.6, "old_post_list_settle")
+
+            if page_offset and page_offset > 0:
+                logger.info(
+                    f"Applying pagination offset {page_offset} for r/{subreddit} (sort={sort}, time={time_range or 'none'})"
+                )
+                for _ in range(page_offset):
+                    next_url = self._get_old_reddit_next_url()
+                    if not next_url:
+                        break
+                    logger.info(f"Loading next page: {next_url}")
+                    self.driver.get(next_url)
+                    self._delay(0.5, 0.9, "old_subreddit_next_page")
+                    self._dismiss_popups(old_reddit=True)
 
             posts = self._scrape_old_reddit_posts(subreddit, limit)
             if not posts:
@@ -756,6 +773,29 @@ class RedditAutomation:
                     
         except Exception as e:
             logger.debug(f"Popup dismissal error: {e}")
+
+    def _build_old_reddit_url(self, subreddit: str, sort: str, time_range: Optional[str]) -> str:
+        sort = (sort or "new").strip().lower()
+        if sort not in ("new", "top", "hot", "rising"):
+            sort = "new"
+        base = f"https://old.reddit.com/r/{subreddit}/{sort}"
+        if sort == "top" and time_range:
+            return f"{base}?t={time_range}"
+        return base
+
+    def _get_old_reddit_next_url(self) -> Optional[str]:
+        if not self.driver:
+            return None
+        selectors = ("span.next-button a", "a[rel='next']")
+        for selector in selectors:
+            try:
+                link = self.driver.find_element(By.CSS_SELECTOR, selector)
+                href = link.get_attribute("href") or ""
+                if href:
+                    return href
+            except Exception:
+                continue
+        return None
     
     def _enrich_post_details(self, post: Dict[str, Any], include_body: bool, include_comments: bool, comments_limit: int = 3) -> None:
         """Navigate to a post URL and collect body text and comments."""

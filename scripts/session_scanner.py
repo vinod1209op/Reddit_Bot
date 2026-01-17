@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import Sequence, Set
 
@@ -10,6 +11,8 @@ from shared.scan_store import (
     save_seen,
     seen_key,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def run_session_scan(
@@ -32,6 +35,9 @@ def run_session_scan(
     tz_name: str,
     scan_window: str,
     mode: str = "selenium",
+    sort: str = "new",
+    time_range: str = "",
+    page_offset: int = 0,
 ) -> None:
     bot = RedditAutomation(config=config)
     bot.driver = driver
@@ -39,8 +45,20 @@ def run_session_scan(
     bot.login_manager = login_manager
     bot._sync_login_manager()
 
+    subreddit_set = ",".join(subreddits)
     for subreddit in subreddits:
-        posts = bot.search_posts(subreddit=subreddit, limit=limit, include_body=False, include_comments=False)
+        logger.info(
+            f"[{account or 'default'}] Scanning r/{subreddit} sort={sort}, time={time_range or 'none'}, page_offset={page_offset}"
+        )
+        posts = bot.search_posts(
+            subreddit=subreddit,
+            limit=limit,
+            include_body=False,
+            include_comments=False,
+            sort=sort,
+            time_range=time_range or None,
+            page_offset=page_offset,
+        )
         scanned_count = 0
         matched_count = 0
 
@@ -73,6 +91,10 @@ def run_session_scan(
                     info,
                     hits,
                     method,
+                    scan_sort=sort,
+                    scan_time_range=time_range or "",
+                    scan_page_offset=page_offset,
+                    subreddit_set=subreddit_set,
                 )
                 add_to_queue(
                     run_queue_path,
@@ -84,6 +106,10 @@ def run_session_scan(
                     info,
                     hits,
                     method,
+                    scan_sort=sort,
+                    scan_time_range=time_range or "",
+                    scan_page_offset=page_offset,
+                    subreddit_set=subreddit_set,
                 )
 
         log_summary(
@@ -96,6 +122,10 @@ def run_session_scan(
             subreddit,
             scanned_count,
             matched_count,
+            scan_sort=sort,
+            scan_time_range=time_range or "",
+            scan_page_offset=page_offset,
+            subreddit_set=subreddit_set,
         )
         log_summary(
             run_summary_path,
@@ -107,5 +137,12 @@ def run_session_scan(
             subreddit,
             scanned_count,
             matched_count,
+            scan_sort=sort,
+            scan_time_range=time_range or "",
+            scan_page_offset=page_offset,
+            subreddit_set=subreddit_set,
+        )
+        logger.info(
+            f"[{account or 'default'}] r/{subreddit}: scanned {scanned_count}, matched {matched_count}"
         )
         save_seen(seen_path, seen)

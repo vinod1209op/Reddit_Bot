@@ -35,6 +35,7 @@ if str(ROOT) not in sys.path:
 
 from shared.config_manager import ConfigManager
 from shared.api_utils import fetch_posts, matched_keywords, normalize_post, make_reddit_client
+from shared.console_tee import enable_console_tee
 from shared.scan_store import (
     add_to_queue,
     build_run_paths,
@@ -46,6 +47,7 @@ from shared.scan_store import (
     QUEUE_DEFAULT_PATH,
     SEEN_DEFAULT_PATH,
 )
+from shared.scan_shards import compute_scan_shard
 
 
 MOCK_POSTS: List[Mapping[str, str]] = [
@@ -195,6 +197,7 @@ def scan_posts(
             yield info, hits
 
 def main() -> None:
+    enable_console_tee(os.getenv("CONSOLE_LOG_PATH", "logs/selenium_automation.log"))
     parser = argparse.ArgumentParser(description="Time-windowed read-only scanner.")
     parser.add_argument(
         "--schedule-path",
@@ -344,7 +347,14 @@ def main() -> None:
                 print(f"No accounts loaded from {args.accounts_path}. Exiting.")
                 return
 
-        def run_selenium_scan(account: str, cookie_path: str) -> None:
+        def run_selenium_scan(
+            account: str,
+            cookie_path: str,
+            sort: str,
+            time_range: str,
+            page_offset: int,
+            account_subreddits: Sequence[str],
+        ) -> None:
             if cookie_path:
                 config.selenium_settings["cookie_file"] = cookie_path
             try:
@@ -357,6 +367,9 @@ def main() -> None:
                 config.selenium_settings["use_tor"] = True
 
             bot = RedditAutomation(config=config)
+            shard_label = f"sort={sort}, time={time_range or 'none'}, page_offset={page_offset}"
+            subreddit_set = ",".join(account_subreddits)
+            print(f"Account {account or 'default'}: {shard_label}")
             if not bot.setup():
                 print(f"Browser setup failed for account {account or 'default'}; skipping.")
                 return
@@ -364,14 +377,25 @@ def main() -> None:
                 print(f"Cookie login failed for account {account or 'default'}; skipping.")
                 bot.close()
                 return
+            print(f"Logged in with cookies for account {account or 'default'}")
 
             if tor_enabled:
                 time_mod.sleep(15)
 
             try:
-                for subreddit in subreddits:
+                print(f"Subreddits for {account or 'default'}: {', '.join(account_subreddits)}")
+                for subreddit in account_subreddits:
                     jitter_sleep(args.jitter_min, args.jitter_max)
-                    posts = bot.search_posts(subreddit=subreddit, limit=args.limit, include_body=False, include_comments=False)
+                    print(f"[{account or 'default'}] Scanning r/{subreddit} ({shard_label})")
+                    posts = bot.search_posts(
+                        subreddit=subreddit,
+                        limit=args.limit,
+                        include_body=False,
+                        include_comments=False,
+                        sort=sort,
+                        time_range=time_range,
+                        page_offset=page_offset,
+                    )
                     scanned_count = 0
                     matched_count = 0
                     for post in posts:
@@ -405,6 +429,10 @@ def main() -> None:
                                 info,
                                 hits,
                                 method,
+                                scan_sort=sort,
+                                scan_time_range=time_range or "",
+                                scan_page_offset=page_offset,
+                                subreddit_set=subreddit_set,
                             )
                             add_to_queue(
                                 run_queue_path,
@@ -416,6 +444,10 @@ def main() -> None:
                                 info,
                                 hits,
                                 method,
+                                scan_sort=sort,
+                                scan_time_range=time_range or "",
+                                scan_page_offset=page_offset,
+                                subreddit_set=subreddit_set,
                             )
                     log_summary(
                         summary_path,
@@ -427,6 +459,10 @@ def main() -> None:
                         subreddit,
                         scanned_count,
                         matched_count,
+                        scan_sort=sort,
+                        scan_time_range=time_range or "",
+                        scan_page_offset=page_offset,
+                        subreddit_set=subreddit_set,
                     )
                     log_summary(
                         run_summary_path,
@@ -438,13 +474,29 @@ def main() -> None:
                         subreddit,
                         scanned_count,
                         matched_count,
+                        scan_sort=sort,
+                        scan_time_range=time_range or "",
+                        scan_page_offset=page_offset,
+                        subreddit_set=subreddit_set,
+                    )
+                    print(
+                        f"[{account or 'default'}] r/{subreddit}: scanned {scanned_count}, matched {matched_count}"
                     )
                     save_seen(seen_path, seen)
             finally:
                 bot.close()
 
         if accounts:
-            for account in accounts:
+            enabled_accounts = [
+                account
+                for account in accounts
+                if account.get("night_scanner_enabled", True)
+            ]
+            if not enabled_accounts:
+                print("No accounts enabled for night scanner. Exiting.")
+                return
+            total_accounts = len(enabled_accounts)
+            for idx, account in enumerate(enabled_accounts):
                 account_name = account.get("name", "")
                 cookie_path = account.get("cookies_path", "")
                 if not cookie_path:
@@ -453,9 +505,27 @@ def main() -> None:
                 if not Path(cookie_path).exists():
                     print(f"Skipping account {account_name or '(unnamed)'}: cookie file not found at {cookie_path}.")
                     continue
-                run_selenium_scan(account_name, cookie_path)
+                account_subreddits = account.get("subreddits") or subreddits
+                if args.max_subreddits > 0:
+                    account_subreddits = account_subreddits[: args.max_subreddits]
+                sort, time_range, page_offset = compute_scan_shard(idx, total_accounts)
+                run_selenium_scan(
+                    account_name,
+                    cookie_path,
+                    sort,
+                    time_range or "",
+                    page_offset,
+                    account_subreddits,
+                )
         else:
-            run_selenium_scan("", config.selenium_settings.get("cookie_file", "cookies.pkl"))
+            run_selenium_scan(
+                "",
+                config.selenium_settings.get("cookie_file", "cookies.pkl"),
+                "new",
+                "",
+                0,
+                subreddits,
+            )
 
         print(f"Scan complete. Logged queue to {queue_path} and {run_queue_path}.")
         return
