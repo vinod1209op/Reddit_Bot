@@ -579,7 +579,6 @@ class MultiAccountOrchestrator:
         self.seen_path = Path(os.getenv("SEEN_POSTS_PATH", SEEN_DEFAULT_PATH))
         self.seen = set(load_seen(self.seen_path))
         self.scan_limit = int(os.getenv("SCAN_LIMIT", self.scan_schedule.get("limit", 25)))
-        self.max_subreddits = int(os.getenv("SCAN_MAX_SUBREDDITS", self.scan_schedule.get("max_subreddits", 0)))
         self.keywords = self.scan_config.bot_settings.get("keywords") or self.scan_config.default_keywords
         schedule_tz = self.scan_schedule.get("timezone") or "America/Los_Angeles"
         if self.active_window and self.active_window.get("timezone"):
@@ -724,8 +723,6 @@ class MultiAccountOrchestrator:
                     account_subreddits = account.get("subreddits") or (
                         self.scan_config.bot_settings.get("subreddits") or self.scan_config.default_subreddits
                     )
-                    if self.max_subreddits > 0:
-                        account_subreddits = account_subreddits[: self.max_subreddits]
 
                     sort, time_range, page_offset = compute_scan_shard(idx, total_accounts)
                     self.logger.info(

@@ -233,7 +233,6 @@ def main() -> None:
     )
     parser.add_argument("--jitter-min", type=float, default=float(os.getenv("SCAN_JITTER_MIN", "2")))
     parser.add_argument("--jitter-max", type=float, default=float(os.getenv("SCAN_JITTER_MAX", "8")))
-    parser.add_argument("--max-subreddits", type=int, default=int(os.getenv("SCAN_MAX_SUBREDDITS", "0")))
     parser.add_argument(
         "--accounts-path",
         default=os.getenv("SCAN_ACCOUNTS_PATH", ""),
@@ -275,8 +274,6 @@ def main() -> None:
         args.jitter_min = float(schedule["jitter_min"])
     if "jitter_max" in schedule and not _cli_flag_present("--jitter-max") and not os.getenv("SCAN_JITTER_MAX"):
         args.jitter_max = float(schedule["jitter_max"])
-    if "max_subreddits" in schedule and not _cli_flag_present("--max-subreddits") and not os.getenv("SCAN_MAX_SUBREDDITS"):
-        args.max_subreddits = int(schedule["max_subreddits"])
     if "reset_logs" in schedule and not _cli_flag_present("--reset-logs") and not os.getenv("SCAN_RESET_LOGS"):
         args.reset_logs = _truthy(schedule["reset_logs"])
     if "accounts_path" in schedule and not _cli_flag_present("--accounts-path") and not os.getenv("SCAN_ACCOUNTS_PATH"):
@@ -301,8 +298,7 @@ def main() -> None:
     config = ConfigManager().load_all()
     subreddits = config.bot_settings.get("subreddits") or config.default_subreddits
     keywords = config.bot_settings.get("keywords") or config.default_keywords
-    if args.max_subreddits > 0:
-        subreddits = subreddits[: args.max_subreddits]
+    # No subreddit limits: always scan full configured list.
 
     queue_path = Path(args.queue_path)
     summary_path = Path(args.summary_path)
@@ -506,8 +502,6 @@ def main() -> None:
                     print(f"Skipping account {account_name or '(unnamed)'}: cookie file not found at {cookie_path}.")
                     continue
                 account_subreddits = account.get("subreddits") or subreddits
-                if args.max_subreddits > 0:
-                    account_subreddits = account_subreddits[: args.max_subreddits]
                 sort, time_range, page_offset = compute_scan_shard(idx, total_accounts)
                 run_selenium_scan(
                     account_name,

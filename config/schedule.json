@@ -9,6 +9,5 @@
   "jitter_min": 2,
   "jitter_max": 8,
   "queue_path": "logs/night_queue.json",
-  "summary_path": "logs/night_scan_summary.csv",
-  "max_subreddits": 0
+  "summary_path": "logs/night_scan_summary.csv"
 }

@@ -125,7 +125,6 @@ jobs:
           USE_TOR_PROXY: "1"
           CI: "true"
           SCAN_LIMIT: "25"
-          SCAN_MAX_SUBREDDITS: "0"
           HUMANIZED_ACCOUNT_NAMES: ${{ github.event.inputs.account || 'account3' }}
         run: |
           echo "Starting humanized scan..."

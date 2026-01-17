@@ -154,7 +154,7 @@ class RedditBotAdapter:
         
         posts = []
         
-        for sub_name in target_subreddits[:3]:  # Limit to 3 subreddits
+        for sub_name in target_subreddits:
             try:
                 subreddit_obj = self.praw_client.subreddit(sub_name)
                 
