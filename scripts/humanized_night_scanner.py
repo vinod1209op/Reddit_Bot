@@ -6,6 +6,7 @@ Runs in read-only mode during Pacific time windows.
 Updated to use refactored BrowserManager and LoginManager classes.
 """
 
+import argparse
 import copy
 import time
 import random
@@ -112,6 +113,24 @@ def in_time_window(current_time, start_time, end_time) -> bool:
     if start_time <= end_time:
         return start_time <= current_time <= end_time
     return current_time >= start_time or current_time <= end_time
+
+
+def parse_windows_arg(windows: str, tz_name: str) -> List[Dict[str, Any]]:
+    parsed: List[Dict[str, Any]] = []
+    for part in windows.split(","):
+        part = part.strip()
+        if not part or "-" not in part:
+            continue
+        start_s, end_s = part.split("-", 1)
+        parsed.append(
+            {
+                "name": f"override_{start_s}_{end_s}",
+                "start": start_s.strip(),
+                "end": end_s.strip(),
+                "timezone": tz_name,
+            }
+        )
+    return parsed
 
 
 def get_active_window(activity_config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -777,14 +796,46 @@ if __name__ == "__main__":
     print("=" * 60)
     print("Humanized Night Scanner")
     print("=" * 60)
-    
+
+    parser = argparse.ArgumentParser(description="Humanized night scanner")
+    parser.add_argument(
+        "--windows",
+        default=os.getenv("HUMANIZED_WINDOWS", ""),
+        help="Override windows (HH:MM-HH:MM, comma-separated).",
+    )
+    parser.add_argument(
+        "--timezone",
+        default=os.getenv("SCAN_TIMEZONE", "America/Los_Angeles"),
+        help="IANA timezone name.",
+    )
+    parser.add_argument(
+        "--force-run",
+        action="store_true",
+        help="Run regardless of schedule (sets window to 00:00-23:59).",
+    )
+    args = parser.parse_args()
+
+    force_run_env = os.getenv("HUMANIZED_FORCE_RUN", "").lower() in ("1", "true", "yes")
+
     # Check time window
     os.environ["ENABLE_POSTING"] = "0"
     os.environ["USE_LLM"] = "0"
 
     config_manager = ConfigManager()
     activity_config = config_manager.load_json('config/activity_schedule.json') or {}
-    active_window = get_active_window(activity_config)
+    if args.windows:
+        activity_config["time_windows"] = parse_windows_arg(args.windows, args.timezone)
+        activity_config["timezone"] = args.timezone
+
+    if args.force_run or force_run_env:
+        active_window = {
+            "name": "force_run",
+            "start": "00:00",
+            "end": "23:59",
+            "timezone": args.timezone,
+        }
+    else:
+        active_window = get_active_window(activity_config)
 
     if active_window:
         print("✓ In scheduled time window. Starting scanner...")

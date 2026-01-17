@@ -133,7 +133,7 @@ jobs:
           if [ -n "${{ github.event.inputs.windows }}" ]; then
             WINDOWS_ARG="--windows ${{ github.event.inputs.windows }}"
           elif [ "${{ github.event.inputs.force_run }}" = "true" ]; then
-            WINDOWS_ARG="--windows 00:00-23:59"
+            WINDOWS_ARG="--force-run"
           fi
           python scripts/humanized_night_scanner.py $WINDOWS_ARG
 
@@ -145,6 +145,15 @@ jobs:
           SUPABASE_PREFIX: scan-results/humanized
         run: |
           python scripts/upload_logs_supabase.py
+
+      - name: Upsert logs into Supabase DB
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_QUEUE_PATH: logs/night_queue.json
+          SUPABASE_SUMMARY_PATH: logs/night_scan_summary.csv
+        run: |
+          python scripts/upload_logs_supabase_db.py
 
       - name: Upload scan results
         if: always()
