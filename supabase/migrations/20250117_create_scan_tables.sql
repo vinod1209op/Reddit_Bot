@@ -80,6 +80,9 @@ create table if not exists public.scan_posts (
   method text,
   is_match boolean not null default false,
   matched_keywords jsonb,
+  used_at timestamptz,
+  used_by text,
+  used_action text,
   scan_window text,
   timezone text,
   scan_sort text,
@@ -89,6 +92,11 @@ create table if not exists public.scan_posts (
   ingested_at timestamptz not null default now()
 );
 
+alter table public.scan_posts
+  add column if not exists used_at timestamptz,
+  add column if not exists used_by text,
+  add column if not exists used_action text;
+
 create index if not exists scan_posts_post_id
   on public.scan_posts (post_id);
 
@@ -97,6 +105,9 @@ create index if not exists scan_posts_subreddit
 
 create index if not exists scan_posts_last_seen
   on public.scan_posts (last_seen_at);
+
+create index if not exists scan_posts_used_at
+  on public.scan_posts (used_at);
 
 
 -- Aggregated view for easy Render queries
@@ -114,3 +125,10 @@ select
 from public.scan_events
 left join lateral jsonb_array_elements_text(matched_keywords) as kw on true
 group by post_key;
+
+-- Clean view for Render: matched posts not yet used.
+create or replace view public.scanned_posts_clean as
+select *
+from public.scan_posts
+where is_match = true
+  and used_at is null;

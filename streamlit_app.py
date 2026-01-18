@@ -5,11 +5,13 @@ import os
 import sys
 import time
 import hashlib
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 import streamlit as st
 import json
+import requests
 
 # Ensure project imports work when launched from elsewhere (Render, etc.)
 PROJECT_ROOT = Path(__file__).parent
@@ -81,7 +83,7 @@ STATE_FILE = PROJECT_ROOT / "data" / "post_state.json"
 
 
 def _post_key(post: dict) -> str:
-    return post.get("id") or post.get("url") or post.get("permalink") or post.get("title") or ""
+    return post.get("post_key") or post.get("id") or post.get("url") or post.get("permalink") or post.get("title") or ""
 
 def _normalize_cached_posts(posts):
     """Normalize cached post URLs to canonical reddit.com URLs."""
@@ -97,6 +99,69 @@ def _normalize_cached_posts(posts):
         if permalink:
             post["permalink"] = RedditAutomation._normalize_post_url(permalink)
     return posts
+
+
+def _supabase_config() -> tuple[str, str]:
+    url = os.getenv("SUPABASE_URL", "").strip()
+    key = os.getenv("SUPABASE_ANON_KEY", "").strip()
+    if not key:
+        key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    return url, key
+
+
+def _supabase_headers(key: str) -> dict:
+    return {
+        "Authorization": f"Bearer {key}",
+        "apikey": key,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+
+def _fetch_supabase_posts(subreddit: str, limit: int, query: str) -> list[dict]:
+    url, key = _supabase_config()
+    if not url or not key:
+        return []
+    base = f"{url.rstrip('/')}/rest/v1/scanned_posts_clean"
+    params = {
+        "select": "post_key,post_id,title,url,subreddit,matched_keywords,last_seen_at,scan_sort,scan_time_range,scan_page_offset",
+        "order": "last_seen_at.desc",
+        "limit": str(limit),
+    }
+    if subreddit:
+        params["subreddit"] = f"eq.{subreddit}"
+    if query:
+        q = query.replace("%", "").replace("*", "")
+        params["or"] = f"(title.ilike.*{q}*,url.ilike.*{q}*)"
+    resp = requests.get(base, headers=_supabase_headers(key), params=params, timeout=20)
+    if resp.status_code >= 300:
+        st.warning(f"Supabase query failed ({resp.status_code}): {resp.text}")
+        return []
+    return resp.json() if isinstance(resp.json(), list) else []
+
+
+def _mark_supabase_used(post_key: str, action: str) -> bool:
+    url, key = _supabase_config()
+    if not url or not key or not post_key:
+        return False
+    base = f"{url.rstrip('/')}/rest/v1/scan_posts"
+    used_by = os.getenv("STREAMLIT_USER") or os.getenv("RENDER_SERVICE_NAME") or os.getenv("HOSTNAME") or "streamlit"
+    payload = {
+        "used_at": datetime.now(timezone.utc).isoformat(),
+        "used_by": used_by,
+        "used_action": action,
+    }
+    resp = requests.patch(
+        base,
+        headers=_supabase_headers(key),
+        params={"post_key": f"eq.{post_key}"},
+        json=payload,
+        timeout=20,
+    )
+    if resp.status_code >= 300:
+        st.warning(f"Supabase update failed ({resp.status_code}): {resp.text}")
+        return False
+    return True
 
 
 def _context_cache() -> dict:
@@ -410,6 +475,7 @@ def main() -> None:
 
     with st.sidebar:
         st.subheader("Browser")
+        data_source = st.radio("Post source", ["Live scan", "Database"], index=0)
         bot_active = bool(st.session_state.get("bot"))
         bot = st.session_state.get("bot")
         driver_alive = bool(getattr(bot, "driver", None) and getattr(getattr(bot, "driver", None), "session_id", None))
@@ -453,33 +519,54 @@ def main() -> None:
             "- Mark submitted/ignored to hide later."
         )
         st.caption("LLM uses OpenRouter when `OPENROUTER_API_KEY` is set.")
+        if data_source == "Database":
+            sb_url, sb_key = _supabase_config()
+            if sb_url and sb_key:
+                st.caption("Supabase: connected")
+            else:
+                st.warning("Supabase not configured. Set SUPABASE_URL + SUPABASE_ANON_KEY.")
 
     st.subheader("Find Posts")
     with st.form("search_form", clear_on_submit=False):
-        subreddit = st.text_input("Subreddit", value="microdosing", help="Name without r/")
+        subreddit = st.text_input("Subreddit", value="microdosing", help="Name without r/ (optional in DB mode)")
+        query_text = st.text_input("Keyword filter", value="", help="Optional keyword filter (title/url)")
         limit = st.number_input("How many posts?", min_value=1, max_value=50, value=10, step=1)
         submitted_search = st.form_submit_button("Search")
     if submitted_search:
-        bot = ensure_bot(cfg)
-        if bot:
-            requested = int(limit)
-            cache_key = f"search_cache_{subreddit.strip().lower()}_{requested}"
-            cached = st.session_state.get(cache_key)
-            if cached and search_cache_ttl > 0 and (time.time() - cached.get("ts", 0)) < search_cache_ttl:
-                posts = _normalize_cached_posts(cached.get("posts", []))
-                cached["posts"] = posts
-                st.session_state[cache_key] = cached
-            else:
-                search_status = st.empty()
-                search_status.info(f"Searching r/{subreddit}...")
-                fetch_limit = requested + len(post_state.get("submitted", [])) + len(post_state.get("ignored", [])) + 5
-                posts = bot.search_posts(subreddit=subreddit.strip() or None, limit=fetch_limit, include_body=False, include_comments=False)
+        requested = int(limit)
+        cache_key = f"search_cache_{data_source}_{subreddit.strip().lower()}_{query_text.strip().lower()}_{requested}"
+        cached = st.session_state.get(cache_key)
+        if cached and search_cache_ttl > 0 and (time.time() - cached.get("ts", 0)) < search_cache_ttl:
+            posts = _normalize_cached_posts(cached.get("posts", []))
+            cached["posts"] = posts
+            st.session_state[cache_key] = cached
+        else:
+            search_status = st.empty()
+            if data_source == "Database":
+                search_status.info("Loading posts from Supabase...")
+                posts = _fetch_supabase_posts(subreddit.strip().lower(), requested, query_text.strip())
+                for post in posts:
+                    post["id"] = post.get("post_id", "")
                 posts = _normalize_cached_posts(posts)
-                st.session_state[cache_key] = {"ts": time.time(), "posts": posts}
-                search_status.empty()
-            st.session_state["last_posts"] = posts
-            st.session_state["last_posts_fetched_count"] = len(posts)
-            st.session_state["last_requested_limit"] = requested
+            else:
+                bot = ensure_bot(cfg)
+                if not bot:
+                    posts = []
+                else:
+                    search_status.info(f"Searching r/{subreddit}...")
+                    fetch_limit = requested + len(post_state.get("submitted", [])) + len(post_state.get("ignored", [])) + 5
+                    posts = bot.search_posts(
+                        subreddit=subreddit.strip() or None,
+                        limit=fetch_limit,
+                        include_body=False,
+                        include_comments=False,
+                    )
+                    posts = _normalize_cached_posts(posts)
+            st.session_state[cache_key] = {"ts": time.time(), "posts": posts}
+            search_status.empty()
+        st.session_state["last_posts"] = posts
+        st.session_state["last_posts_fetched_count"] = len(posts)
+        st.session_state["last_requested_limit"] = requested
     posts = _normalize_cached_posts(st.session_state.get("last_posts", []))
     st.session_state["last_posts"] = posts
     fetched_count = st.session_state.get("last_posts_fetched_count")
@@ -700,6 +787,8 @@ def main() -> None:
                 st.session_state.pop(f"llm_edit_{post_key}", None)
                 st.session_state.pop(f"post_status_{post_key}", None)
                 save_post_state(post_state)
+                if data_source == "Database":
+                    _mark_supabase_used(post_key, "submitted")
                 st.success("Marked as submitted.")
                 st.session_state["last_action"] = f"mark_submitted {post_key}"
                 st.rerun()
@@ -716,6 +805,8 @@ def main() -> None:
                         }
                     )
                 save_post_state(post_state)
+                if data_source == "Database":
+                    _mark_supabase_used(post_key, "ignored")
                 st.success("Post ignored.")
                 st.session_state["last_action"] = f"ignore {post_key}"
                 st.rerun()
