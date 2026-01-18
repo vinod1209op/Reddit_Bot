@@ -4,12 +4,14 @@ on:
   schedule:
     # Late night only (America/Los_Angeles; UTC offset varies with DST)
     - cron: "0 6 * * *"
+    # Early morning (America/Los_Angeles; UTC offset varies with DST)
+    - cron: "0 14 * * *"
   workflow_dispatch:
     inputs:
-      account:
-        description: "Account name to run (default: account3)"
+      accounts:
+        description: "Account names to run (comma-separated). Default runs all."
         required: false
-        default: "account3"
+        default: "account1,account2,account3"
       force_run:
         description: "Override schedule and run immediately (00:00-23:59)"
         required: false
@@ -125,7 +127,7 @@ jobs:
           USE_TOR_PROXY: "1"
           CI: "true"
           SCAN_LIMIT: "25"
-          HUMANIZED_ACCOUNT_NAMES: ${{ github.event.inputs.account || 'account3' }}
+          HUMANIZED_ACCOUNT_NAMES: ${{ github.event.inputs.accounts || 'account1,account2,account3' }}
         run: |
           echo "Starting humanized scan..."
           WINDOWS_ARG=""

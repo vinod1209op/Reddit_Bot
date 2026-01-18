@@ -466,6 +466,10 @@ class HumanizedNightScanner:
             
             # Find upvote buttons
             upvote_buttons = self.driver.find_elements(By.CSS_SELECTOR, "div.thing div.arrow.up")
+            upvote_buttons = [
+                btn for btn in upvote_buttons
+                if "upmod" not in (btn.get_attribute("class") or "")
+            ]
             if upvote_buttons:
                 # Random chance to vote (30%)
                 if random.random() > 0.7:
@@ -484,10 +488,17 @@ class HumanizedNightScanner:
             # Check if saving is allowed
             if not self.activity_config.get('allow_saving', False):
                 return False
-            
-            # This would need actual implementation
-            # For now, just log that we would save
-            self.logger.debug("Save action triggered (not implemented)")
+            if not self.engagement:
+                return False
+
+            posts = self.driver.find_elements(By.CSS_SELECTOR, "div.thing")
+            if not posts:
+                return False
+            random.shuffle(posts)
+            for post in posts[:5]:
+                if self.engagement.save_post(post):
+                    self.browser_manager.add_human_delay(0.7, 1.4)
+                    return True
             return False
             
         except Exception as e:
@@ -500,11 +511,35 @@ class HumanizedNightScanner:
             # Check if following is allowed
             if not self.activity_config.get('allow_following', False):
                 return False
-            
-            # This would need actual implementation
-            # For now, just log that we would follow
-            self.logger.debug("Follow action triggered (not implemented)")
-            return False
+            if not self.engagement:
+                return False
+
+            author_elements = self.driver.find_elements(By.CSS_SELECTOR, "div.thing a.author")
+            authors = []
+            for element in author_elements:
+                name = (element.text or "").strip()
+                if not name:
+                    continue
+                if name.lower() in ("[deleted]", "deleted"):
+                    continue
+                authors.append(name)
+            if not authors:
+                return False
+
+            random.shuffle(authors)
+            author = authors[0]
+            current_url = ""
+            try:
+                current_url = self.driver.current_url
+            except Exception:
+                current_url = ""
+
+            followed = self.engagement.follow_user(author)
+            self.browser_manager.add_human_delay(1, 2)
+            if current_url:
+                self.driver.get(current_url)
+                self.browser_manager.add_human_delay(1, 2)
+            return followed
             
         except Exception as e:
             self.logger.debug(f"Error following: {e}")

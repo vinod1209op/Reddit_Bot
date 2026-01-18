@@ -4,24 +4,24 @@
   "time_windows": [
     {
       "name": "early_morning",
-      "start": "05:00",
-      "end": "07:00",
+      "start": "06:00",
+      "end": "08:30",
       "timezone": "America/Los_Angeles",
       "intensity": "medium",
-      "actions": ["browse", "view_posts", "scroll", "check_notifications"]
+      "actions": ["browse", "view_posts", "scroll", "vote", "save", "follow", "check_notifications"]
     },
     {
       "name": "late_night",
       "start": "22:00",
-      "end": "01:00",
+      "end": "00:30",
       "timezone": "America/Los_Angeles",
       "intensity": "high",
       "actions": ["browse", "view_posts", "scroll", "vote", "save", "follow"]
     }
   ],
-  "allow_voting": false,
-  "allow_saving": false,
-  "allow_following": false,
+  "allow_voting": true,
+  "allow_saving": true,
+  "allow_following": true,
   "allow_notifications_check": true,
   "activity_mix": {
     "browse_subreddit": 35,

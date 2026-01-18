@@ -1,10 +1,6 @@
 name: Reddit Selenium Read-Only Scan
 
 on:
-  schedule:
-    # Separate account windows (America/Los_Angeles; UTC offsets vary with DST)
-    - cron: "0 13 * * *" # account1: 05:00 PT
-    - cron: "0 20 * * *" # account2: 12:00 PT
   workflow_dispatch:
     inputs:
       account:

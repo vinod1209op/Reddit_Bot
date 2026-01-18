@@ -5,6 +5,7 @@
     "password_env_var": "REDDIT_PASSWORD_1",
     "cookies_path": "data/cookies_account1.pkl",
     "activity_profile": "researcher",
+    "night_scanner_enabled": false,
     "browser_fingerprint": {
       "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
       "viewport": "1920x1080",
@@ -17,6 +18,7 @@
     "password_env_var": "REDDIT_PASSWORD_2",
     "cookies_path": "data/cookies_account2.pkl",
     "activity_profile": "casual_reader",
+    "night_scanner_enabled": false,
     "browser_fingerprint": {
       "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15",
       "viewport": "1440x900",

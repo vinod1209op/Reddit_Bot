@@ -21,15 +21,32 @@ class EngagementActions:
         try:
             # Find save button (varies by Reddit theme)
             save_selectors = [
+                "li.save-button a",
                 "a.save-button",
+                "form.save-button a",
                 "a[onclick*='save']",
-                "button[aria-label*='save']"
+                "a[data-event-action='save']",
+                "button[aria-label*='save']",
+                "button[data-click-id='save']"
             ]
             
             for selector in save_selectors:
                 try:
                     # CORRECTED: Use proper Selenium 4+ syntax
                     save_btn = post_element.find_element(By.CSS_SELECTOR, selector)
+                    label = " ".join(
+                        filter(
+                            None,
+                            [
+                                (save_btn.text or "").strip().lower(),
+                                (save_btn.get_attribute("aria-label") or "").strip().lower(),
+                                (save_btn.get_attribute("title") or "").strip().lower(),
+                                (save_btn.get_attribute("value") or "").strip().lower(),
+                            ],
+                        )
+                    )
+                    if "unsave" in label or "saved" in label:
+                        continue
                     
                     # Use browser_manager for safe click if available
                     if self.browser_manager:
@@ -62,29 +79,60 @@ class EngagementActions:
             
             # Find follow button with multiple selectors
             follow_selectors = [
-                "//button[contains(., 'Follow')]",
-                "//span[contains(., 'Follow')]/parent::button",
-                "//div[contains(., 'Follow')]/parent::button",
-                "//button[@aria-label*='follow' or @aria-label*='Follow']"
+                "//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'follow')]",
+                "//a[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'follow')]",
+                "//span[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'follow')]/parent::button",
+                "//div[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'follow')]/parent::button",
+                "//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'add friend')]",
+                "//a[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'add friend')]",
+                "//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'friend')]",
+                "//a[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'friend')]",
             ]
-            
+            follow_candidates = []
+
             for xpath in follow_selectors:
                 try:
-                    # CORRECTED: Use proper Selenium 4+ syntax
-                    follow_buttons = self.driver.find_elements(By.XPATH, xpath)
-                    if follow_buttons:
-                        # Use browser_manager for safe click if available
-                        if self.browser_manager:
-                            clicked = self.browser_manager.safe_click(self.driver, follow_buttons[0])
-                        else:
-                            follow_buttons[0].click()
-                            clicked = True
-                        
-                        if clicked:
-                            time.sleep(random.uniform(1, 2))
-                            return True
+                    follow_candidates.extend(self.driver.find_elements(By.XPATH, xpath))
                 except (NoSuchElementException, StaleElementReferenceException):
                     continue
+
+            try:
+                follow_candidates.extend(
+                    self.driver.find_elements(
+                        By.CSS_SELECTOR,
+                        "form[action*='friend'] button, "
+                        "form[action*='friend'] a, "
+                        "form[action*='friend'] input[type='submit'], "
+                        "a.addfriend, button.addfriend",
+                    )
+                )
+            except (NoSuchElementException, StaleElementReferenceException):
+                pass
+
+            for candidate in follow_candidates:
+                label = " ".join(
+                    filter(
+                        None,
+                        [
+                            (candidate.text or "").strip().lower(),
+                            (candidate.get_attribute("aria-label") or "").strip().lower(),
+                            (candidate.get_attribute("title") or "").strip().lower(),
+                            (candidate.get_attribute("value") or "").strip().lower(),
+                        ],
+                    )
+                )
+                if any(word in label for word in ("unfollow", "remove", "unfriend")):
+                    continue
+                if not label:
+                    continue
+                if self.browser_manager:
+                    clicked = self.browser_manager.safe_click(self.driver, candidate)
+                else:
+                    candidate.click()
+                    clicked = True
+                if clicked:
+                    time.sleep(random.uniform(1, 2))
+                    return True
                     
         except Exception as e:
             print(f"Error following user {username}: {e}")
