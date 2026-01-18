@@ -776,6 +776,11 @@ def main() -> None:
     st.session_state.setdefault("auto_submit_guard", {})
     st.session_state.setdefault("page_index", 0)
     st.session_state.setdefault("post_filter", "")
+    st.session_state.setdefault("auto_start_attempted", False)
+
+    if not st.session_state.get("bot") and not st.session_state.get("auto_start_attempted"):
+        st.session_state["auto_start_attempted"] = True
+        ensure_bot(cfg)
 
     with st.sidebar:
         st.subheader("Source")
