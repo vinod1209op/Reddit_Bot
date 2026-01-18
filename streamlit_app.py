@@ -776,11 +776,6 @@ def main() -> None:
     st.session_state.setdefault("auto_submit_guard", {})
     st.session_state.setdefault("page_index", 0)
     st.session_state.setdefault("post_filter", "")
-    st.session_state.setdefault("auto_start_attempted", False)
-
-    if not st.session_state.get("bot") and not st.session_state.get("auto_start_attempted"):
-        st.session_state["auto_start_attempted"] = True
-        ensure_bot(cfg)
 
     with st.sidebar:
         st.subheader("Source")
@@ -790,7 +785,7 @@ def main() -> None:
             index=0,
             label_visibility="collapsed",
         )
-        hide_used = True
+        hide_used = False
         page_size_key = "page_size_db" if data_source == "Database" else "page_size_live"
         sort_choice_key = "sort_choice_db" if data_source == "Database" else "sort_choice_live"
         page_size = st.selectbox(
@@ -805,7 +800,6 @@ def main() -> None:
             index=0,
             key=sort_choice_key,
         )
-        hide_used = True
 
         st.subheader("Browser")
         bot_active = bool(st.session_state.get("bot"))
@@ -924,7 +918,7 @@ def main() -> None:
                     total = 0
                 else:
                     st.caption(f"Searching r/{subreddit}...")
-                    fetch_limit = requested + len(post_state.get("submitted", [])) + len(post_state.get("ignored", [])) + 5
+                    fetch_limit = requested
                     posts = bot.search_posts(
                         subreddit=subreddit.strip() or None,
                         limit=fetch_limit,
@@ -944,8 +938,6 @@ def main() -> None:
         query_lower = (query_text or "").strip().lower()
         for p in posts:
             key = _post_key(p)
-            if key in post_state["submitted"] or key in post_state["ignored"]:
-                continue
             dedupe_key = key or p.get("title", "")
             if dedupe_key in seen:
                 continue
