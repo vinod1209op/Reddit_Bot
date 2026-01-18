@@ -22,6 +22,10 @@ bot_metrics.csv
 *.log
 information/
 
+# Cookies/session artifacts
+cookies.pkl
+data/cookies_*.pkl
+
 # IDE/editor
 .vscode/
 .idea/

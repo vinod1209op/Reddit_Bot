@@ -5,6 +5,7 @@ import os
 import sys
 import time
 import hashlib
+import html
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -19,6 +20,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from shared.config_manager import ConfigManager  # type: ignore
+from shared.api_utils import matched_keywords as _match_keywords  # type: ignore
 from selenium_automation.main import RedditAutomation  # type: ignore
 
 
@@ -85,6 +87,17 @@ STATE_FILE = PROJECT_ROOT / "data" / "post_state.json"
 def _post_key(post: dict) -> str:
     return post.get("post_key") or post.get("id") or post.get("url") or post.get("permalink") or post.get("title") or ""
 
+
+def _display_reddit_url(url: str) -> str:
+    if not url:
+        return url
+    if "old.reddit.com" in url:
+        return url.replace("old.reddit.com", "www.reddit.com")
+    if "://reddit.com" in url:
+        return url.replace("://reddit.com", "://www.reddit.com")
+    return url
+
+
 def _normalize_cached_posts(posts):
     """Normalize cached post URLs to canonical reddit.com URLs."""
     if not isinstance(posts, list):
@@ -119,25 +132,59 @@ def _supabase_headers(key: str) -> dict:
 
 
 def _fetch_supabase_posts(subreddit: str, limit: int, query: str) -> list[dict]:
+    return _fetch_supabase_posts_page(subreddit, limit, query, 0, True)[0]
+
+
+def _fetch_supabase_posts_page(
+    subreddit: str,
+    limit: int,
+    query: str,
+    offset: int,
+    hide_used: bool,
+) -> tuple[list[dict], int]:
     url, key = _supabase_config()
     if not url or not key:
-        return []
-    base = f"{url.rstrip('/')}/rest/v1/scanned_posts_clean"
+        return [], 0
+    table = "scanned_posts_clean" if hide_used else "scan_posts"
+    base = f"{url.rstrip('/')}/rest/v1/{table}"
     params = {
         "select": "post_key,post_id,title,url,subreddit,matched_keywords,last_seen_at,scan_sort,scan_time_range,scan_page_offset",
         "order": "last_seen_at.desc",
         "limit": str(limit),
+        "offset": str(offset),
     }
     if subreddit:
-        params["subreddit"] = f"eq.{subreddit}"
+        if "," in subreddit:
+            subs = ",".join([s.strip() for s in subreddit.split(",") if s.strip()])
+            if subs:
+                params["subreddit"] = f"in.({subs})"
+        else:
+            params["subreddit"] = f"eq.{subreddit}"
     if query:
         q = query.replace("%", "").replace("*", "")
         params["or"] = f"(title.ilike.*{q}*,url.ilike.*{q}*)"
-    resp = requests.get(base, headers=_supabase_headers(key), params=params, timeout=20)
+    headers = _supabase_headers(key)
+    headers["Prefer"] = "count=exact"
+    resp = requests.get(base, headers=headers, params=params, timeout=20)
     if resp.status_code >= 300:
         st.warning(f"Supabase query failed ({resp.status_code}): {resp.text}")
-        return []
-    return resp.json() if isinstance(resp.json(), list) else []
+        return [], 0
+    rows = resp.json() if isinstance(resp.json(), list) else []
+    total = 0
+    content_range = resp.headers.get("Content-Range", "")
+    if "/" in content_range:
+        try:
+            total = int(content_range.split("/")[-1])
+        except Exception:
+            total = 0
+    return rows, total
+
+
+def _compute_post_matches(post: dict, keywords: list[str]) -> list[str]:
+    title = post.get("title") or ""
+    body = post.get("body") or ""
+    combined = f"{title} {body}".lower()
+    return _match_keywords(combined, keywords)
 
 
 def _mark_supabase_used(post_key: str, action: str) -> bool:
@@ -210,110 +257,53 @@ def main() -> None:
     st.markdown(
         """
         <style>
-        @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap");
+        @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap");
         :root {
-            --background: #fbf7ff;
-            --foreground: #3b2a63;
-            --card: #f6efff;
-            --card-foreground: #3b2a63;
-            --muted: #f7f1ff;
-            --muted-foreground: #6c6f9f;
-            --primary: #7c3aed;
+            --background: #fbf8ff;
+            --foreground: #2d2142;
+            --card: #ffffff;
+            --card-foreground: #2d2142;
+            --popover: #ffffff;
+            --popover-foreground: #2d2142;
+            --primary: #7b5dbe;
             --primary-foreground: #ffffff;
-            --accent: #8b5cf6;
-            --accent-2: #a855f7;
-            --border: #d9c7f5;
-            --ring: #d4bfff;
-            --sidebar: #faf5ff;
-            --sidebar-foreground: #3b2a63;
-            --chart-1: oklch(0.646 0.222 41.116);
-            --chart-2: oklch(0.6 0.118 184.704);
-            --chart-3: oklch(0.398 0.07 227.392);
-            --chart-4: oklch(0.828 0.189 84.429);
-            --chart-5: oklch(0.769 0.188 70.08);
-            --shadow: 0 12px 28px rgba(59, 42, 99, 0.1);
+            --secondary: #f3eefc;
+            --secondary-foreground: #2d2142;
+            --muted: #f7f4ff;
+            --muted-foreground: #72628d;
+            --accent: #a690e6;
+            --accent-foreground: #ffffff;
+            --destructive: #b455d6;
+            --border: #e6dcf6;
+            --input: #e6dcf6;
+            --ring: #d6c9ee;
+            --sidebar: #f6f1ff;
+            --sidebar-foreground: #2d2142;
+            --sidebar-primary: #7b5dbe;
+            --sidebar-primary-foreground: #ffffff;
+            --sidebar-accent: #f3eefc;
+            --sidebar-accent-foreground: #2d2142;
+            --sidebar-border: #e2d6f4;
+            --sidebar-ring: #d6c9ee;
+            --shadow: 0 10px 24px rgba(74, 58, 110, 0.12);
             --radius: 18px;
-
-            --core-purple-1: #3b2a63;
-            --core-purple-2: #4a2f8f;
-            --core-purple-3: #5b35b0;
-            --core-purple-4: #5b3ba4;
-            --core-purple-5: #6a3fc6;
-            --core-purple-6: #6f4bb3;
-            --core-purple-7: #7a5bcf;
-            --core-purple-8: #7b5cb8;
-
-            --purple-surface-1: #d9c7f5;
-            --purple-surface-2: #d4bfff;
-            --purple-surface-3: #dcc7ff;
-            --purple-surface-4: #e5d8ff;
-            --purple-surface-5: #e5dcff;
-            --purple-surface-6: #e9d5ff;
-            --purple-surface-7: #eadcff;
-            --purple-surface-8: #eadcf7;
-            --purple-surface-9: #e6d7ff;
-            --purple-surface-10: #f0e5ff;
-            --purple-surface-11: #f3e9ff;
-            --purple-surface-12: #f4ecff;
-            --purple-surface-13: #f6efff;
-            --purple-surface-14: #f6f0ff;
-            --purple-surface-15: #f7f0ff;
-            --purple-surface-16: #f7f1ff;
-            --purple-surface-17: #f8f5ff;
-            --purple-surface-18: #faf5ff;
-            --purple-surface-19: #fbf7ff;
-
-            --chart-series-1: #7c3aed;
-            --chart-series-2: #8b5cf6;
-            --chart-series-3: #a78bfa;
-            --chart-series-4: #a855f7;
-            --chart-series-5: #c084fc;
-
-            --dark-surface-1: #1a0f2b;
-            --dark-surface-2: #1b0f2b;
-            --dark-surface-3: #201338;
-            --dark-surface-4: #23143c;
-            --dark-surface-5: #24133b;
-
-            --blue-1: #0b7bb5;
-            --blue-2: #0f2740;
-            --blue-3: #9cd3ff;
-            --blue-4: #e6f5ff;
-
-            --warm-1: #cb912f;
-            --warm-2: #f6c28b;
-            --warm-3: #f8f1e7;
-            --warm-4: #f5ebff;
-            --warm-5: #f9f1ff;
-            --warm-6: #fdf7f0;
-
-            --neutral-1: #ccc;
-            --neutral-2: #fff;
-            --neutral-3: #ffffff;
-
-            --email-1: #181b46;
-            --email-2: #6c6f9f;
-            --email-3: #ab4eb8;
-            --email-4: #cb912f;
-            --email-5: #eadcf7;
-            --email-6: #eaf0f6;
-            --email-7: #ffffff;
         }
 
         html, body, [data-testid="stAppViewContainer"] {
-            background: radial-gradient(1200px 600px at 12% -10%, #ffffff 0%, var(--muted) 45%, #fdf7f0 100%);
+            background: radial-gradient(1200px 600px at 12% -10%, #ffffff 0%, var(--background) 55%, #f6f0ff 100%),
+                        linear-gradient(180deg, var(--background) 0%, #f7f2ff 100%);
             color: var(--foreground);
             font-family: "IBM Plex Sans", sans-serif;
         }
 
         [data-testid="stSidebar"] {
-            background: linear-gradient(180deg, var(--sidebar), #f6efff);
-            border-right: 1px solid var(--border);
+            background: linear-gradient(180deg, var(--sidebar), #f3efff);
+            border-right: 1px solid var(--sidebar-border);
         }
 
         .block-container {
-            padding-top: 2.2rem;
-            max-width: 1200px;
+            padding-top: 2rem;
+            max-width: 1240px;
         }
 
         h1, h2, h3, h4 {
@@ -323,18 +313,18 @@ def main() -> None:
         }
 
         h1 {
-            font-size: 2.7rem;
-            margin-bottom: 0.4rem;
+            font-size: 2.8rem;
+            margin-bottom: 0.35rem;
         }
 
         h2 {
-            font-size: 1.4rem;
-            margin-top: 2rem;
+            font-size: 1.5rem;
+            margin-top: 1.8rem;
         }
 
         .hero {
-            background: linear-gradient(120deg, #f5ebff, #fdf7f0);
-            border: 1px solid #eadcff;
+            background: linear-gradient(120deg, #fbf9ff, #ffffff);
+            border: 1px solid var(--border);
             border-radius: calc(var(--radius) + 4px);
             padding: 1.6rem 1.8rem;
             box-shadow: var(--shadow);
@@ -346,19 +336,20 @@ def main() -> None:
             align-items: center;
             gap: 0.4rem;
             padding: 0.2rem 0.7rem;
-            background: #eadcff;
-            color: var(--primary);
+            background: linear-gradient(120deg, var(--primary), var(--accent));
+            color: #ffffff;
             border-radius: 999px;
             font-size: 0.78rem;
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.08em;
+            box-shadow: 0 6px 14px rgba(123, 93, 190, 0.2);
         }
 
         .hero__subtitle {
             color: var(--muted-foreground);
             margin-top: 0.4rem;
-            font-size: 1rem;
+            font-size: 1.02rem;
         }
 
         .status-row {
@@ -378,58 +369,366 @@ def main() -> None:
         }
 
         .status-dot.ok {
-            background: #31b072;
-            box-shadow: 0 0 0 4px rgba(49, 176, 114, 0.18);
-        }
-
-        .card-surface {
-            background: var(--card);
-            border: 1px solid #e5d8ff;
-            border-radius: var(--radius);
-            padding: 1.2rem;
-            box-shadow: var(--shadow);
-            animation: fadeIn 0.6s ease-out;
+            background: var(--primary);
+            box-shadow: 0 0 0 3px rgba(123, 93, 190, 0.18);
         }
 
         div[data-testid="stForm"], div[data-testid="stExpander"] {
-            background: var(--card);
-            border: 1px solid #e5d8ff;
+            background: linear-gradient(180deg, #ffffff 0%, #f8f4ff 100%);
+            border: 1px solid var(--border);
             border-radius: var(--radius);
-            padding: 0.6rem 0.8rem;
-            box-shadow: var(--shadow);
+            padding: 0.7rem 0.9rem;
+            box-shadow: 0 10px 22px rgba(74, 58, 110, 0.12);
         }
 
         div.stButton > button {
-            background: linear-gradient(120deg, #7c3aed, #8b5cf6);
-            color: #fff;
+            background: linear-gradient(120deg, var(--primary), var(--accent));
+            color: var(--primary-foreground);
             border: none;
-            border-radius: 12px;
-            padding: 0.45rem 1rem;
+            border-radius: 10px;
+            padding: 0.4rem 0.9rem;
             font-weight: 600;
-            transition: transform 0.15s ease, box-shadow 0.2s ease;
-            box-shadow: 0 10px 20px rgba(124, 58, 237, 0.22);
+            font-size: 0.85rem;
+            letter-spacing: 0.01em;
+            transition: transform 0.15s ease, box-shadow 0.2s ease, filter 0.2s ease;
+            box-shadow: 0 8px 16px rgba(123, 93, 190, 0.18);
+        }
+
+        div.stButton > button,
+        div.stButton > button * {
+            color: #ffffff !important;
         }
 
         div.stButton > button:hover {
             transform: translateY(-1px);
-            box-shadow: 0 14px 22px rgba(124, 58, 237, 0.26);
+            box-shadow: 0 12px 22px rgba(123, 93, 190, 0.22);
+            filter: brightness(1.02);
+        }
+
+        div.stButton > button:active {
+            transform: translateY(0);
+            box-shadow: 0 5px 10px rgba(123, 93, 190, 0.2);
         }
 
         input, textarea {
             border-radius: 12px !important;
         }
 
+        input[type="checkbox"],
+        input[type="radio"],
+        input[type="range"] {
+            accent-color: var(--primary) !important;
+        }
+
+        div[data-baseweb="checkbox"] input:checked + div,
+        span[data-baseweb="checkbox"] input:checked + div {
+            background: var(--primary) !important;
+            border-color: var(--primary) !important;
+        }
+
+        div[data-testid="stCheckbox"] div[role="checkbox"],
+        div[data-baseweb="checkbox"] div[role="checkbox"],
+        span[data-baseweb="checkbox"] div[role="checkbox"] {
+            border-color: var(--border) !important;
+            background-color: #ffffff !important;
+        }
+
+        div[data-testid="stCheckbox"] div[role="checkbox"][aria-checked="true"],
+        div[data-baseweb="checkbox"] div[role="checkbox"][aria-checked="true"],
+        span[data-baseweb="checkbox"] div[role="checkbox"][aria-checked="true"] {
+            background: var(--primary) !important;
+            border-color: var(--primary) !important;
+        }
+
+        div[data-baseweb="checkbox"] svg,
+        div[data-baseweb="checkbox"] svg path,
+        span[data-baseweb="checkbox"] svg,
+        span[data-baseweb="checkbox"] svg path,
+        div[data-testid="stCheckbox"] svg,
+        div[data-testid="stCheckbox"] svg path {
+            color: #fff !important;
+            fill: #fff !important;
+        }
+
+        div[data-baseweb="radio"] input:checked + div {
+            border-color: var(--primary) !important;
+        }
+
+        div[data-testid="stRadio"] div[role="radio"][aria-checked="true"] {
+            border-color: var(--primary) !important;
+        }
+
+        div[data-testid="stRadio"] div[role="radio"] svg {
+            color: var(--primary) !important;
+            fill: var(--primary) !important;
+        }
+
+        div[data-baseweb="radio"] svg {
+            color: var(--primary) !important;
+            fill: var(--primary) !important;
+        }
+
+        div[data-baseweb="toggle"] input:checked + div,
+        span[data-baseweb="toggle"] input:checked + div {
+            background-color: var(--primary) !important;
+            border-color: var(--primary) !important;
+        }
+
+        div[data-testid="stToggle"] div[role="switch"][aria-checked="true"],
+        div[data-baseweb="toggle"] div[role="switch"][aria-checked="true"],
+        span[data-baseweb="toggle"] div[role="switch"][aria-checked="true"] {
+            background-color: var(--primary) !important;
+            border-color: var(--primary) !important;
+        }
+
+        div[data-testid="stToggle"] div[role="switch"],
+        div[data-baseweb="toggle"] div[role="switch"],
+        span[data-baseweb="toggle"] div[role="switch"] {
+            border-color: var(--border) !important;
+            background-color: var(--border) !important;
+        }
+
+        div[data-testid="stToggle"] div[role="switch"] > div,
+        div[data-baseweb="toggle"] div[role="switch"] > div,
+        span[data-baseweb="toggle"] div[role="switch"] > div {
+            background-color: #ffffff !important;
+        }
+
+        div[data-baseweb="tag"],
+        span[data-baseweb="tag"] {
+            background: linear-gradient(120deg, var(--primary), var(--accent)) !important;
+            background-color: var(--primary) !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 999px !important;
+            box-shadow: 0 6px 12px rgba(123, 93, 190, 0.18);
+        }
+
+        div[data-baseweb="tag"] span,
+        div[data-baseweb="tag"] svg,
+        div[data-baseweb="tag"] svg path,
+        span[data-baseweb="tag"] span,
+        span[data-baseweb="tag"] svg,
+        span[data-baseweb="tag"] svg path {
+            color: #fff !important;
+            fill: #fff !important;
+        }
+
+        div[data-baseweb="tag"] span,
+        div[data-baseweb="tag"] span *,
+        span[data-baseweb="tag"] span,
+        span[data-baseweb="tag"] span * {
+            color: #fff !important;
+        }
+
+        div[data-testid="stAlert"] {
+            background: var(--muted);
+            border: 1px solid var(--border);
+            border-left: 4px solid var(--primary);
+            color: var(--foreground);
+        }
+
+        div[data-testid="stAlert"] svg {
+            color: var(--primary);
+        }
+
         div[data-baseweb="input"] input,
         div[data-baseweb="textarea"] textarea,
         div[data-baseweb="select"] > div {
             background: var(--card);
-            border: 1px solid #eadcff;
+            border: 1px solid var(--input);
+            border-radius: 12px;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7);
         }
 
+        .stCaption,
+        .stCaption span {
+            color: var(--muted-foreground) !important;
+        }
+
+        /* Radio pills for "Post source" */
+        div[data-testid="stRadio"] > div[role="radiogroup"] {
+            display: inline-flex;
+            flex-wrap: nowrap;
+            gap: 0.4rem;
+            white-space: nowrap;
+        }
+
+        div[data-testid="stRadio"] div[role="radio"] {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            padding: 0.3rem 0.9rem;
+            color: var(--foreground);
+            font-weight: 600;
+        }
+
+        div[data-testid="stRadio"] div[role="radio"] svg {
+            display: none;
+        }
+
+        div[data-testid="stRadio"] div[role="radio"][aria-checked="true"] {
+            background: linear-gradient(120deg, var(--primary), var(--accent));
+            border-color: transparent;
+            color: var(--primary-foreground);
+            box-shadow: 0 6px 14px rgba(123, 93, 190, 0.18);
+        }
+
+        div[data-testid="stRadio"] div[role="radio"][aria-checked="true"] *,
+        div[data-testid="stRadio"] div[role="radio"][aria-checked="true"] span {
+            color: var(--primary-foreground) !important;
+            fill: var(--primary-foreground) !important;
+        }
+
+        /* Sidebar radio group styled like the "All customers / Idle customers" pills */
+        section[data-testid="stSidebar"] div[data-testid="stRadio"] > div[role="radiogroup"] {
+            display: inline-flex;
+            flex-direction: row;
+            flex-wrap: nowrap;
+            gap: 0.4rem;
+            padding: 0.35rem 0.4rem;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.9);
+            box-shadow: 0 6px 14px rgba(74, 58, 110, 0.1);
+        }
+
+        section[data-testid="stSidebar"] label[data-baseweb="radio"] {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 10px;
+            padding: 0.25rem 0.8rem;
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: var(--primary) !important;
+            background: transparent;
+            margin: 0 !important;
+            width: auto !important;
+        }
+
+        section[data-testid="stSidebar"] label[data-baseweb="radio"] > div:first-child {
+            display: none;
+        }
+
+        section[data-testid="stSidebar"] label[data-baseweb="radio"]:hover {
+            background: var(--secondary);
+        }
+
+        @supports selector(:has(*)) {
+            section[data-testid="stSidebar"] label[data-baseweb="radio"]:has(input:checked) {
+                background: var(--primary);
+                color: #ffffff !important;
+                box-shadow: 0 6px 14px rgba(123, 93, 190, 0.2);
+            }
+        }
+
+        section[data-testid="stSidebar"] label[data-baseweb="radio"] input:checked + div,
+        section[data-testid="stSidebar"] label[data-baseweb="radio"] input:checked ~ div {
+            background: var(--primary) !important;
+            color: #ffffff !important;
+            border-radius: 10px;
+            padding: 0.25rem 0.8rem;
+            box-shadow: 0 6px 14px rgba(123, 93, 190, 0.2);
+        }
+
+        section[data-testid="stSidebar"] label[data-baseweb="radio"] input:checked ~ div,
+        section[data-testid="stSidebar"] label[data-baseweb="radio"] input:checked ~ div * {
+            color: #ffffff !important;
+            fill: #ffffff !important;
+        }
+
+        section[data-testid="stSidebar"] > div {
+            background: var(--sidebar);
+            border-right: 1px solid var(--sidebar-border);
+        }
+
+        section[data-testid="stSidebar"] .stMarkdown,
+        section[data-testid="stSidebar"] label,
+        section[data-testid="stSidebar"] span,
+        section[data-testid="stSidebar"] p {
+            color: var(--sidebar-foreground);
+        }
+
+        .url-bar {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: linear-gradient(180deg, #ffffff 0%, #f6f2ff 100%);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 0.2rem 0.5rem;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+        }
+
+        .url-text {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+            font-size: 0.85rem;
+            color: var(--foreground);
+            padding: 0.35rem 0.5rem;
+            border-radius: 8px;
+            background: transparent;
+        }
+
+        .url-open {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 34px;
+            height: 34px;
+            border-radius: 999px;
+            background: linear-gradient(120deg, var(--primary), var(--accent));
+            color: var(--primary-foreground) !important;
+            text-decoration: none !important;
+            font-size: 0.85rem;
+            box-shadow: 0 8px 16px rgba(123, 93, 190, 0.22);
+            border: none;
+            transition: transform 0.15s ease, box-shadow 0.2s ease;
+        }
+
+        .url-open:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 20px rgba(123, 93, 190, 0.26);
+        }
+
+
+
+        .post-title {
+            font-weight: 600;
+            color: var(--foreground);
+            margin-bottom: 0.4rem;
+            font-size: 1.05rem;
+            line-height: 1.4;
+        }
+
+        .post-sub {
+            color: var(--muted-foreground);
+            font-weight: 500;
+        }
+
+        .post-tags {
+            color: var(--muted-foreground);
+            font-size: 0.85rem;
+            margin-bottom: 0.6rem;
+        }
+        
         hr {
             border: none;
             height: 1px;
-            background: linear-gradient(90deg, rgba(124, 58, 237, 0.0), rgba(124, 58, 237, 0.35), rgba(124, 58, 237, 0.0));
+            background: linear-gradient(90deg, rgba(123, 93, 190, 0.0), rgba(123, 93, 190, 0.28), rgba(123, 93, 190, 0.0));
+        }
+
+        div[data-testid="stExpander"] > details > summary {
+            font-weight: 600;
+            color: var(--foreground);
+        }
+
+        div[data-testid="stExpander"] > details[open] > summary {
+            color: var(--primary);
         }
 
         @keyframes rise {
@@ -444,7 +743,8 @@ def main() -> None:
 
         @media (max-width: 900px) {
             .block-container { padding-top: 1.4rem; }
-            h1 { font-size: 2.1rem; }
+            h1 { font-size: 2.2rem; }
+            .hero { padding: 1.3rem 1.4rem; }
         }
         </style>
         """,
@@ -468,14 +768,41 @@ def main() -> None:
     post_state = load_post_state()
     auto_submit_limit = cfg.bot_settings.get("auto_submit_limit", 0)
     search_cache_ttl = int(os.getenv("SEARCH_CACHE_TTL", "0") or 0)
+    keyword_list = cfg.bot_settings.get("keywords") or cfg.default_keywords
+    available_subs = cfg.bot_settings.get("subreddits") or cfg.default_subreddits
     st.session_state.setdefault("auto_submit_count", 0)
     st.session_state.setdefault("last_action", "")
     st.session_state.setdefault("error_count", 0)
     st.session_state.setdefault("auto_submit_guard", {})
+    st.session_state.setdefault("page_index", 0)
+    st.session_state.setdefault("post_filter", "")
 
     with st.sidebar:
+        st.subheader("Source")
+        data_source = st.radio(
+            "Post source",
+            ["Live scan", "Database"],
+            index=0,
+            label_visibility="collapsed",
+        )
+        hide_used = True
+        page_size_key = "page_size_db" if data_source == "Database" else "page_size_live"
+        sort_choice_key = "sort_choice_db" if data_source == "Database" else "sort_choice_live"
+        page_size = st.selectbox(
+            "Page size",
+            [10, 25, 50],
+            index=0,
+            key=page_size_key,
+        )
+        sort_choice = st.selectbox(
+            "Sort",
+            ["Newest", "Oldest", "Subreddit"],
+            index=0,
+            key=sort_choice_key,
+        )
+        hide_used = True
+
         st.subheader("Browser")
-        data_source = st.radio("Post source", ["Live scan", "Database"], index=0)
         bot_active = bool(st.session_state.get("bot"))
         bot = st.session_state.get("bot")
         driver_alive = bool(getattr(bot, "driver", None) and getattr(getattr(bot, "driver", None), "session_id", None))
@@ -487,7 +814,10 @@ def main() -> None:
         )
         if driver_alive:
             current_url = getattr(getattr(bot, "driver", None), "current_url", "") or ""
-            st.caption(f"Driver alive • {current_url[:40] + '...' if len(current_url) > 43 else current_url}")
+            display_current_url = _display_reddit_url(current_url)
+            st.caption(
+                f"Driver alive • {display_current_url[:40] + '...' if len(display_current_url) > 43 else display_current_url}"
+            )
         else:
             st.caption("Driver: not started")
         if st.button("Start / Reconnect"):
@@ -498,12 +828,19 @@ def main() -> None:
             st.info("Browser closed.")
         if st.button("Clear search cache"):
             for key in list(st.session_state.keys()):
-                if key.startswith("search_cache_"):
+                if key.startswith(
+                    (
+                        "search_cache_",
+                        "last_posts_",
+                        "page_index_",
+                        "post_filter_",
+                    )
+                ):
                     st.session_state.pop(key, None)
             st.session_state.pop("last_posts", None)
-            st.session_state.pop("last_posts_fetched_count", None)
-            st.session_state.pop("last_requested_limit", None)
             st.session_state.pop("post_context_cache", None)
+            st.session_state.pop("post_filter", None)
+            st.session_state.pop("page_index", None)
             st.info("Search cache cleared.")
         if auto_submit_limit:
             st.caption(f"Auto-submit used: {st.session_state['auto_submit_count']}/{auto_submit_limit}")
@@ -511,14 +848,6 @@ def main() -> None:
             st.caption(f"Last action: {st.session_state['last_action']}")
         if st.session_state.get("error_count"):
             st.caption(f"Errors: {st.session_state['error_count']}")
-        st.subheader("Tips")
-        st.markdown(
-            "- Start browser, then search.\n"
-            "- Edit or generate a reply.\n"
-            "- Prefill keeps it manual; Auto-submit posts immediately.\n"
-            "- Mark submitted/ignored to hide later."
-        )
-        st.caption("LLM uses OpenRouter when `OPENROUTER_API_KEY` is set.")
         if data_source == "Database":
             sb_url, sb_key = _supabase_config()
             if sb_url and sb_key:
@@ -526,25 +855,60 @@ def main() -> None:
             else:
                 st.warning("Supabase not configured. Set SUPABASE_URL + SUPABASE_ANON_KEY.")
 
+    if st.session_state.get("last_data_source") != data_source:
+        prev_source = st.session_state.get("last_data_source")
+        if prev_source:
+            st.session_state[f"last_posts_{prev_source}"] = st.session_state.get("last_posts", [])
+            st.session_state[f"page_index_{prev_source}"] = st.session_state.get("page_index", 0)
+            st.session_state[f"post_filter_{prev_source}"] = st.session_state.get("post_filter", "")
+        st.session_state["last_data_source"] = data_source
+        st.session_state["last_posts"] = st.session_state.get(f"last_posts_{data_source}", [])
+        st.session_state["page_index"] = st.session_state.get(f"page_index_{data_source}", 0)
+        st.session_state["post_filter"] = st.session_state.get(f"post_filter_{data_source}", "")
+
     st.subheader("Find Posts")
-    with st.form("search_form", clear_on_submit=False):
-        subreddit = st.text_input("Subreddit", value="microdosing", help="Name without r/ (optional in DB mode)")
-        query_text = st.text_input("Keyword filter", value="", help="Optional keyword filter (title/url)")
-        limit = st.number_input("How many posts?", min_value=1, max_value=50, value=10, step=1)
-        submitted_search = st.form_submit_button("Search")
+    if data_source == "Database":
+        selected_subs = st.multiselect(
+            "Subreddits",
+            options=available_subs,
+            default=available_subs[:2] if available_subs else [],
+        )
+        subreddit = ",".join(selected_subs)
+    else:
+        subreddit = st.text_input("Subreddit", value="microdosing", help="Name without r/")
+    limit = st.number_input("How many posts?", min_value=1, max_value=100, value=10, step=5)
+    query_text = st.text_input(
+        "Filter results",
+        key="post_filter",
+        placeholder="Filter by title, URL, or keywords",
+    )
+    st.session_state[f"post_filter_{data_source}"] = st.session_state.get("post_filter", "")
+
+    search_left, search_right = st.columns([1, 6])
+    with search_left:
+        submitted_search = st.button("Search", use_container_width=True)
+    with search_right:
+        pager_slot = st.empty()
     if submitted_search:
+        st.session_state["page_index"] = 0
+        st.session_state[f"page_index_{data_source}"] = 0
         requested = int(limit)
-        cache_key = f"search_cache_{data_source}_{subreddit.strip().lower()}_{query_text.strip().lower()}_{requested}"
+        cache_key = f"search_cache_{data_source}_{subreddit.strip().lower()}_{requested}_{hide_used}"
         cached = st.session_state.get(cache_key)
         if cached and search_cache_ttl > 0 and (time.time() - cached.get("ts", 0)) < search_cache_ttl:
             posts = _normalize_cached_posts(cached.get("posts", []))
             cached["posts"] = posts
             st.session_state[cache_key] = cached
         else:
-            search_status = st.empty()
             if data_source == "Database":
-                search_status.info("Loading posts from Supabase...")
-                posts = _fetch_supabase_posts(subreddit.strip().lower(), requested, query_text.strip())
+                st.caption("Loading posts from Supabase...")
+                posts, total = _fetch_supabase_posts_page(
+                    subreddit.strip().lower(),
+                    requested,
+                    "",
+                    0,
+                    hide_used,
+                )
                 for post in posts:
                     post["id"] = post.get("post_id", "")
                 posts = _normalize_cached_posts(posts)
@@ -552,8 +916,9 @@ def main() -> None:
                 bot = ensure_bot(cfg)
                 if not bot:
                     posts = []
+                    total = 0
                 else:
-                    search_status.info(f"Searching r/{subreddit}...")
+                    st.caption(f"Searching r/{subreddit}...")
                     fetch_limit = requested + len(post_state.get("submitted", [])) + len(post_state.get("ignored", [])) + 5
                     posts = bot.search_posts(
                         subreddit=subreddit.strip() or None,
@@ -562,18 +927,16 @@ def main() -> None:
                         include_comments=False,
                     )
                     posts = _normalize_cached_posts(posts)
-            st.session_state[cache_key] = {"ts": time.time(), "posts": posts}
-            search_status.empty()
+                    total = len(posts)
+            st.session_state[cache_key] = {"ts": time.time(), "posts": posts, "total": total}
         st.session_state["last_posts"] = posts
-        st.session_state["last_posts_fetched_count"] = len(posts)
-        st.session_state["last_requested_limit"] = requested
+        st.session_state[f"last_posts_{data_source}"] = posts
     posts = _normalize_cached_posts(st.session_state.get("last_posts", []))
     st.session_state["last_posts"] = posts
-    fetched_count = st.session_state.get("last_posts_fetched_count")
-    requested_limit = st.session_state.get("last_requested_limit", 0)
     if posts:
         filtered_posts = []
         seen = set()
+        query_lower = (query_text or "").strip().lower()
         for p in posts:
             key = _post_key(p)
             if key in post_state["submitted"] or key in post_state["ignored"]:
@@ -581,15 +944,44 @@ def main() -> None:
             dedupe_key = key or p.get("title", "")
             if dedupe_key in seen:
                 continue
+            if data_source == "Live scan":
+                p["matched_keywords"] = p.get("matched_keywords") or _compute_post_matches(p, keyword_list)
+            if query_lower:
+                title_val = (p.get("title") or "").lower()
+                url_val = (p.get("url") or "").lower()
+                keywords_val = " ".join(p.get("matched_keywords") or [])
+                if query_lower not in title_val and query_lower not in url_val and query_lower not in keywords_val:
+                    continue
             seen.add(dedupe_key)
             filtered_posts.append(p)
-        # Cap to requested limit to avoid overshooting the user's requested count.
-        posts = filtered_posts[:requested_limit or len(filtered_posts)]
-        shown_count = len(posts)
-        if requested_limit and shown_count < requested_limit:
-            st.success(f"Showing {shown_count} of requested {requested_limit} (filtered out submitted/ignored or not enough new posts).")
+        if sort_choice == "Subreddit":
+            filtered_posts.sort(key=lambda row: (row.get("subreddit") or "", row.get("title") or ""))
+        elif sort_choice == "Oldest":
+            filtered_posts.sort(key=lambda row: row.get("last_seen_at") or "")
         else:
-            st.success(f"Showing {shown_count} posts.")
+            filtered_posts.sort(key=lambda row: row.get("last_seen_at") or "", reverse=True)
+
+        total_filtered = len(filtered_posts)
+        page_index = st.session_state.get("page_index", 0)
+        start = page_index * page_size
+        end = start + page_size
+        posts = filtered_posts[start:end]
+        total_pages = max(1, (total_filtered + page_size - 1) // page_size)
+        if total_pages > 1:
+            with pager_slot.container():
+                _, col_prev, col_page, col_next = st.columns([6, 1.2, 1, 1.2], gap="small")
+                with col_prev:
+                    if st.button("Prev", disabled=page_index <= 0, use_container_width=True):
+                        st.session_state["page_index"] = max(0, page_index - 1)
+                        st.session_state[f"page_index_{data_source}"] = st.session_state["page_index"]
+                        st.rerun()
+                with col_page:
+                    st.caption(f"Page {page_index + 1} of {total_pages}")
+                with col_next:
+                    if st.button("Next", disabled=(page_index + 1) >= total_pages, use_container_width=True):
+                        st.session_state["page_index"] = min(total_pages - 1, page_index + 1)
+                        st.session_state[f"page_index_{data_source}"] = st.session_state["page_index"]
+                        st.rerun()
         st.subheader("Pick a Post")
         for idx, post in enumerate(posts, 1):
             title = post.get("title") or "No title"
@@ -602,9 +994,31 @@ def main() -> None:
                 if pid and sub:
                     url = f"https://old.reddit.com/r/{sub}/comments/{pid}/"
             subreddit = post.get("subreddit", "")
-            st.markdown(f"**{idx}. {title}**  _(r/{subreddit})_")
+            matched = post.get("matched_keywords") or []
+            match_label = ", ".join(matched) if isinstance(matched, list) else ""
+            title_safe = html.escape(title)
+            sub_safe = html.escape(subreddit)
+            st.markdown("<div class='post-card'>", unsafe_allow_html=True)
+            st.markdown(
+                f"<div class='post-title'>{idx}. {title_safe} <span class='post-sub'>(r/{sub_safe})</span></div>",
+                unsafe_allow_html=True,
+            )
+            if match_label:
+                st.markdown(
+                    f"<div class='post-tags'>Keywords: {html.escape(match_label)}</div>",
+                    unsafe_allow_html=True,
+                )
             if url:
-                st.code(url, language="")
+                display_url = _display_reddit_url(url)
+                st.markdown(
+                    f"""
+                    <div class="url-bar">
+                        <div class="url-text">{html.escape(display_url)}</div>
+                        <a class="url-open" href="{html.escape(display_url)}" target="_blank" rel="noopener">↗</a>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
             else:
                 st.caption("No link available for this post.")
             if url:
@@ -752,24 +1166,11 @@ def main() -> None:
                         else:
                             gen_status.warning("LLM generation unavailable; please enter a manual reply.")
 
-                # Render status message for this post outside the expander
-            if status_key in st.session_state:
-                level, msg = st.session_state[status_key]
-                if level == "success":
-                    st.success(msg)
-                elif level == "warning":
-                    st.warning(msg)
-                elif level == "error":
-                    st.error(msg)
+            pad_left, col_a, col_b, pad_right = st.columns([0.1, 2, 2, 3], gap="small")
+            mark_clicked = col_a.button("Mark submitted", key=f"mark_submit_{post_key}")
+            ignore_clicked = col_b.button("Ignore this post", key=f"ignore_post_{post_key}")
 
-            # Post-level actions (outside the expander)
-            pad_left, col_a, col_b, pad_right = st.columns([0.1, 2, 2, 5], gap="small")
-            mark_sub_key = f"mark_submitted_{post_key}"
-            mark_submitted_box = col_a.checkbox("Mark submitted", key=mark_sub_key, value=False)
-            ignore_key = f"ignore_post_{post_key}"
-            ignore_checked = col_b.checkbox("Ignore this post", key=ignore_key, value=False)
-
-            if mark_submitted_box and post_key not in post_state["submitted"]:
+            if mark_clicked and post_key not in post_state["submitted"]:
                 post_state["submitted"].add(post_key)
                 existing_keys_sub = {d.get("key") for d in post_state.get("submitted_details", [])}
                 if post_key not in existing_keys_sub:
@@ -789,11 +1190,11 @@ def main() -> None:
                 save_post_state(post_state)
                 if data_source == "Database":
                     _mark_supabase_used(post_key, "submitted")
-                st.success("Marked as submitted.")
+                st.caption("Marked as submitted.")
                 st.session_state["last_action"] = f"mark_submitted {post_key}"
                 st.rerun()
 
-            if ignore_checked and post_key not in post_state["ignored"]:
+            if ignore_clicked and post_key not in post_state["ignored"]:
                 post_state["ignored"].add(post_key)
                 existing_keys = {d.get("key") for d in post_state.get("ignored_details", [])}
                 if post_key not in existing_keys:
@@ -807,9 +1208,10 @@ def main() -> None:
                 save_post_state(post_state)
                 if data_source == "Database":
                     _mark_supabase_used(post_key, "ignored")
-                st.success("Post ignored.")
+                st.caption("Post ignored.")
                 st.session_state["last_action"] = f"ignore {post_key}"
                 st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
 
     # Show ignored posts for current subreddit
     current_sub = subreddit.strip() if 'subreddit' in locals() else ""

@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Sequence, Tuple
 from urllib.parse import urljoin, urlparse, urlunparse
 
-import requests
 
 # Selenium selectors/wait helpers
 from selenium.webdriver.common.by import By

@@ -411,7 +411,21 @@ class RedditBotAdapter:
             
             # Use Selenium bot's reply functionality if available
             if hasattr(self.selenium_bot, 'reply_to_post'):
-                return self.selenium_bot.reply_to_post(post, reply_text)
+                post_url = post.get("url") or ""
+                if not post_url:
+                    permalink = post.get("permalink", "") or ""
+                    if permalink.startswith("http"):
+                        post_url = permalink
+                    elif permalink.startswith("/"):
+                        post_url = f"https://old.reddit.com{permalink}"
+                if not post_url:
+                    post_id = post.get("id") or self._extract_post_id_from_url(post.get("permalink", "") or "")
+                    subreddit = post.get("subreddit") or ""
+                    if post_id and subreddit:
+                        post_url = f"https://old.reddit.com/r/{subreddit}/comments/{post_id}/"
+                if not post_url:
+                    return _structured_error("No post URL available for Selenium reply", code="missing_post_url")
+                return self.selenium_bot.reply_to_post(post_url, reply_text, dry_run=False)
             
             # Fallback: Manual Selenium reply
             return self._selenium_manual_reply(post, reply_text)

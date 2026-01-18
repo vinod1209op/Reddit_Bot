@@ -119,7 +119,6 @@ class BrowserManager:
         if chrome_bin:
             options.binary_location = chrome_bin
         self._apply_tor_proxy_to_options(options)
-        self._apply_tor_proxy_to_options(options)
         
         # Add arguments to mimic human behavior (when stealth is enabled)
         if self.stealth_mode:
@@ -431,7 +430,9 @@ class BrowserManager:
         """Take screenshot of current page"""
         try:
             # Create screenshots directory if it doesn't exist
-            os.makedirs(os.path.dirname(filename), exist_ok=True)
+            directory = os.path.dirname(filename)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
             driver.save_screenshot(filename)
             logger.info(f"Screenshot saved: {filename}")
             return True
