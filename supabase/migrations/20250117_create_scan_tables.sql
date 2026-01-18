@@ -65,6 +65,39 @@ create index if not exists scan_events_subreddit
 create index if not exists scan_events_timestamp
   on public.scan_events (timestamp_utc);
 
+-- All scanned posts (one row per post ever)
+create table if not exists public.scan_posts (
+  post_key text primary key,
+  post_id text,
+  url text,
+  title text,
+  subreddit text,
+  last_seen_at timestamptz not null default now(),
+  first_seen_at timestamptz not null default now(),
+  last_run_id text,
+  last_account text,
+  mode text,
+  method text,
+  is_match boolean not null default false,
+  matched_keywords jsonb,
+  scan_window text,
+  timezone text,
+  scan_sort text,
+  scan_time_range text,
+  scan_page_offset integer default 0,
+  subreddit_set text,
+  ingested_at timestamptz not null default now()
+);
+
+create index if not exists scan_posts_post_id
+  on public.scan_posts (post_id);
+
+create index if not exists scan_posts_subreddit
+  on public.scan_posts (subreddit);
+
+create index if not exists scan_posts_last_seen
+  on public.scan_posts (last_seen_at);
+
 
 -- Aggregated view for easy Render queries
 create or replace view public.scanned_posts as

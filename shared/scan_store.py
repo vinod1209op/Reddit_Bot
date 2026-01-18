@@ -31,6 +31,7 @@ SUMMARY_HEADER = [
 
 QUEUE_DEFAULT_PATH = "logs/night_queue.json"
 SEEN_DEFAULT_PATH = "logs/seen_post_ids.json"
+SCANNED_DEFAULT_PATH = "logs/scanned_posts.json"
 
 
 def normalize_reddit_url(url: str) -> str:
@@ -108,6 +109,53 @@ def add_to_queue(
         "url": info.get("url", ""),
         "method": method,
         "status": "pending",
+        "scan_sort": scan_sort,
+        "scan_time_range": scan_time_range,
+        "scan_page_offset": scan_page_offset,
+        "subreddit_set": subreddit_set,
+    }
+    entries.append(entry)
+    write_queue(path, entries)
+
+
+def add_scanned_post(
+    path: Path,
+    run_id: str,
+    account: str,
+    tz_name: str,
+    scan_window: str,
+    mode: str,
+    info: Mapping[str, str],
+    hits: Sequence[str],
+    method: str,
+    scan_sort: str = "",
+    scan_time_range: str = "",
+    scan_page_offset: int = 0,
+    subreddit_set: str = "",
+) -> None:
+    entries = load_queue(path)
+    existing = {queue_key(e) for e in entries}
+    key = info.get("id") or info.get("url") or info.get("title") or ""
+    if not key or key in existing:
+        return
+    tzinfo = ZoneInfo(tz_name) if ZoneInfo else None
+    entry = {
+        "post_key": key,
+        "run_id": run_id,
+        "account": account,
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "timestamp_local": datetime.now(tzinfo).isoformat() if tzinfo else datetime.now().isoformat(),
+        "timezone": tz_name,
+        "scan_window": scan_window,
+        "mode": mode,
+        "subreddit": info.get("subreddit", ""),
+        "post_id": info.get("id", ""),
+        "title": info.get("title", ""),
+        "matched_keywords": list(hits),
+        "url": info.get("url", ""),
+        "method": method,
+        "status": "matched" if hits else "scanned",
+        "is_match": bool(hits),
         "scan_sort": scan_sort,
         "scan_time_range": scan_time_range,
         "scan_page_offset": scan_page_offset,
@@ -206,3 +254,8 @@ def build_run_paths(run_id: str, base_dir: str = "logs") -> Tuple[Path, Path, Pa
     safe_run_id = "".join(ch if ch.isalnum() or ch in ("-", "_") else "-" for ch in run_id)
     run_dir = Path(base_dir) / "runs" / safe_run_id
     return run_dir, run_dir / "night_queue.json", run_dir / "night_scan_summary.csv"
+
+
+def build_run_scanned_path(run_id: str, base_dir: str = "logs") -> Path:
+    run_dir, _, _ = build_run_paths(run_id, base_dir)
+    return run_dir / "scanned_posts.json"

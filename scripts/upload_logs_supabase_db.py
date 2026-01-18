@@ -9,6 +9,7 @@ Optional:
   SUPABASE_SCHEMA (default: public)
   SUPABASE_QUEUE_PATH (default: logs/night_queue.json)
   SUPABASE_SUMMARY_PATH (default: logs/night_scan_summary.csv)
+  SUPABASE_SCANNED_PATH (default: logs/scanned_posts.json)
 """
 import csv
 import json
@@ -69,6 +70,7 @@ def main() -> None:
     schema = _get_env("SUPABASE_SCHEMA", "public")
     queue_path = Path(_get_env("SUPABASE_QUEUE_PATH", "logs/night_queue.json"))
     summary_path = Path(_get_env("SUPABASE_SUMMARY_PATH", "logs/night_scan_summary.csv"))
+    scanned_path = Path(_get_env("SUPABASE_SCANNED_PATH", "logs/scanned_posts.json"))
 
     if not supabase_url or not supabase_key:
         raise SystemExit("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.")
@@ -79,6 +81,7 @@ def main() -> None:
 
     queue_entries = _load_queue(queue_path)
     summary_entries = _load_summary(summary_path)
+    scanned_entries = _load_queue(scanned_path)
 
     scan_events: List[Dict[str, Any]] = []
     for entry in queue_entries:
@@ -127,8 +130,40 @@ def main() -> None:
 
     _post_records(base_url, supabase_key, "scan_events", scan_events, "event_key")
     _post_records(base_url, supabase_key, "scan_runs", scan_runs, "run_id,account,subreddit")
+    scan_posts: List[Dict[str, Any]] = []
+    for entry in scanned_entries:
+        post_key = entry.get("post_key") or entry.get("post_id") or entry.get("url") or entry.get("title") or ""
+        if not post_key:
+            continue
+        matched_keywords = entry.get("matched_keywords") or []
+        record = {
+            "post_key": post_key,
+            "post_id": entry.get("post_id", ""),
+            "url": entry.get("url", ""),
+            "title": entry.get("title", ""),
+            "subreddit": entry.get("subreddit", ""),
+            "last_seen_at": entry.get("timestamp_utc"),
+            "last_run_id": entry.get("run_id", ""),
+            "last_account": entry.get("account", ""),
+            "mode": entry.get("mode", ""),
+            "method": entry.get("method", ""),
+            "is_match": bool(entry.get("is_match")) or bool(matched_keywords),
+            "matched_keywords": matched_keywords,
+            "scan_window": entry.get("scan_window", ""),
+            "timezone": entry.get("timezone", ""),
+            "scan_sort": entry.get("scan_sort", ""),
+            "scan_time_range": entry.get("scan_time_range", ""),
+            "scan_page_offset": int(entry.get("scan_page_offset") or 0),
+            "subreddit_set": entry.get("subreddit_set", ""),
+        }
+        scan_posts.append(record)
 
-    print(f"Uploaded {len(scan_events)} scan_events and {len(scan_runs)} scan_runs.")
+    _post_records(base_url, supabase_key, "scan_posts", scan_posts, "post_key")
+
+    print(
+        f"Uploaded {len(scan_events)} scan_events, {len(scan_runs)} scan_runs, "
+        f"{len(scan_posts)} scan_posts."
+    )
 
 
 if __name__ == "__main__":

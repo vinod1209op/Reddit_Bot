@@ -5,6 +5,7 @@ from typing import Sequence, Set
 from selenium_automation.main import RedditAutomation
 from shared.api_utils import matched_keywords
 from shared.scan_store import (
+    add_scanned_post,
     add_to_queue,
     log_summary,
     normalize_reddit_url,
@@ -28,6 +29,8 @@ def run_session_scan(
     summary_path: Path,
     run_queue_path: Path,
     run_summary_path: Path,
+    scanned_path: Path,
+    run_scanned_path: Path,
     seen: Set[str],
     seen_path: Path,
     run_id: str,
@@ -78,9 +81,39 @@ def run_session_scan(
             scanned_count += 1
             combined = f"{info['title']} {info['body']}".lower()
             hits = matched_keywords(combined, keywords)
+            method = post.get("method", mode)
+            add_scanned_post(
+                scanned_path,
+                run_id,
+                account,
+                tz_name,
+                scan_window,
+                mode,
+                info,
+                hits,
+                method,
+                scan_sort=sort,
+                scan_time_range=time_range or "",
+                scan_page_offset=page_offset,
+                subreddit_set=subreddit_set,
+            )
+            add_scanned_post(
+                run_scanned_path,
+                run_id,
+                account,
+                tz_name,
+                scan_window,
+                mode,
+                info,
+                hits,
+                method,
+                scan_sort=sort,
+                scan_time_range=time_range or "",
+                scan_page_offset=page_offset,
+                subreddit_set=subreddit_set,
+            )
             if hits:
                 matched_count += 1
-                method = post.get("method", mode)
                 add_to_queue(
                     queue_path,
                     run_id,

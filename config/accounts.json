@@ -30,6 +30,8 @@
     "cookies_path": "data/cookies_account3.pkl",
     "activity_profile": "night_owl",
     "night_scanner_enabled": false,
+    "scan_sort": "top",
+    "scan_time_range": "all",
     "browser_fingerprint": {
       "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
       "viewport": "1536x864",

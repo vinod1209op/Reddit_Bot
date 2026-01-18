@@ -37,8 +37,10 @@ from shared.config_manager import ConfigManager
 from shared.api_utils import fetch_posts, matched_keywords, normalize_post, make_reddit_client
 from shared.console_tee import enable_console_tee
 from shared.scan_store import (
+    add_scanned_post,
     add_to_queue,
     build_run_paths,
+    build_run_scanned_path,
     load_seen,
     normalize_reddit_url,
     save_seen,
@@ -46,6 +48,7 @@ from shared.scan_store import (
     log_summary,
     QUEUE_DEFAULT_PATH,
     SEEN_DEFAULT_PATH,
+    SCANNED_DEFAULT_PATH,
 )
 from shared.scan_shards import compute_scan_shard
 
@@ -302,6 +305,7 @@ def main() -> None:
 
     queue_path = Path(args.queue_path)
     summary_path = Path(args.summary_path)
+    scanned_path = Path(os.getenv("SCANNED_POSTS_PATH", SCANNED_DEFAULT_PATH))
     seen_path = Path(os.getenv("SEEN_POSTS_PATH", SEEN_DEFAULT_PATH))
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     if args.reset_logs:
@@ -309,6 +313,7 @@ def main() -> None:
             summary_path.unlink()
     run_id = os.getenv("RUN_ID") or now_local.isoformat()
     _, run_queue_path, run_summary_path = build_run_paths(run_id)
+    run_scanned_path = build_run_scanned_path(run_id)
     run_summary_path.parent.mkdir(parents=True, exist_ok=True)
     seen = set(load_seen(seen_path))
 
@@ -412,9 +417,39 @@ def main() -> None:
                         scanned_count += 1
                         combined = f"{title} {body}".lower()
                         hits = matched_keywords(combined, keywords)
+                        method = post.get("method", "selenium")
+                        add_scanned_post(
+                            scanned_path,
+                            run_id,
+                            account,
+                            args.timezone,
+                            active_window[2],
+                            mode,
+                            info,
+                            hits,
+                            method,
+                            scan_sort=sort,
+                            scan_time_range=time_range or "",
+                            scan_page_offset=page_offset,
+                            subreddit_set=subreddit_set,
+                        )
+                        add_scanned_post(
+                            run_scanned_path,
+                            run_id,
+                            account,
+                            args.timezone,
+                            active_window[2],
+                            mode,
+                            info,
+                            hits,
+                            method,
+                            scan_sort=sort,
+                            scan_time_range=time_range or "",
+                            scan_page_offset=page_offset,
+                            subreddit_set=subreddit_set,
+                        )
                         if hits:
                             matched_count += 1
-                            method = post.get("method", "selenium")
                             add_to_queue(
                                 queue_path,
                                 run_id,
@@ -502,7 +537,16 @@ def main() -> None:
                     print(f"Skipping account {account_name or '(unnamed)'}: cookie file not found at {cookie_path}.")
                     continue
                 account_subreddits = account.get("subreddits") or subreddits
-                sort, time_range, page_offset = compute_scan_shard(idx, total_accounts)
+                default_sort, default_time, default_offset = compute_scan_shard(idx, total_accounts)
+                sort = account.get("scan_sort") or default_sort
+                if "scan_time_range" in account:
+                    time_range = account.get("scan_time_range") or ""
+                else:
+                    time_range = default_time or ""
+                if "scan_page_offset" in account:
+                    page_offset = int(account.get("scan_page_offset") or 0)
+                else:
+                    page_offset = default_offset
                 run_selenium_scan(
                     account_name,
                     cookie_path,

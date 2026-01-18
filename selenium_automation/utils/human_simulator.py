@@ -7,6 +7,7 @@ import time
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
+from selenium.common.exceptions import MoveTargetOutOfBoundsException
 
 class HumanSimulator:
     def __init__(self, driver, browser_manager=None):
@@ -37,28 +38,53 @@ class HumanSimulator:
     
     def random_mouse_movements(self, element=None):
         """Create natural mouse movements"""
-        actions = ActionChains(self.driver)
-        
-        # Start from random position
-        start_x = random.randint(100, 500)
-        start_y = random.randint(100, 400)
-        actions.move_by_offset(start_x, start_y)
-        
-        # Bezier-like curve movements
-        for _ in range(random.randint(3, 7)):
-            offset_x = random.randint(-50, 50)
-            offset_y = random.randint(-30, 30)
-            actions.move_by_offset(offset_x, offset_y)
-            
-            # Random micro-pauses
-            if random.random() > 0.6:
-                actions.pause(random.uniform(0.05, 0.2))
-        
-        # If element provided, move to it
-        if element:
-            actions.move_to_element(element)
-        
-        actions.perform()
+        try:
+            actions = ActionChains(self.driver)
+            if element:
+                try:
+                    self.driver.execute_script(
+                        "arguments[0].scrollIntoView({block: 'center', inline: 'center'});",
+                        element,
+                    )
+                except Exception:
+                    pass
+                size = element.size or {}
+                width = max(int(size.get("width", 1)), 1)
+                height = max(int(size.get("height", 1)), 1)
+                max_x = max(1, min(width - 1, 80))
+                max_y = max(1, min(height - 1, 80))
+                actions.move_to_element_with_offset(
+                    element,
+                    random.randint(1, max_x),
+                    random.randint(1, max_y),
+                )
+            else:
+                body = self.driver.find_element(By.TAG_NAME, "body")
+                window = self.driver.get_window_size()
+                max_x = max(1, int(window.get("width", 800)) - 5)
+                max_y = max(1, int(window.get("height", 600)) - 5)
+                actions.move_to_element_with_offset(
+                    body,
+                    random.randint(5, max_x),
+                    random.randint(5, max_y),
+                )
+
+            for _ in range(random.randint(2, 5)):
+                actions.move_by_offset(random.randint(-15, 15), random.randint(-10, 10))
+                if random.random() > 0.6:
+                    actions.pause(random.uniform(0.05, 0.2))
+            actions.perform()
+        except MoveTargetOutOfBoundsException:
+            try:
+                fallback = ActionChains(self.driver)
+                if element:
+                    fallback.move_to_element(element)
+                else:
+                    body = self.driver.find_element(By.TAG_NAME, "body")
+                    fallback.move_to_element(body)
+                fallback.perform()
+            except Exception:
+                pass
     
     def read_post_sequence(self, post_element, read_time_factor=1.0):
         """Simulate reading a post naturally"""

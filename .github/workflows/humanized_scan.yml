@@ -104,7 +104,7 @@ jobs:
           if ! systemctl is-active --quiet tor; then
             echo "Tor service did not become active in time" >&2
           fi
-          if curl --socks5 127.0.0.1:9050 http://httpbin.org/ip; then
+          if curl --socks5-hostname 127.0.0.1:9050 https://check.torproject.org/api/ip; then
             echo "Tor proxy test succeeded"
           else
             echo "Tor proxy test failed, continuing anyway"
