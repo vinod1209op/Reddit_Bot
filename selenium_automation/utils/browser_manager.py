@@ -450,24 +450,73 @@ class BrowserManager:
     
     def safe_click(self, driver, element):
         """Safely click element with retry"""
+        if not element:
+            return False
+
         try:
-            # Scroll to element first
+            driver.execute_script(
+                "arguments[0].scrollIntoView({block: 'center', inline: 'center'});",
+                element,
+            )
+        except Exception:
             self.scroll_to_element(driver, element)
-            
-            # Wait for clickable
-            time.sleep(random.uniform(0.5, 1))
-            
-            # Try to click
+
+        time.sleep(random.uniform(0.2, 0.6))
+        try:
+            WebDriverWait(driver, self.wait_time).until(EC.element_to_be_clickable(element))
+        except Exception:
+            pass
+
+        try:
             element.click()
             return True
         except Exception as e:
-            logger.warning(f"Click failed, trying JavaScript: {e}")
-            try:
-                driver.execute_script("arguments[0].click();", element)
-                return True
-            except Exception as js_e:
-                logger.error(f"JavaScript click also failed: {js_e}")
-                return False
+            logger.warning(f"Click failed, trying fallbacks: {e}")
+
+        try:
+            from selenium.webdriver.common.action_chains import ActionChains
+
+            ActionChains(driver).move_to_element(element).pause(random.uniform(0.1, 0.3)).click().perform()
+            return True
+        except Exception:
+            pass
+
+        try:
+            driver.execute_script(
+                """
+                (function(el) {
+                    const selectors = [
+                        "[class*='author-tooltip']",
+                        "[class*='tooltip']",
+                        "[class*='hovercard']",
+                        ".tooltip",
+                        ".hovercard"
+                    ];
+                    selectors.forEach(sel => {
+                        document.querySelectorAll(sel).forEach(node => {
+                            node.style.pointerEvents = "none";
+                        });
+                    });
+                    const rect = el.getBoundingClientRect();
+                    const cx = rect.left + rect.width / 2;
+                    const cy = rect.top + rect.height / 2;
+                    const top = document.elementFromPoint(cx, cy);
+                    if (top && top !== el) {
+                        top.style.pointerEvents = "none";
+                    }
+                })(arguments[0]);
+                """,
+                element,
+            )
+        except Exception:
+            pass
+
+        try:
+            driver.execute_script("arguments[0].click();", element)
+            return True
+        except Exception as js_e:
+            logger.error(f"JavaScript click also failed: {js_e}")
+            return False
     
     def fill_form_field(self, driver, field_id, value):
         """Fill form field with human-like behavior"""
