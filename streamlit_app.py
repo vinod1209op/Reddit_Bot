@@ -1231,10 +1231,10 @@ def main() -> None:
         st.subheader("Saved activity")
         if submitted_details:
             with st.expander(f"Submitted posts in r/{current_sub}", expanded=False):
-                for d in list(submitted_details):
+                for idx, d in enumerate(list(submitted_details)):
                     title = d.get("title") or "Untitled"
                     key_val = d.get("key", title)
-                    chk_key = f"submitted_item_{key_val}"
+                    chk_key = f"submitted_item_{current_sub}_{idx}_{key_val}"
                     checked = st.checkbox(title, value=True, key=chk_key)
                     if not checked:
                         post_state["submitted"].discard(key_val)
@@ -1251,10 +1251,10 @@ def main() -> None:
         with st.expander(f"Ignored posts in r/{current_sub}", expanded=False):
             entries = ignored_details
             if entries:
-                for d in list(entries):
+                for idx, d in enumerate(list(entries)):
                     title = d.get("title") or "Untitled"
                     key_val = d.get("key", title)
-                    chk_key = f"ignored_item_{key_val}"
+                    chk_key = f"ignored_item_{current_sub}_{idx}_{key_val}"
                     checked = st.checkbox(title, value=True, key=chk_key)
                     if not checked:
                         post_state["ignored"].discard(key_val)
