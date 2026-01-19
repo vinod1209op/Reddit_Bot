@@ -42,8 +42,8 @@
       },
       "randomization": {
         "session_length_minutes": {
-          "min": 20,
-          "max": 45
+          "min": 10,
+          "max": 30
         }
       }
     },
@@ -70,8 +70,8 @@
       },
       "randomization": {
         "session_length_minutes": {
-          "min": 5,
-          "max": 10
+          "min": 10,
+          "max": 30
         }
       }
     }
@@ -84,8 +84,8 @@
       "max_seconds": 12
     },
     "session_length_minutes": {
-      "min": 5,
-      "max": 10,
+      "min": 3,
+      "max": 6,
       "distribution": "normal"
     },
     "jitter_percentage": 20
