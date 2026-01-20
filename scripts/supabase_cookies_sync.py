@@ -32,7 +32,9 @@ def _storage_url(base_url: str, bucket: str, path: str) -> str:
 def _download_bundle() -> None:
     base_url = _require_env("SUPABASE_URL")
     service_key = _require_env("SUPABASE_SERVICE_ROLE_KEY")
-    bucket = os.getenv("SUPABASE_COOKIES_BUCKET", "automation-secrets").strip() or "automation-secrets"
+    bucket = os.getenv("SUPABASE_COOKIES_BUCKET", "").strip()
+    if not bucket:
+        bucket = os.getenv("SUPABASE_BUCKET", "automation-secrets").strip() or "automation-secrets"
     path = os.getenv("SUPABASE_COOKIES_PATH", "cookies/cookies_bundle.zip").strip() or "cookies/cookies_bundle.zip"
 
     dest_dir = Path("data")
@@ -55,7 +57,9 @@ def _download_bundle() -> None:
 def _upload_bundle() -> None:
     base_url = _require_env("SUPABASE_URL")
     service_key = _require_env("SUPABASE_SERVICE_ROLE_KEY")
-    bucket = os.getenv("SUPABASE_COOKIES_BUCKET", "automation-secrets").strip() or "automation-secrets"
+    bucket = os.getenv("SUPABASE_COOKIES_BUCKET", "").strip()
+    if not bucket:
+        bucket = os.getenv("SUPABASE_BUCKET", "automation-secrets").strip() or "automation-secrets"
     path = os.getenv("SUPABASE_COOKIES_PATH", "cookies/cookies_bundle.zip").strip() or "cookies/cookies_bundle.zip"
 
     data_dir = Path("data")

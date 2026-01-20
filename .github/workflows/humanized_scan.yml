@@ -106,7 +106,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SUPABASE_COOKIES_BUCKET: ${{ secrets.SUPABASE_COOKIES_BUCKET }}
+          SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET }}
           SUPABASE_COOKIES_PATH: ${{ secrets.SUPABASE_COOKIES_PATH }}
         run: |
           mkdir -p data
@@ -179,7 +179,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SUPABASE_COOKIES_BUCKET: ${{ secrets.SUPABASE_COOKIES_BUCKET }}
+          SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET }}
           SUPABASE_COOKIES_PATH: ${{ secrets.SUPABASE_COOKIES_PATH }}
         run: |
           python scripts/supabase_cookies_sync.py upload
