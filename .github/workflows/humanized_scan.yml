@@ -2,16 +2,18 @@ name: Reddit Humanized Scan
 
 on:
   schedule:
-    # Late night only (America/Los_Angeles; UTC offset varies with DST)
-    - cron: "0 6 * * *"
     # Early morning (America/Los_Angeles; UTC offset varies with DST)
-    - cron: "0 14 * * *"
+    - cron: "0 14 * * *" # account1
+    # Midday (America/Los_Angeles; UTC offset varies with DST)
+    - cron: "0 20 * * *" # account2
+    # Late night (America/Los_Angeles; UTC offset varies with DST)
+    - cron: "0 6 * * *"  # account3
   workflow_dispatch:
     inputs:
-      accounts:
-        description: "Account names to run (comma-separated). Default runs all."
+      account:
+        description: "Account name to run (default: account1)"
         required: false
-        default: "account1,account2,account3"
+        default: "account1"
       force_run:
         description: "Override schedule and run immediately (00:00-23:59)"
         required: false
@@ -25,17 +27,52 @@ jobs:
   humanized_scan:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - account: account1
+            cron: "0 14 * * *"
+          - account: account2
+            cron: "0 20 * * *"
+          - account: account3
+            cron: "0 6 * * *"
 
     steps:
+      - name: Gate run by schedule/account
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SCHEDULE: ${{ github.event.schedule }}
+          DISPATCH_ACCOUNT: ${{ github.event.inputs.account }}
+          MATRIX_ACCOUNT: ${{ matrix.account }}
+          MATRIX_CRON: ${{ matrix.cron }}
+        run: |
+          should_run=false
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ -z "$DISPATCH_ACCOUNT" ] || [ "$DISPATCH_ACCOUNT" = "$MATRIX_ACCOUNT" ]; then
+              should_run=true
+            fi
+          elif [ "$EVENT_NAME" = "schedule" ]; then
+            if [ "$EVENT_SCHEDULE" = "$MATRIX_CRON" ]; then
+              should_run=true
+            fi
+          fi
+          echo "should_run=$should_run" >> "$GITHUB_OUTPUT"
+
       - name: Checkout
         uses: actions/checkout@v4
+        if: steps.gate.outputs.should_run == 'true'
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+        if: steps.gate.outputs.should_run == 'true'
 
       - name: Install Chrome and ChromeDriver
+        if: steps.gate.outputs.should_run == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y wget unzip
@@ -58,28 +95,25 @@ jobs:
           echo "CHROMEDRIVER_PATH=/usr/local/bin/chromedriver" >> $GITHUB_ENV
 
       - name: Install Python dependencies
+        if: steps.gate.outputs.should_run == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-selenium.txt
 
       - name: Restore cookie files
+        if: steps.gate.outputs.should_run == 'true'
         env:
-          COOKIES_BUNDLE_BASE64: ${{ secrets.COOKIES_BUNDLE_BASE64 }}
-          REDDIT_COOKIES_BASE64: ${{ secrets.REDDIT_COOKIES_BASE64 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_COOKIES_BUCKET: ${{ secrets.SUPABASE_COOKIES_BUCKET }}
+          SUPABASE_COOKIES_PATH: ${{ secrets.SUPABASE_COOKIES_PATH }}
         run: |
           mkdir -p data
-          if [ -n "$COOKIES_BUNDLE_BASE64" ]; then
-            echo "$COOKIES_BUNDLE_BASE64" | base64 -d > /tmp/cookies_bundle.zip
-            unzip -q -o /tmp/cookies_bundle.zip -d .
-          elif [ -n "$REDDIT_COOKIES_BASE64" ]; then
-            echo "$REDDIT_COOKIES_BASE64" | base64 -d > data/gha_cookies.pkl
-          else
-            echo "Missing COOKIES_BUNDLE_BASE64 and REDDIT_COOKIES_BASE64 secrets" >&2
-            exit 1
-          fi
+          python scripts/supabase_cookies_sync.py download
 
       - name: Create minimal env file
+        if: steps.gate.outputs.should_run == 'true'
         run: |
           mkdir -p config
           if [ ! -f config/credentials.env ]; then
@@ -91,6 +125,7 @@ jobs:
           fi
 
       - name: Setup Tor proxy
+        if: steps.gate.outputs.should_run == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y tor
@@ -113,6 +148,7 @@ jobs:
           fi
 
       - name: Run humanized night scanner with Tor
+        if: steps.gate.outputs.should_run == 'true'
         env:
           BOT_MODE: selenium
           ENABLE_POSTING: "0"
@@ -127,7 +163,7 @@ jobs:
           USE_TOR_PROXY: "1"
           CI: "true"
           SCAN_LIMIT: "25"
-          HUMANIZED_ACCOUNT_NAMES: ${{ github.event.inputs.accounts || 'account1,account2,account3' }}
+          HUMANIZED_ACCOUNT_NAMES: ${{ github.event.inputs.account || matrix.account }}
         run: |
           echo "Starting humanized scan..."
           WINDOWS_ARG=""
@@ -137,8 +173,19 @@ jobs:
             WINDOWS_ARG="--force-run"
           fi
           python scripts/humanized_night_scanner.py $WINDOWS_ARG
+      
+      - name: Upload refreshed cookies to Supabase
+        if: steps.gate.outputs.should_run == 'true'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_COOKIES_BUCKET: ${{ secrets.SUPABASE_COOKIES_BUCKET }}
+          SUPABASE_COOKIES_PATH: ${{ secrets.SUPABASE_COOKIES_PATH }}
+        run: |
+          python scripts/supabase_cookies_sync.py upload
 
       - name: Upload logs to Supabase
+        if: steps.gate.outputs.should_run == 'true'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -148,6 +195,7 @@ jobs:
           python scripts/upload_logs_supabase.py
 
       - name: Upsert logs into Supabase DB
+        if: steps.gate.outputs.should_run == 'true'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -157,7 +205,7 @@ jobs:
           python scripts/upload_logs_supabase_db.py
 
       - name: Upload scan results
-        if: always()
+        if: steps.gate.outputs.should_run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: humanized-scan-results
