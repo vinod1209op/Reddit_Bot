@@ -1,6 +1,9 @@
 """
-Browser management for Selenium automation
+Purpose: Create and manage Selenium browser instances.
+Constraints: Keep side effects limited to browser setup; no posting logic here.
 """
+
+# Imports
 import os
 import sys
 import random
@@ -18,6 +21,7 @@ except ImportError:
 project_root = Path(__file__).resolve().parents[2]
 
 # Setup logging
+# Constants
 logger = logging.getLogger(__name__)
 
 def _env_flag(name: str, default: bool) -> bool:

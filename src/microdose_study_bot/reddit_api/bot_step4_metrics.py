@@ -1,24 +1,9 @@
 """
-STEP 4 (from the project list): Collect engagement metrics on posted comments.
-
-What this script does:
-- Reads bot_logs.csv to find comments that were actually posted (posted == True).
-- Fetches each comment from Reddit and records its current score and reply count.
-- Writes results to bot_metrics.csv (appends; one row per check).
-
-Safe defaults:
-- Honors MOCK_MODE: if enabled, no API calls are made; mock mode prints a note and exits.
-- Skips rows without a comment_id or where posted is not true.
-- Rate-limited by the small number of comments typically posted (and by your approval cap).
-
-Columns in bot_metrics.csv:
-- run_id: carried over from the original log row.
-- timestamp_checked_utc: when this check ran.
-- subreddit, post_id, comment_id, title, matched_keywords
-- score: current score (upvotes minus downvotes)
-- replies_count: number of replies on the comment (shallow count)
-- error: any fetch error recorded (keeps the row for traceability)
+Purpose: Collect engagement metrics for previously posted comments.
+Constraints: Read-only; no replies or posting.
 """
+
+# Imports
 
 import csv
 import os
@@ -27,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Iterable, List
 
+# Constants
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 import praw
@@ -38,6 +24,7 @@ LOG_PATH = Path("bot_logs.csv")
 METRICS_PATH = Path("bot_metrics.csv")
 
 
+# Helpers
 def get_reddit_client() -> praw.Reddit:
     """Create a Reddit client using environment variables. Errors bubble up to be handled in main."""
     return praw.Reddit(
@@ -102,6 +89,7 @@ def fetch_metrics(reddit: praw.Reddit, comment_id: str) -> Dict[str, int]:
         return {"score": "", "replies_count": "", "error": f"Unexpected error: {exc}"}
 
 
+# Public API
 def main() -> None:
     load_dotenv()
 

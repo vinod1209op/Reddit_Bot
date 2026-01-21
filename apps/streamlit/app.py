@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Streamlit UI to drive Selenium prefill (dry-run only)."""
+"""
+Purpose: Streamlit UI to drive Selenium prefill.
+Constraints: Posting is manual by default; auto-submit is capped.
+"""
+
+# Imports
 
 import os
 import sys
@@ -14,14 +19,20 @@ import streamlit as st
 import json
 import requests
 
-# Ensure project imports work when launched from elsewhere (Render, etc.)
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-
 from microdose_study_bot.core.config import ConfigManager  # type: ignore
+from microdose_study_bot.core.safety.policies import DEFAULT_REPLY_RULES  # type: ignore
 from microdose_study_bot.core.utils.api_utils import matched_keywords as _match_keywords  # type: ignore
 from microdose_study_bot.reddit_selenium.main import RedditAutomation  # type: ignore
 
+# Constants
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+POLICY_NOTE = (
+    f"Replies target {DEFAULT_REPLY_RULES.get('min_sentences', 2)}–"
+    f"{DEFAULT_REPLY_RULES.get('max_sentences', 5)} sentences with human approval."
+)
 
+
+# Helpers
 def require_auth() -> bool:
     """Simple password gate using env STREAMLIT_APP_PASSWORD."""
     password = os.getenv("STREAMLIT_APP_PASSWORD", "").strip()
@@ -317,8 +328,10 @@ def save_post_state(state: dict) -> None:
         json.dump(data, f, indent=2)
 
 
+# Public API
 def main() -> None:
     st.set_page_config(page_title="Reddit Reply Helper", layout="wide")
+    st.caption(POLICY_NOTE)
     st.markdown(
         """
         <style>

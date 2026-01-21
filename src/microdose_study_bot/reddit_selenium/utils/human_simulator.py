@@ -1,7 +1,9 @@
 """
-Human-like behavior simulator for Selenium automation.
-Now uses Selenium 4+ syntax and proper imports.
+Purpose: Simulate human-like browsing actions in Selenium sessions.
+Constraints: No posting logic; timing-only helpers.
 """
+
+# Imports
 import random
 import time
 from selenium.webdriver.common.action_chains import ActionChains
@@ -9,6 +11,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import MoveTargetOutOfBoundsException
 
+# Public API
 class HumanSimulator:
     def __init__(self, driver, browser_manager=None):
         self.driver = driver

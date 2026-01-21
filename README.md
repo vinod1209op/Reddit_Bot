@@ -71,6 +71,13 @@
 - Legacy night scanner (manual only):  
   `python scripts/runners/night_scanner.py` → read-only scan with `config/schedule.json` windows; not scheduled by default.
 
+## Convenience commands
+- `make test`
+- `make run-ui`
+- `make run-cli`
+- `make scan-night`
+- `make scan-humanized`
+
 ## GitHub Actions (humanized scheduled scan)
 To run scheduled, read-only humanized scans in GitHub Actions (using `.github/workflows/humanized_scan.yml`):
 - Store a `cookies_bundle.zip` (zip of `data/cookies_*.pkl`) in Supabase Storage.
@@ -104,3 +111,7 @@ To run scheduled, read-only humanized scans in GitHub Actions (using `.github/wo
 - `docs/RUNBOOK.md`: operational runbook.
 - `docs/SECURITY.md`: security notes.
 - `docs/ADR/`: architecture decisions.
+
+## Repo tooling
+- `.editorconfig`: whitespace/line-ending rules.
+- `Makefile`: convenience commands (test/run/scan).

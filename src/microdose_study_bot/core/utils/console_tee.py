@@ -1,8 +1,15 @@
+"""
+Purpose: Mirror stdout/stderr to a log file.
+Constraints: Logging utility only; no bot logic.
+"""
+
+# Imports
 import sys
 from pathlib import Path
 from typing import TextIO
 
 
+# Helpers
 class _TeeStream:
     def __init__(self, primary: TextIO, secondary: TextIO) -> None:
         self._primary = primary

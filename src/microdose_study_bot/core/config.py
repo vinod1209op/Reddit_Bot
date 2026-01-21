@@ -1,9 +1,16 @@
+"""
+Purpose: Load environment and JSON configuration for all modes.
+Constraints: Pure config I/O only; no network or automation side effects.
+"""
+
+# Imports
 import os
 import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 import logging
 
+# Public API
 class ConfigManager:
     """Unified configuration for both API and Selenium methods"""
     

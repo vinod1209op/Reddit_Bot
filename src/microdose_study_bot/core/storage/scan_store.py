@@ -1,3 +1,9 @@
+"""
+Purpose: Persist scan queues, summaries, and seen-post state.
+Constraints: Storage only; no network calls or automation.
+"""
+
+# Imports
 import csv
 import json
 from datetime import datetime, timezone
@@ -12,6 +18,7 @@ except Exception:  # pragma: no cover
 
 from microdose_study_bot.core.utils.api_utils import append_log
 
+# Constants
 SUMMARY_HEADER = [
     "run_id",
     "account",
@@ -32,6 +39,8 @@ SUMMARY_HEADER = [
 QUEUE_DEFAULT_PATH = "logs/night_queue.json"
 SEEN_DEFAULT_PATH = "logs/seen_post_ids.json"
 SCANNED_DEFAULT_PATH = "logs/scanned_posts.json"
+
+# Helpers
 
 
 def normalize_reddit_url(url: str) -> str:

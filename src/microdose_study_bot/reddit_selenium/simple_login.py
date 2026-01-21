@@ -1,6 +1,9 @@
 """
-Simple manual login helper for Reddit with Google OAuth
+Purpose: Simple manual login helper for Reddit (Google OAuth).
+Constraints: Manual flow only; no automated posting.
 """
+
+# Imports
 import time
 import random
 import logging
@@ -8,6 +11,7 @@ from selenium.webdriver.common.by import By
 
 logger = logging.getLogger(__name__)
 
+# Public API
 class SimpleLogin:
     """Simple login helper that waits for manual Google login"""
     

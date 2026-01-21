@@ -1,7 +1,14 @@
+"""
+Purpose: Compute scan shard parameters for pagination.
+Constraints: Pure helper; no side effects.
+"""
+
+# Imports
 import os
 from typing import Optional, Tuple
 
 
+# Constants
 DEFAULT_SHARDS = (
     ("new", None),
     ("top", "day"),
@@ -14,6 +21,7 @@ DEFAULT_SHARDS = (
 )
 
 
+# Public API
 def compute_scan_shard(index: int, total: int) -> Tuple[str, Optional[str], int]:
     """Return (sort, time_range, page_offset) for a given account index."""
     if total <= 1:

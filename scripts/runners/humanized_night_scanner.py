@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """
-Enhanced night scanner with human-like behavior and multi-account support.
-Runs in read-only mode during Pacific time windows.
+Purpose: Scheduled multi-account scanner with human-like browsing behavior.
+Constraints: Read-only by default; posting must remain off.
 
-Updated to use refactored BrowserManager and LoginManager classes.
+# SAFETY GUARANTEE:
+# This module MUST remain read-only. No reply or engagement logic is allowed here.
 """
+
+# Imports
 
 import argparse
 import copy
@@ -21,6 +24,7 @@ try:
 except Exception:  # pragma: no cover - fallback for older Python
     ZoneInfo = None  # type: ignore
 
+# Constants
 ROOT = Path(__file__).resolve().parents[2]
 
 from selenium.webdriver.common.by import By
@@ -29,6 +33,7 @@ from microdose_study_bot.reddit_selenium.utils.engagement_actions import Engagem
 from microdose_study_bot.reddit_selenium.login import LoginManager
 from microdose_study_bot.reddit_selenium.utils.browser_manager import BrowserManager
 from microdose_study_bot.core.config import ConfigManager
+from microdose_study_bot.core.safety.policies import enforce_readonly_env
 from microdose_study_bot.core.storage.scan_store import (
     build_run_paths,
     build_run_scanned_path,
@@ -825,6 +830,7 @@ class MultiAccountOrchestrator:
                 continue
 
 
+# Helpers
 def check_time_window(activity_config: Optional[Dict[str, Any]] = None) -> bool:
     """Check if current time is within scheduled windows."""
     try:
@@ -835,7 +841,9 @@ def check_time_window(activity_config: Optional[Dict[str, Any]] = None) -> bool:
         return False
 
 
+# Public API
 if __name__ == "__main__":
+    enforce_readonly_env()
     enable_console_tee(os.getenv("CONSOLE_LOG_PATH", "logs/selenium_automation.log"))
     print("=" * 60)
     print("Humanized Night Scanner")

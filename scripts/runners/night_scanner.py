@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """
-Night scanner: time-windowed, read-only scanning (no replies, no posting).
+Purpose: Time-windowed, read-only scanning (no replies, no posting).
+Constraints: ENABLE_POSTING and USE_LLM forced off during scheduled runs.
+
+# SAFETY GUARANTEE:
+# This module MUST remain read-only. No reply or engagement logic is allowed here.
 
 Usage examples:
   python scripts/runners/night_scanner.py
@@ -13,6 +17,8 @@ Notes:
 - Schedule it via cron/Task Scheduler and run it periodically (e.g., every 15-30 minutes).
 - Precedence: CLI args > env vars > schedule.json (if present).
 """
+
+# Imports
 import argparse
 import json
 import os
@@ -28,9 +34,11 @@ try:
 except ImportError:  # pragma: no cover - Python <3.9
     ZoneInfo = None  # type: ignore
 
+# Constants
 ROOT = Path(__file__).resolve().parents[2]
 
 from microdose_study_bot.core.config import ConfigManager
+from microdose_study_bot.core.safety.policies import enforce_readonly_env
 from microdose_study_bot.core.utils.api_utils import fetch_posts, matched_keywords, normalize_post, make_reddit_client
 from microdose_study_bot.core.utils.console_tee import enable_console_tee
 from microdose_study_bot.core.storage.scan_store import (
@@ -67,6 +75,7 @@ MOCK_POSTS: List[Mapping[str, str]] = [
     },
 ]
 
+# Helpers
 def parse_time(value: str) -> time:
     return datetime.strptime(value.strip(), "%H:%M").time()
 
@@ -196,7 +205,9 @@ def scan_posts(
         if hits:
             yield info, hits
 
+# Public API
 def main() -> None:
+    enforce_readonly_env()
     enable_console_tee(os.getenv("CONSOLE_LOG_PATH", "logs/selenium_automation.log"))
     parser = argparse.ArgumentParser(description="Time-windowed read-only scanner.")
     parser.add_argument(

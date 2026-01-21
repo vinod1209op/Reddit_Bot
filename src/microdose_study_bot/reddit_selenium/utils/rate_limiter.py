@@ -1,3 +1,9 @@
+"""
+Purpose: Local rate limiting for Selenium actions.
+Constraints: Pure guard logic; no side effects beyond in-memory state.
+"""
+
+# Imports
 import time
 import json
 from datetime import datetime, timedelta
@@ -7,6 +13,7 @@ import random
 
 logger = logging.getLogger(__name__)
 
+# Public API
 class RateLimiter:
     def __init__(self, config_file="config/rate_limits.json"):
         """

@@ -1,3 +1,9 @@
+"""
+Purpose: Manage Tor proxy lifecycle for Selenium runs.
+Constraints: Networking helper only; no posting logic.
+"""
+
+# Imports
 import logging
 import os
 import requests
@@ -7,6 +13,7 @@ import time
 logger = logging.getLogger(__name__)
 
 
+# Public API
 class TorProxy:
     def __init__(self):
         self.tor_process = None

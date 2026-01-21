@@ -1,6 +1,9 @@
 """
-Unified logger for Reddit Bot with structured logging and performance monitoring.
+Purpose: Centralized logging configuration with structured output support.
+Constraints: Logging only; no business logic.
 """
+
+# Imports
 import logging
 import sys
 import json
@@ -14,6 +17,7 @@ from contextlib import contextmanager
 from typing import Optional, Dict, Any, Union
 import traceback
 
+# Public API
 class UnifiedLogger:
     """Logger that works for both API and Selenium with structured logging"""
     

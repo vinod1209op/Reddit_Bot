@@ -1,18 +1,16 @@
 """
-STEP 2: Keyword filtering with the same safe fallback pattern.
-
-What this script does:
-- Loads .env values and tries to authenticate with Reddit.
-- Scans a small batch of posts from safe subreddits.
-- Prints only the posts whose title/body contain any of the defined keywords.
-- If auth/network/API fails, it falls back to mock posts so filtering logic can be tested.
+Purpose: Keyword scan using API with mock fallback.
+Constraints: Read-only; no replies or posting.
 """
+
+# Imports
 
 import os
 import sys
 from pathlib import Path
 from typing import Iterable, List, Mapping, Sequence
 
+# Constants
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 import praw
@@ -46,6 +44,7 @@ MOCK_POSTS: List[Mapping[str, str]] = [
 ]
 
 
+# Helpers
 def get_reddit_client() -> praw.Reddit:
     """Create a Reddit client using environment variables. Errors bubble up to be handled in main."""
     return praw.Reddit(
@@ -75,6 +74,7 @@ def scan_and_print(posts: Iterable, keywords: Sequence[str], default_subreddit: 
         )
 
 
+# Public API
 def main() -> None:
     load_dotenv()
     config = ConfigManager().load_all()

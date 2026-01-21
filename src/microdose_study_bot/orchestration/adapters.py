@@ -1,18 +1,22 @@
 """
-Adapter that allows using either PRAW API or Selenium methods
+Purpose: Adapter that selects API or Selenium mode.
+Constraints: No low-level utilities imported here; only mode entrypoints.
 """
+
+# Imports
 import os
 import sys
 import time
 from typing import Optional, List, Dict, Any, Tuple
 from pathlib import Path
 
-# Add project root to path to ensure imports work
+# Constants
 project_root = Path(__file__).resolve().parents[2]
 
 from microdose_study_bot.core.safety.checker import SafetyChecker
 from microdose_study_bot.core.utils.api_utils import make_reddit_client
 
+# Helpers
 def _structured_error(message: str, code: str = "error", extra: Dict[str, Any] = None) -> Dict[str, Any]:
     """Return a consistent error payload."""
     payload = {"success": False, "error": message, "code": code}
@@ -20,6 +24,7 @@ def _structured_error(message: str, code: str = "error", extra: Dict[str, Any] =
         payload.update(extra)
     return payload
 
+# Public API
 class RedditBotAdapter:
     """Unified interface for both PRAW and Selenium"""
     
@@ -31,7 +36,7 @@ class RedditBotAdapter:
         self.selenium_bot = None
         self.has_api_functions = False
         try:
-            from microdose_study_bot.reddit_selenium.utils.rate_limiter import RateLimiter
+            from microdose_study_bot.reddit_selenium.rate_limit import RateLimiter
             self.rate_limiter = RateLimiter(config_file=str(project_root / "config" / "rate_limits.json"))
             # Align limits with loaded config if available
             if getattr(config, "rate_limits", None):

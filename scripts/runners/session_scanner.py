@@ -1,8 +1,18 @@
+"""
+Purpose: Scan within an existing Selenium session (read-only).
+Constraints: Enforces read-only mode for scheduled runs.
+
+# SAFETY GUARANTEE:
+# This module MUST remain read-only. No reply or engagement logic is allowed here.
+"""
+
+# Imports
 import logging
 from pathlib import Path
 from typing import Sequence, Set
 
 from microdose_study_bot.reddit_selenium.main import RedditAutomation
+from microdose_study_bot.core.safety.policies import enforce_readonly_env
 from microdose_study_bot.core.utils.api_utils import matched_keywords
 from microdose_study_bot.core.storage.scan_store import (
     add_scanned_post,
@@ -16,6 +26,7 @@ from microdose_study_bot.core.storage.scan_store import (
 logger = logging.getLogger(__name__)
 
 
+# Public API
 def run_session_scan(
     *,
     driver,
@@ -42,6 +53,7 @@ def run_session_scan(
     time_range: str = "",
     page_offset: int = 0,
 ) -> None:
+    enforce_readonly_env()
     bot = RedditAutomation(config=config)
     bot.driver = driver
     bot.browser_manager = browser_manager

@@ -1,12 +1,19 @@
 """
-Response Generator for Reddit Bot
-Generes ethical, research-focused responses about microdosing and psychedelics
+Purpose: Generate research-focused responses for Selenium workflows.
+Constraints: Must follow centralized safety policies and require approval when needed.
 """
+
+# Imports
 import re
 import random
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 
+from microdose_study_bot.core.safety.policies import DEFAULT_REPLY_RULES
+
+# Constants
+
+# Public API
 class ResponseGenerator:
     """Generates safe, ethical responses about psychedelic research"""
     
@@ -139,16 +146,29 @@ class ResponseGenerator:
         
         # Always need human approval for advice requests
         if requests_advice:
-            return self._generate_cautious_response(topic), True
+            response = self._generate_cautious_response(topic)
+            return self._apply_policy(response), True
         
         # Questions get informational responses
         if is_question:
             response = self._generate_informational_response(topic, post_analysis)
-            return response, False  # Can auto-respond to informational questions
+            return self._apply_policy(response), False  # Can auto-respond to informational questions
         
         # Otherwise generate discussion response
         response = self._generate_discussion_response(topic, post_analysis)
-        return response, True  # Needs approval for discussion posts
+        return self._apply_policy(response), True  # Needs approval for discussion posts
+
+    # Helpers
+    def _apply_policy(self, text: str) -> str:
+        """Enforce sentence-count policies on generated responses."""
+        max_sentences = int(DEFAULT_REPLY_RULES.get("max_sentences", 5))
+        min_sentences = int(DEFAULT_REPLY_RULES.get("min_sentences", 2))
+        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text.strip()) if s.strip()]
+        if len(sentences) > max_sentences:
+            sentences = sentences[:max_sentences]
+        if len(sentences) < min_sentences:
+            sentences.append("Happy to share more if helpful.")
+        return " ".join(sentences)
     
     def _generate_informational_response(self, topic: str, analysis: Dict) -> str:
         """Generate informational response for questions"""

@@ -1,18 +1,16 @@
 """
-STEP 1: Basic connection with a safe fallback to mock data.
-
-What this script does:
-- Loads .env values (Reddit credentials) using python-dotenv.
-- Tries to authenticate with Reddit and prints the logged-in username.
-- Fetches the latest 5 posts from a safe test subreddit (r/learnpython) and prints a short summary.
-- If any auth/network/API issue occurs, it falls back to mock posts so the flow is still testable.
+Purpose: Validate API credentials and fetch a small post sample.
+Constraints: Read-only; no replies or posting.
 """
+
+# Imports
 
 import os
 import sys
 from pathlib import Path
 from typing import Iterable, List, Mapping
 
+# Constants
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 import praw
@@ -44,6 +42,7 @@ MOCK_POSTS: List[Mapping[str, str]] = [
 ]
 
 
+# Helpers
 def get_reddit_client() -> praw.Reddit:
     """Create a Reddit client using environment variables. Errors bubble up to be handled in main."""
     return praw.Reddit(
@@ -73,6 +72,7 @@ def print_posts(posts: Iterable) -> None:
         )
 
 
+# Public API
 def main() -> None:
     load_dotenv()
 

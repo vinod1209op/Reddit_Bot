@@ -1,7 +1,9 @@
 """
-Login manager for Reddit using Google OAuth
-Now uses BrowserManager for all browser interactions
+Purpose: Login manager for Reddit (cookies/Google/credentials).
+Constraints: Uses real browser; avoid automation outside approved flows.
 """
+
+# Imports
 import time
 import random
 import pickle
@@ -13,12 +15,14 @@ from pathlib import Path
 from selenium.webdriver.common.by import By
 
 # Setup logging
+# Constants
 logger = logging.getLogger(__name__)
 
 # Import BrowserManager - all Selenium interactions go through this
 from microdose_study_bot.reddit_selenium.utils.browser_manager import BrowserManager
 
 
+# Public API
 class LoginManager:
     def __init__(self, browser_manager=None, driver=None, headless=False):
         """Initialize LoginManager with optional shared BrowserManager/driver."""

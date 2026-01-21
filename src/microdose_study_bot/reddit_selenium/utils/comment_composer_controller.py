@@ -1,10 +1,17 @@
+"""
+Purpose: Control Selenium comment composer interactions.
+Constraints: UI-only helper; no posting decisions here.
+"""
+
+# Imports
 import re
 import json
 import os
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 
-class MessageProcessor:
+# Public API
+class CommentComposerController:
     def __init__(self, config=None):
         self.config = config
         

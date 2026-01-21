@@ -1,34 +1,26 @@
 """
-STEP 3: Keyword filtering + human-approved reply workflow with logging.
-
-What this script does:
-- Loads .env for Reddit credentials (and optional mock mode).
-- Scans safe subreddits for posts containing configured keywords.
-- Generates a short, neutral, harm-reduction-friendly reply (stubbed or via LLM).
-- Asks the human to approve before posting; posting is disabled by default (dry-run).
-- Logs every decision to a CSV so engagement analysis can be done later.
-
-Safety/ethics reminders:
-- Do NOT give medical or dosing advice.
-- Do NOT encourage illegal activity.
-- Do NOT add links or promote products.
-- Human must stay in the loop; low-volume and explicit approval per post.
-- Respect subreddit rules and Reddit's Responsible Builder Policy.
+Purpose: Keyword filtering + human-approved reply workflow with logging.
+Constraints: Posting requires explicit approval and ENABLE_POSTING=1.
 """
 
+# Imports
+
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, List, Mapping, Optional, Sequence, Tuple
 
+# Constants
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 import praw
 from dotenv import load_dotenv
 from microdose_study_bot.core.config import ConfigManager
 from microdose_study_bot.core.safety.checker import SafetyChecker
+from microdose_study_bot.core.safety.policies import DEFAULT_REPLY_RULES
 from microdose_study_bot.core.utils.api_utils import normalize_post, matched_keywords, fetch_posts, append_log
 
 try:
@@ -106,6 +98,7 @@ MOCK_POSTS: List[Mapping[str, str]] = [
 ]
 
 
+# Helpers
 def get_reddit_client() -> praw.Reddit:
     """Create a Reddit client using environment variables. Errors bubble up to be handled in main."""
     return praw.Reddit(
@@ -195,7 +188,20 @@ def llm_reply(info: Mapping[str, str], hits: Sequence[str]) -> Optional[str]:
 def generate_reply(info: Mapping[str, str], hits: Sequence[str]) -> str:
     """Generate a safe reply via LLM when enabled, else use stub."""
     llm_text = llm_reply(info, hits)
-    return llm_text if llm_text else stub_reply(info, hits)
+    response = llm_text if llm_text else stub_reply(info, hits)
+    return _apply_policy(response)
+
+
+def _apply_policy(text: str) -> str:
+    """Enforce sentence-count policies on generated replies."""
+    max_sentences = int(DEFAULT_REPLY_RULES.get("max_sentences", 5))
+    min_sentences = int(DEFAULT_REPLY_RULES.get("min_sentences", 2))
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text.strip()) if s.strip()]
+    if len(sentences) > max_sentences:
+        sentences = sentences[:max_sentences]
+    if len(sentences) < min_sentences:
+        sentences.append("Happy to share more if helpful.")
+    return " ".join(sentences)
 
 
 def iter_matches(posts: Iterable, keywords: Sequence[str], default_subreddit: str) -> Iterable[Tuple[Mapping[str, str], object, List[str]]]:
@@ -208,6 +214,7 @@ def iter_matches(posts: Iterable, keywords: Sequence[str], default_subreddit: st
             yield info, post, hits
 
 
+# Public API
 def main() -> None:
     load_dotenv()
     # Refresh env-driven toggles after .env is loaded

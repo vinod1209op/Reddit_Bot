@@ -7,10 +7,12 @@
 
 ## Tests
 - Unit/smoke tests: `python -m unittest discover -v tests`
+  - Or `make test`
 
 ## Style
 - Prefer clear, small functions.
 - Keep logging structured and consistent (`UnifiedLogger`).
+- Honor `.editorconfig` (whitespace, line endings).
 
 ## Safety
 - Posting must remain off by default.

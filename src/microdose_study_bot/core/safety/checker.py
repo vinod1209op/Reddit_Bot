@@ -1,12 +1,17 @@
 """
-Safety checks for Reddit bot operations
-Prevents unethical actions and ensures compliance with Reddit rules
+Purpose: Safety checks for Reddit bot operations.
+Constraints: Centralized gating; keep posting off unless approved.
 """
+
+# Imports
 import re
 import time
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 
+# Constants
+
+# Public API
 class SafetyChecker:
     """Checks for safety and compliance before any bot action"""
     

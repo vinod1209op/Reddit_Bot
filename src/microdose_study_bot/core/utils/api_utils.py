@@ -1,3 +1,9 @@
+"""
+Purpose: Shared API utilities (normalization, matching, logging helpers).
+Constraints: Pure helpers only; no side-effecting automation.
+"""
+
+# Imports
 import csv
 import sys
 from pathlib import Path
@@ -8,6 +14,8 @@ try:
     import praw
 except ImportError:
     praw = None
+
+# Helpers
 
 
 def preview_text(text: str, width: int = 200) -> str:

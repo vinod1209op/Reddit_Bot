@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
-Unified Reddit Bot - Can use either PRAW API or Selenium
+Purpose: Unified CLI for API and Selenium workflows.
+Constraints: Posting requires explicit approval; default is dry-run.
 """
+
+# Imports
 
 import sys
 import os
@@ -11,6 +14,10 @@ import signal
 from pathlib import Path
 from typing import Optional, Tuple, Any
 
+# Constants
+project_root = Path(__file__).resolve().parents[1]
+
+# Helpers
 # Setup signal handlers for graceful shutdown
 def signal_handler(sig: int, frame: Any) -> None:
     """Handle Ctrl+C gracefully"""
@@ -19,9 +26,6 @@ def signal_handler(sig: int, frame: Any) -> None:
 
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
-
-# Add project root to Python path (at beginning, not removing current dir)
-project_root = Path(__file__).resolve().parents[1]
 
 def setup_imports() -> Tuple['ConfigManager', 'UnifiedLogger']:
     """Setup proper imports based on mode"""
@@ -426,6 +430,7 @@ def validate_config(config: 'ConfigManager') -> bool:
         print("✅ Configuration validated successfully!")
         return True
 
+# Public API
 def main() -> None:
     """Main function"""
     print("\n" + "="*50)

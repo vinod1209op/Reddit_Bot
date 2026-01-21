@@ -1,12 +1,15 @@
 """
-Engagement actions for Reddit with human-like behavior.
-Updated for Selenium 4+ syntax and proper BrowserManager integration.
+Purpose: Optional engagement actions for Selenium sessions.
+Constraints: Must remain off by default and respect safety limits.
 """
+
+# Imports
 import random
 import time
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
 
+# Public API
 class EngagementActions:
     def __init__(self, driver, config, browser_manager=None):
         self.driver = driver

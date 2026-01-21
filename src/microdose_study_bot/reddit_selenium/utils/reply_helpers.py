@@ -1,14 +1,17 @@
 """
-Reply helper utilities for Selenium-based comment posting (old Reddit only).
-These helpers avoid modern Reddit UI selectors to keep automation consistent.
+Purpose: Selenium reply helper utilities (old Reddit only).
+Constraints: UI interactions only; posting decisions happen elsewhere.
 """
+
+# Imports
 import logging
 import time
 from typing import Optional, Sequence
 
+# Constants
 logger = logging.getLogger(__name__)
 
-
+# Helpers
 def _safe_import_by():
     try:
         from selenium.webdriver.common.by import By  # type: ignore

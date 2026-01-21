@@ -1,8 +1,9 @@
 """
-Selenium-based Reddit automation - main entry point.
-
-Now uses BrowserManager for all browser interactions and LoginManager for authentication.
+Purpose: Selenium-based Reddit automation entry point.
+Constraints: Posting requires explicit approval; defaults to dry-run.
 """
+
+# Imports
 import os
 import sys
 import time
@@ -36,6 +37,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+# Constants
 logger = logging.getLogger(__name__)
 # Rotate file logs to avoid unbounded growth; fallback to stdout if path unavailable.
 if not logger.handlers:
@@ -49,6 +51,7 @@ if not logger.handlers:
     except Exception as e:
         logger.warning(f"Could not initialize rotating file handler: {e}")
 
+# Public API
 class RedditAutomation:
     """Main Selenium automation class for Reddit - Now using BrowserManager and LoginManager"""
     
@@ -116,7 +119,7 @@ class RedditAutomation:
         available = {
             "login_manager": False,
             "browser_manager": False,
-            "message_processor": False,
+            "comment_composer_controller": False,
             "rate_limiter": False
         }
         
@@ -128,7 +131,11 @@ class RedditAutomation:
         # Check for utils directory
         utils_dir = Path(__file__).parent / "utils"
         if utils_dir.exists():
-            util_files = ["browser_manager.py", "message_processor.py", "rate_limiter.py"]
+            util_files = [
+                "browser_manager.py",
+                "comment_composer_controller.py",
+                "rate_limiter.py",
+            ]
             for util_file in util_files:
                 if (utils_dir / util_file).exists():
                     available[util_file.replace(".py", "")] = True
