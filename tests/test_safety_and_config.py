@@ -4,10 +4,7 @@ import unittest
 from pathlib import Path
 from datetime import datetime, timedelta
 
-# Ensure project root on path
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 from shared.config_manager import ConfigManager
 from shared.safety_checker import SafetyChecker

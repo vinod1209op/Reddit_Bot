@@ -50,21 +50,21 @@
 
 ## How to run (by step)
 - Step 1 (auth + basic read):  
-  `python api/bot_step1.py`
+  `python src/api/bot_step1.py`
 - Step 2 (keyword scan):  
-  `python api/bot_step2_keywords.py`
+  `python src/api/bot_step2_keywords.py`
 - Step 3 (keyword scan + suggested reply + human approval + logging; posting off by default):  
-  `python api/bot_step3_replies.py`
+  `python src/api/bot_step3_replies.py`
 - Step 4 (metrics; checks posted comments’ score/replies; skips in mock mode):  
-  `python api/bot_step4_metrics.py`
+  `python src/api/bot_step4_metrics.py`
 - Selenium mode (manual login, scraping, optional reply staging):  
-  `python unified_bot.py` → choose “Run Selenium Bot”, complete manual Google login, then use the menu to search posts. You can toggle body/comments capture in the prompts. Posting via Selenium is only manual: you must enter the post URL, reply text, and confirm; keep it dry-run unless you have moderator approval.
+  `python apps/unified_bot.py` → choose “Run Selenium Bot”, complete manual Google login, then use the menu to search posts. You can toggle body/comments capture in the prompts. Posting via Selenium is only manual: you must enter the post URL, reply text, and confirm; keep it dry-run unless you have moderator approval.
 - Streamlit UI (manual prefill, optional auto-submit):  
-  `streamlit run streamlit_app.py` → start the browser, search, draft a reply, and prefill in the live browser. Set `STREAMLIT_APP_PASSWORD` to gate access. Auto-submit is available but should be used only with approval and strict limits (cap with `SELENIUM_AUTO_SUBMIT_LIMIT`).
+  `streamlit run apps/streamlit_app.py` → start the browser, search, draft a reply, and prefill in the live browser. Set `STREAMLIT_APP_PASSWORD` to gate access. Auto-submit is available but should be used only with approval and strict limits (cap with `SELENIUM_AUTO_SUBMIT_LIMIT`).
 - Humanized night scanner (read-only, scheduled):  
-  `python scripts/humanized_night_scanner.py` → runs within `config/activity_schedule.json` windows, rotates accounts in `config/accounts.json`, and performs non-comment engagement (if enabled). Posting remains off by default.
+  `python scripts/runners/humanized_night_scanner.py` → runs within `config/activity_schedule.json` windows, rotates accounts in `config/accounts.json`, and performs non-comment engagement (if enabled). Posting remains off by default.
 - Legacy night scanner (manual only):  
-  `python scripts/night_scanner.py` → read-only scan with `config/schedule.json` windows; not scheduled by default.
+  `python scripts/runners/night_scanner.py` → read-only scan with `config/schedule.json` windows; not scheduled by default.
 
 ## GitHub Actions (humanized scheduled scan)
 To run scheduled, read-only humanized scans in GitHub Actions (using `.github/workflows/humanized_scan.yml`):
@@ -85,13 +85,13 @@ To run scheduled, read-only humanized scans in GitHub Actions (using `.github/wo
 - `logs/night_queue.json`: review queue of matched posts.
 
 ## Repo map
-- `api/`: PRAW-based steps (auth, keyword scan, human-approved replies, metrics) with mock fallbacks.
-- `selenium_automation/`: Browser-based helper for manual Google login and subreddit scraping.
-- `shared/`: Config loader, logging, and safety utilities used by both modes.
+- `src/api/`: PRAW-based steps (auth, keyword scan, human-approved replies, metrics) with mock fallbacks.
+- `src/selenium_automation/`: Browser-based helper for manual Google login and subreddit scraping.
+- `src/shared/`: Config loader, logging, and safety utilities used by both modes.
 - `config/`: Keywords/subreddits, rate limits, and credentials template.
 - `config/accounts.json` + `config/activity_schedule.json`: multi-account, scheduled humanized scanning (read-only by default).
-- `config/schedule.json`: legacy time windows for `scripts/night_scanner.py` (manual only).
-- `streamlit_app.py`: Streamlit UI to search and prefill replies using Selenium.
-- `scripts/night_scanner.py`: legacy read-only scanning with logs, summary, and queue (manual only by default).
-- `scripts/humanized_night_scanner.py`: scheduled multi-account activity runner (read-only by default).
-- `scripts/cleanup_logs.py`: optional helper to trim old log files (keeps recent by age/count).
+- `config/schedule.json`: legacy time windows for `scripts/runners/night_scanner.py` (manual only).
+- `apps/streamlit_app.py`: Streamlit UI to search and prefill replies using Selenium.
+- `scripts/runners/night_scanner.py`: legacy read-only scanning with logs, summary, and queue (manual only by default).
+- `scripts/runners/humanized_night_scanner.py`: scheduled multi-account activity runner (read-only by default).
+- `scripts/one_time/cleanup_logs.py`: optional helper to trim old log files (keeps recent by age/count).

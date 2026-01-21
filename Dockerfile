@@ -11,7 +11,8 @@ RUN apt-get update && \
 
 ENV CHROME_BIN=/usr/bin/chromium \
     CHROMEDRIVER_PATH=/usr/lib/chromium/chromedriver \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/src:/app
 
 WORKDIR /app
 
@@ -27,4 +28,4 @@ COPY . .
 # Streamlit listens on 8501 by default
 EXPOSE 8501
 
-CMD ["streamlit", "run", "streamlit_app.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
+CMD ["streamlit", "run", "apps/streamlit_app.py", "--server.port", "8501", "--server.address", "0.0.0.0"]

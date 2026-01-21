@@ -21,7 +21,7 @@
 - API access may be restricted; mock mode allows development but does not exercise live behaviors.
 - Rate/volume should remain low; add sleeps/throttling before scaling beyond small batches.
 - Metrics script counts shallow replies (no deep `replace_more` to limit API load).
-- Humanized browsing/engagement helpers (`selenium_automation/utils/human_simulator.py`, `selenium_automation/utils/engagement_actions.py`, `scripts/humanized_night_scanner.py`) are used for read-only activity windows; keep behaviors conservative and aligned with subreddit rules.
+- Humanized browsing/engagement helpers (`src/selenium_automation/utils/human_simulator.py`, `src/selenium_automation/utils/engagement_actions.py`, `scripts/runners/humanized_night_scanner.py`) are used for read-only activity windows; keep behaviors conservative and aligned with subreddit rules.
 - No proxy rotation is implemented; any fingerprint randomization in Selenium helpers is experimental and not required for core use.
 
 ## Limitations & Future Mitigations

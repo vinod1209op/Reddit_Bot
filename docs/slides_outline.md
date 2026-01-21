@@ -12,7 +12,7 @@
 - Auth + mock fallback; keyword scan (microdosing/psychedelic terms); reply generator (stub/optional LLM via OpenRouter + strict safety prompt).
 - Approval gate; posting guard (off by default); logging (bot_logs); metrics (bot_metrics).
 - Selenium path: manual Google login, scrape subreddit /new pages; optional body/comment capture; reply helper with dry-run default; Streamlit UI for search + prefill.
-- Scheduled humanized scans (read-only): `scripts/humanized_night_scanner.py` + `config/activity_schedule.json` + `config/accounts.json` → queues matches, summary counts, and a review queue across multiple accounts.
+- Scheduled humanized scans (read-only): `scripts/runners/humanized_night_scanner.py` + `config/activity_schedule.json` + `config/accounts.json` → queues matches, summary counts, and a review queue across multiple accounts.
 
 4) Workflow
 - Configure `config/credentials.env` (or `.env`); mock vs live; target subs/keywords.

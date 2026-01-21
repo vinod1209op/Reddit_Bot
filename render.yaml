@@ -33,3 +33,5 @@ services:
         value: bot:reddit_streamlit_prefill:v1.0
       - key: PYTHONUNBUFFERED
         value: "1"
+      - key: PYTHONPATH
+        value: /app/src:/app

@@ -25,6 +25,7 @@ information/
 # Cookies/session artifacts
 cookies.pkl
 data/cookies_*.pkl
+data/cookies_bundle.zip
 
 # IDE/editor
 .vscode/
