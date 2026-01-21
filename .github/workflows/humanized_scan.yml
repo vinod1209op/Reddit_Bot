@@ -48,8 +48,15 @@ jobs:
           DISPATCH_ACCOUNT: ${{ github.event.inputs.account }}
           MATRIX_ACCOUNT: ${{ matrix.account }}
           MATRIX_CRON: ${{ matrix.cron }}
+          PAUSE_SCHEDULED_RUNS: ${{ secrets.PAUSE_SCHEDULED_RUNS }}
         run: |
           should_run=false
+          if [ "$PAUSE_SCHEDULED_RUNS" = "1" ]; then
+            echo "Scheduled runs paused via PAUSE_SCHEDULED_RUNS=1"
+            should_run=false
+            echo "should_run=$should_run" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             if [ -z "$DISPATCH_ACCOUNT" ] || [ "$DISPATCH_ACCOUNT" = "$MATRIX_ACCOUNT" ]; then
               should_run=true
