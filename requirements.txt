@@ -1,14 +1,25 @@
-# Core dependencies
+# Core + API
 python-dotenv==1.0.0
-
-# API Mode dependencies
 praw==7.7.1
 prawcore==2.4.0
 
-# Optional extras are split into separate files:
-# - requirements-selenium.txt (selenium stack)
-# - requirements-llm.txt (LLM support)
+# Selenium stack
+selenium==4.15.0
+webdriver-manager==4.0.1
+undetected-chromedriver==3.5.4
+chromedriver-binary==126.0.6478.62
 
+# Streamlit UI + HTTP
+streamlit>=1.37.0
+requests>=2.31.0
+
+# LLM support
+openai>=2.9.0
+httpx>=0.24.1
+
+# Utilities
 pytz>=2021.3
-scipy>=1.7.0  # For statistical distributions
+scipy>=1.7.0
 numpy>=1.21.0
+
+pre-commit>=3.7.1

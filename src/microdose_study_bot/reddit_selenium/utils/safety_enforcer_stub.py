@@ -1,6 +1,6 @@
 """
 Purpose: Placeholder safety enforcement stub.
-Constraints: No real enforcement; do not rely on this for protection.
+Constraints: Disabled by default; for local testing only.
 """
 
 # Imports
@@ -12,7 +12,6 @@ from typing import Dict, Optional
 logger = logging.getLogger(__name__)
 
 
-# Public API
 # Public API
 class SafetyEnforcerStub:
     """Minimal stub that allows all actions but warns."""

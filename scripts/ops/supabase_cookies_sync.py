@@ -15,6 +15,8 @@ from pathlib import Path
 
 import requests
 
+from microdose_study_bot.core.utils.retry import retry
+
 
 def _require_env(name: str) -> str:
     value = os.getenv(name, "").strip()
@@ -43,9 +45,13 @@ def _download_bundle() -> None:
 
     headers = {"Authorization": f"Bearer {service_key}", "apikey": service_key}
     url = _storage_url(base_url, bucket, path)
-    resp = requests.get(url, headers=headers, timeout=30)
-    if resp.status_code >= 300:
-        raise SystemExit(f"Supabase download failed ({resp.status_code}): {resp.text}")
+    def _do_request():
+        resp = requests.get(url, headers=headers, timeout=30)
+        if resp.status_code >= 300:
+            raise RuntimeError(f"{resp.status_code}: {resp.text}")
+        return resp
+
+    resp = retry(_do_request, attempts=3, base_delay=1.0)
     bundle_path.write_bytes(resp.content)
 
     with zipfile.ZipFile(bundle_path, "r") as zf:
@@ -79,13 +85,20 @@ def _upload_bundle() -> None:
         "x-upsert": "true",
     }
     url = _storage_url(base_url, bucket, path)
-    with bundle_path.open("rb") as handle:
-        resp = requests.post(url, headers=headers, data=handle, timeout=30)
-    if resp.status_code == 409:
+    def _do_request():
         with bundle_path.open("rb") as handle:
-            resp = requests.put(url, headers=headers, data=handle, timeout=30)
-    if resp.status_code >= 300:
-        raise SystemExit(f"Supabase upload failed ({resp.status_code}): {resp.text}")
+            resp = requests.post(url, headers=headers, data=handle, timeout=30)
+        if resp.status_code == 409:
+            with bundle_path.open("rb") as handle:
+                resp = requests.put(url, headers=headers, data=handle, timeout=30)
+        if resp.status_code >= 300:
+            raise RuntimeError(f"{resp.status_code}: {resp.text}")
+        return resp
+
+    try:
+        retry(_do_request, attempts=3, base_delay=1.0)
+    except Exception as exc:
+        raise SystemExit(f"Supabase upload failed: {exc}") from exc
 
     print(f"Uploaded cookies bundle to {bucket}/{path}")
 

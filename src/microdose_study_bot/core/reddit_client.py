@@ -12,6 +12,8 @@ try:
 except ImportError:
     praw = None
 
+from microdose_study_bot.core.utils.retry import retry
+
 
 # Helpers
 def fetch_posts(reddit, subreddit_name: str, limit: int, fallback_posts: Iterable) -> Iterable:
@@ -19,9 +21,12 @@ def fetch_posts(reddit, subreddit_name: str, limit: int, fallback_posts: Iterabl
     Fetch posts from Reddit; on error, return fallback_posts.
     Returns an iterable (PRAW submissions or provided fallback).
     """
-    try:
+    def _fetch():
         subreddit = reddit.subreddit(subreddit_name)
         return subreddit.new(limit=limit)
+
+    try:
+        return retry(_fetch, attempts=3, base_delay=1.0)
     except Exception as exc:
         print("Reddit API not available (or access limited). Running in mock mode instead.", file=sys.stderr)
         print(f"Details: {exc}", file=sys.stderr)

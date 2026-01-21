@@ -11,6 +11,8 @@ Optional:
   SUPABASE_SUMMARY_PATH (default: logs/night_scan_summary.csv)
   SUPABASE_SCANNED_PATH (default: logs/scanned_posts.json)
 """
+
+# Imports
 import csv
 import json
 import os
@@ -19,7 +21,10 @@ from typing import Any, Dict, List
 
 import requests
 
+from microdose_study_bot.core.utils.retry import retry
 
+
+# Helpers
 def _get_env(name: str, default: str = "") -> str:
     return os.getenv(name, default).strip()
 
@@ -34,9 +39,13 @@ def _post_records(base_url: str, key: str, table: str, records: List[Dict[str, A
         "Content-Type": "application/json",
         "Prefer": "resolution=merge-duplicates,return=minimal",
     }
-    resp = requests.post(url, headers=headers, json=records)
-    if resp.status_code >= 300:
-        raise RuntimeError(f"Supabase insert failed ({resp.status_code}): {resp.text}")
+    def _do_request():
+        resp = requests.post(url, headers=headers, json=records, timeout=30)
+        if resp.status_code >= 300:
+            raise RuntimeError(f"{resp.status_code}: {resp.text}")
+        return resp
+
+    retry(_do_request, attempts=3, base_delay=1.0)
 
 
 def _load_queue(path: Path) -> List[Dict[str, Any]]:
@@ -64,6 +73,7 @@ def _event_key(entry: Dict[str, Any]) -> str:
     return f"{entry.get('run_id','')}|{entry.get('account','')}|{key}"
 
 
+# Public API
 def main() -> None:
     supabase_url = _get_env("SUPABASE_URL")
     supabase_key = _get_env("SUPABASE_SERVICE_ROLE_KEY")
@@ -166,5 +176,6 @@ def main() -> None:
     )
 
 
+# Entry point
 if __name__ == "__main__":
     main()

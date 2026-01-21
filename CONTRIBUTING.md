@@ -9,6 +9,17 @@
 - Unit/smoke tests: `python -m unittest discover -v tests`
   - Or `make test`
 
+## Pre-commit
+Install hooks:
+```
+pre-commit install
+```
+
+Run on all files:
+```
+pre-commit run --all-files
+```
+
 ## Style
 - Prefer clear, small functions.
 - Keep logging structured and consistent (`UnifiedLogger`).

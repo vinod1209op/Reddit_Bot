@@ -10,6 +10,8 @@ import requests
 import subprocess
 import time
 
+from microdose_study_bot.core.utils.retry import retry
+
 logger = logging.getLogger(__name__)
 
 
@@ -44,12 +46,16 @@ class TorProxy:
 
     def test_connection(self) -> bool:
         """Test if Tor proxy is working."""
-        try:
+        def _do_request():
             response = requests.get(
                 "http://httpbin.org/ip",
                 proxies={"http": self.proxy_url, "https": self.proxy_url},
                 timeout=10,
             )
+            return response
+
+        try:
+            response = retry(_do_request, attempts=3, base_delay=1.0)
             logger.info(f"Tor IP: {response.json().get('origin')}")
             return True
         except Exception as exc:

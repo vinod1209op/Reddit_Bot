@@ -25,10 +25,7 @@
    python3 -m venv .venv
    source .venv/bin/activate
    pip install -r requirements.txt
-   # Optional extras:
-   pip install -r requirements-llm.txt
-   pip install -r requirements-selenium.txt
-   pip install -r requirements-streamlit.txt
+   # All dependencies are in requirements.txt
    ```
 2) Fill `config/credentials.env` (preferred) or `.env` in the repo root (see `config/env/.env.example` for templates):
    - Required for API mode: `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USERNAME`, `REDDIT_PASSWORD`, `REDDIT_USER_AGENT` (descriptive)
@@ -88,6 +85,12 @@ Internal/dev scripts (use for debugging or tests):
 - `make run-cli`
 - `make scan-night`
 - `make scan-humanized`
+
+## Pre-commit (optional)
+```
+pre-commit install
+pre-commit run --all-files
+```
 
 ## GitHub Actions (humanized scheduled scan)
 To run scheduled, read-only humanized scans in GitHub Actions (using `.github/workflows/humanized_scan.yml`):

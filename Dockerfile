@@ -16,12 +16,9 @@ ENV CHROME_BIN=/usr/bin/chromium \
 
 WORKDIR /app
 
-COPY requirements-streamlit.txt requirements-streamlit.txt
-COPY requirements-selenium.txt requirements-selenium.txt
-COPY requirements-llm.txt requirements-llm.txt
 COPY requirements.txt requirements.txt
 
-RUN pip install --no-cache-dir -r requirements-streamlit.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 

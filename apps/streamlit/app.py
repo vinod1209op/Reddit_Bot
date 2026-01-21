@@ -19,17 +19,32 @@ import streamlit as st
 import json
 import requests
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SRC_ROOT = PROJECT_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from microdose_study_bot.core.config import ConfigManager  # type: ignore
 from microdose_study_bot.core.safety.policies import DEFAULT_REPLY_RULES  # type: ignore
 from microdose_study_bot.core.text_normalization import matched_keywords as _match_keywords  # type: ignore
+from microdose_study_bot.core.utils.retry import retry  # type: ignore
 from microdose_study_bot.reddit_selenium.main import RedditAutomation  # type: ignore
 
 # Constants
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
 POLICY_NOTE = (
     f"Replies target {DEFAULT_REPLY_RULES.get('min_sentences', 2)}–"
     f"{DEFAULT_REPLY_RULES.get('max_sentences', 5)} sentences with human approval."
 )
+
+# Helpers
+def _cache_resource(func):
+    """Compatibility shim for older Streamlit versions."""
+    cache_fn = getattr(st, "cache_resource", None) or getattr(st, "cache_data", None)
+    if cache_fn is None:
+        return func
+    return cache_fn(func)
 
 
 # Helpers
@@ -50,7 +65,7 @@ def require_auth() -> bool:
     st.stop()
 
 
-@st.cache_resource
+@_cache_resource
 def load_config() -> ConfigManager:
     cfg = ConfigManager()
     cfg.load_env()
@@ -166,15 +181,20 @@ def _supabase_cookie_location() -> tuple[str, str, str]:
 def _download_supabase_cookie(dest_path: Path) -> bool:
     base_url, service_key, bucket, cookie_path = _supabase_cookie_location()
     if not base_url or not service_key or not bucket:
+        st.warning("Supabase cookie download skipped: missing SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, or SUPABASE_BUCKET.")
         return False
     url = f"{base_url.rstrip('/')}/storage/v1/object/{bucket}/{cookie_path.lstrip('/')}"
     headers = {"Authorization": f"Bearer {service_key}", "apikey": service_key}
-    try:
+    def _do_request():
         resp = requests.get(url, headers=headers, timeout=30)
         if resp.status_code >= 300:
-            st.warning(f"Supabase cookie download failed ({resp.status_code}): {resp.text}")
-            return False
+            raise RuntimeError(f"{resp.status_code}: {resp.text}")
+        return resp
+
+    try:
+        resp = retry(_do_request, attempts=3, base_delay=1.0)
         dest_path.write_bytes(resp.content)
+        st.success(f"Loaded cookies from Supabase: {cookie_path}")
         return True
     except Exception as exc:
         st.warning(f"Supabase cookie download error: {exc}")
@@ -184,6 +204,7 @@ def _download_supabase_cookie(dest_path: Path) -> bool:
 def _upload_supabase_cookie(src_path: Path) -> bool:
     base_url, service_key, bucket, cookie_path = _supabase_cookie_location()
     if not base_url or not service_key or not bucket or not src_path.exists():
+        st.warning("Supabase cookie upload skipped: missing config or cookie file.")
         return False
     url = f"{base_url.rstrip('/')}/storage/v1/object/{bucket}/{cookie_path.lstrip('/')}"
     headers = {
@@ -192,15 +213,19 @@ def _upload_supabase_cookie(src_path: Path) -> bool:
         "Content-Type": "application/octet-stream",
         "x-upsert": "true",
     }
-    try:
+    def _do_request():
         with src_path.open("rb") as handle:
             resp = requests.post(url, headers=headers, data=handle, timeout=30)
         if resp.status_code == 409:
             with src_path.open("rb") as handle:
                 resp = requests.put(url, headers=headers, data=handle, timeout=30)
         if resp.status_code >= 300:
-            st.warning(f"Supabase cookie upload failed ({resp.status_code}): {resp.text}")
-            return False
+            raise RuntimeError(f"{resp.status_code}: {resp.text}")
+        return resp
+
+    try:
+        retry(_do_request, attempts=3, base_delay=1.0)
+        st.success(f"Uploaded cookies to Supabase: {cookie_path}")
         return True
     except Exception as exc:
         st.warning(f"Supabase cookie upload error: {exc}")
@@ -241,10 +266,18 @@ def _fetch_supabase_posts_page(
         params["or"] = f"(title.ilike.*{q}*,url.ilike.*{q}*)"
     headers = _supabase_headers(key)
     headers["Prefer"] = "count=exact"
-    resp = requests.get(base, headers=headers, params=params, timeout=20)
-    if resp.status_code >= 300:
-        st.warning(f"Supabase query failed ({resp.status_code}): {resp.text}")
+    def _do_request():
+        resp = requests.get(base, headers=headers, params=params, timeout=20)
+        if resp.status_code >= 300:
+            raise RuntimeError(f"{resp.status_code}: {resp.text}")
+        return resp
+
+    try:
+        resp = retry(_do_request, attempts=3, base_delay=1.0)
+    except Exception as exc:
+        st.warning(f"Supabase query failed: {exc}")
         return [], 0
+
     rows = resp.json() if isinstance(resp.json(), list) else []
     total = 0
     content_range = resp.headers.get("Content-Range", "")
@@ -274,15 +307,22 @@ def _mark_supabase_used(post_key: str, action: str) -> bool:
         "used_by": used_by,
         "used_action": action,
     }
-    resp = requests.patch(
-        base,
-        headers=_supabase_headers(key),
-        params={"post_key": f"eq.{post_key}"},
-        json=payload,
-        timeout=20,
-    )
-    if resp.status_code >= 300:
-        st.warning(f"Supabase update failed ({resp.status_code}): {resp.text}")
+    def _do_request():
+        resp = requests.patch(
+            base,
+            headers=_supabase_headers(key),
+            params={"post_key": f"eq.{post_key}"},
+            json=payload,
+            timeout=20,
+        )
+        if resp.status_code >= 300:
+            raise RuntimeError(f"{resp.status_code}: {resp.text}")
+        return resp
+
+    try:
+        retry(_do_request, attempts=3, base_delay=1.0)
+    except Exception as exc:
+        st.warning(f"Supabase update failed: {exc}")
         return False
     return True
 

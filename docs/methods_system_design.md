@@ -31,7 +31,7 @@
 - **Legacy read-only scans**: `scripts/runners/night_scanner.py` uses `config/schedule.json` but is not scheduled by default.
 
 ## Run Instructions (short)
-- Install deps: `pip install -r requirements.txt` (and `-r requirements-llm.txt` if using LLM).
+- Install deps: `pip install -r requirements.txt`.
 - Set `config/credentials.env` (or `.env`):
   - Required: Reddit creds, `REDDIT_USER_AGENT` descriptive.
   - Optional toggles: `MOCK_MODE=1` (offline), `ENABLE_POSTING=1` (allow replies), `USE_LLM=1` + `OPENROUTER_API_KEY`, `RUN_ID` (label).
