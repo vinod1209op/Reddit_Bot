@@ -17,6 +17,7 @@ from typing import Optional
 
 import streamlit as st
 import json
+import zipfile
 import requests
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -191,6 +192,16 @@ def _download_supabase_cookie(dest_path: Path) -> bool:
 
     try:
         resp = retry(_do_request, attempts=3, base_delay=1.0)
+        if cookie_path.endswith(".zip"):
+            bundle_path = dest_path.with_suffix(".zip")
+            bundle_path.write_bytes(resp.content)
+            with zipfile.ZipFile(bundle_path, "r") as zf:
+                zf.extractall(dest_path.parent)
+            if dest_path.exists():
+                st.success(f"Loaded cookies from Supabase bundle: {cookie_path}")
+                return True
+            st.warning(f"Supabase bundle extracted but {dest_path.name} not found.")
+            return False
         dest_path.write_bytes(resp.content)
         st.success(f"Loaded cookies from Supabase: {cookie_path}")
         return True
