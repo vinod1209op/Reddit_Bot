@@ -14,6 +14,7 @@ Optional:
 
 # Imports
 import csv
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -71,6 +72,13 @@ def _load_summary(path: Path) -> List[Dict[str, Any]]:
 def _event_key(entry: Dict[str, Any]) -> str:
     key = entry.get("post_id") or entry.get("url") or entry.get("title") or ""
     return f"{entry.get('run_id','')}|{entry.get('account','')}|{key}"
+
+
+def _stable_post_key(entry: Dict[str, Any]) -> str:
+    raw = entry.get("post_id") or entry.get("url") or entry.get("title") or ""
+    if not raw:
+        return ""
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()
 
 
 # Public API
@@ -142,7 +150,7 @@ def main() -> None:
     _post_records(base_url, supabase_key, "scan_runs", scan_runs, "run_id,account,subreddit")
     scan_posts: List[Dict[str, Any]] = []
     for entry in scanned_entries:
-        post_key = entry.get("post_key") or entry.get("post_id") or entry.get("url") or entry.get("title") or ""
+        post_key = _stable_post_key(entry)
         if not post_key:
             continue
         matched_keywords = entry.get("matched_keywords") or []

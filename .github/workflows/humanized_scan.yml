@@ -99,7 +99,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install -r requirements-selenium.txt
 
       - name: Restore cookie files
         if: steps.gate.outputs.should_run == 'true'
@@ -161,6 +160,7 @@ jobs:
           SELENIUM_CONTENT_TIMEOUT: "60"
           SELENIUM_CONTENT_ATTEMPTS: "1"
           SELENIUM_CONTENT_RETRY_DELAY: "1.0"
+          SELENIUM_CLICK_ARTIFACTS: "1"
           USE_TOR_PROXY: "1"
           CI: "true"
           SCAN_LIMIT: "25"

@@ -19,6 +19,7 @@ except ImportError:
     logger.warning("TorProxy not available")
 
 project_root = Path(__file__).resolve().parents[2]
+repo_root = Path(__file__).resolve().parents[4]
 
 # Setup logging
 # Constants
@@ -439,6 +440,21 @@ class BrowserManager:
         except Exception as e:
             logger.error(f"Failed to take screenshot: {e}")
             return False
+
+    def _capture_click_artifacts(self, driver, label: str) -> None:
+        if not (_env_flag("SELENIUM_CLICK_ARTIFACTS", False) or _env_flag("CI", False)):
+            return
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        safe_label = "".join(ch for ch in label if ch.isalnum() or ch in ("-", "_")) or "click"
+        out_dir = repo_root / "logs" / "ci_artifacts"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        screenshot_path = out_dir / f"{safe_label}_{ts}.png"
+        html_path = out_dir / f"{safe_label}_{ts}.html"
+        self.take_screenshot(driver, str(screenshot_path))
+        try:
+            html_path.write_text(self.get_page_source_safely(driver), encoding="utf-8")
+        except Exception as exc:
+            logger.error(f"Failed to save page source: {exc}")
     
     def get_page_source_safely(self, driver):
         """Get page source with error handling"""
@@ -448,38 +464,49 @@ class BrowserManager:
             logger.error(f"Failed to get page source: {e}")
             return ""
     
-    def safe_click(self, driver, element):
+    def safe_click(self, driver, element, label: str = "click"):
         """Safely click element with retry"""
         if not element:
             return False
 
-        try:
-            driver.execute_script(
-                "arguments[0].scrollIntoView({block: 'center', inline: 'center'});",
-                element,
-            )
-        except Exception:
-            self.scroll_to_element(driver, element)
+        attempts = int(os.getenv("SELENIUM_CLICK_ATTEMPTS", "3"))
+        retry_delay = float(os.getenv("SELENIUM_CLICK_RETRY_DELAY", "0.6"))
+        last_error: Exception | None = None
 
-        time.sleep(random.uniform(0.2, 0.6))
-        try:
-            WebDriverWait(driver, self.wait_time).until(EC.element_to_be_clickable(element))
-        except Exception:
-            pass
+        for attempt in range(1, max(1, attempts) + 1):
+            try:
+                driver.execute_script(
+                    "arguments[0].scrollIntoView({block: 'center', inline: 'center'});",
+                    element,
+                )
+            except Exception:
+                self.scroll_to_element(driver, element)
 
-        try:
-            element.click()
-            return True
-        except Exception as e:
-            logger.warning(f"Click failed, trying fallbacks: {e}")
+            time.sleep(random.uniform(0.2, 0.6))
+            try:
+                WebDriverWait(driver, self.wait_time).until(
+                    lambda d: element.is_displayed() and element.is_enabled()
+                )
+            except Exception:
+                pass
+
+            try:
+                element.click()
+                return True
+            except Exception as e:
+                last_error = e
+                logger.warning(
+                    "Click attempt %s/%s failed: %s", attempt, attempts, e
+                )
+                time.sleep(retry_delay)
 
         try:
             from selenium.webdriver.common.action_chains import ActionChains
 
             ActionChains(driver).move_to_element(element).pause(random.uniform(0.1, 0.3)).click().perform()
             return True
-        except Exception:
-            pass
+        except Exception as e:
+            last_error = e
 
         try:
             driver.execute_script(
@@ -515,7 +542,9 @@ class BrowserManager:
             driver.execute_script("arguments[0].click();", element)
             return True
         except Exception as js_e:
+            last_error = js_e
             logger.error(f"JavaScript click also failed: {js_e}")
+            self._capture_click_artifacts(driver, label)
             return False
     
     def fill_form_field(self, driver, field_id, value):
