@@ -2,9 +2,9 @@ import logging
 from pathlib import Path
 from typing import Sequence, Set
 
-from selenium_automation.main import RedditAutomation
-from shared.api_utils import matched_keywords
-from shared.scan_store import (
+from microdose_study_bot.reddit_selenium.main import RedditAutomation
+from microdose_study_bot.core.utils.api_utils import matched_keywords
+from microdose_study_bot.core.storage.scan_store import (
     add_scanned_post,
     add_to_queue,
     log_summary,

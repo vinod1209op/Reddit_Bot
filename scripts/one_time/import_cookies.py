@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Import a JSON cookie export and save as Selenium cookies.pkl, updating accounts.json.
+Import a JSON cookie export and save as Selenium cookie file, updating accounts.json.
 
 Usage:
   python scripts/one_time/import_cookies.py --input cookies.json --name account1
@@ -75,7 +75,7 @@ def main() -> None:
     parser.add_argument("--input", required=True, help="Path to cookies JSON export.")
     parser.add_argument("--name", required=True, help="Account name (updates config/accounts.json).")
     parser.add_argument("--accounts-path", default="config/accounts.json")
-    parser.add_argument("--output", default="", help="Optional output path for cookies.pkl")
+    parser.add_argument("--output", default="", help="Optional output path for cookie file")
     parser.add_argument("--domain", default="reddit.com", help="Domain filter (default: reddit.com)")
     args = parser.parse_args()
 

@@ -26,7 +26,7 @@
 - **Posting guard**: Dry-run by default. Actual posting only when `ENABLE_POSTING=1` and user approves.
 - **Logging**: `bot_step3_replies.py` appends to `bot_logs.csv` (run_id, mode, post metadata, matched keywords, reply text, approval decision, posted flag, comment_id, error).
 - **Metrics**: `bot_step4_metrics.py` reads `bot_logs.csv`, fetches posted comments, records score and replies_count to `bot_metrics.csv`.
-- **Selenium mode (manual)**: `src/selenium_automation/main.py` opens a real browser for manual Google login and subreddit scraping, using `BrowserManager` for driver setup and small per-action delays/scrolls. `search_posts(..., include_body=True, include_comments=True)` can click into posts to grab body text and a few top comments (best-effort), and normalizes URLs to `https://old.reddit.com`. `reply_to_post(url, text, dry_run=True)` stages a reply but defaults to dry-run; flip only after human review and subreddit approval. A Streamlit UI (`apps/streamlit_app.py`) is available for search + prefill, with optional auto-submit.
+- **Selenium mode (manual)**: `src/microdose_study_bot/reddit_selenium/main.py` opens a real browser for manual Google login and subreddit scraping, using `BrowserManager` for driver setup and small per-action delays/scrolls. `search_posts(..., include_body=True, include_comments=True)` can click into posts to grab body text and a few top comments (best-effort), and normalizes URLs to `https://old.reddit.com`. `reply_to_post(url, text, dry_run=True)` stages a reply but defaults to dry-run; flip only after human review and subreddit approval. A Streamlit UI (`apps/streamlit/app.py`) is available for search + prefill, with optional auto-submit.
 - **Scheduled humanized scans (read-only)**: `scripts/runners/humanized_night_scanner.py` runs within configured windows (`config/activity_schedule.json`), rotates accounts from `config/accounts.json`, and writes scan results to `logs/night_queue.json` plus summaries to `logs/night_scan_summary.csv`.
 - **Legacy read-only scans**: `scripts/runners/night_scanner.py` uses `config/schedule.json` but is not scheduled by default.
 
@@ -36,11 +36,11 @@
   - Required: Reddit creds, `REDDIT_USER_AGENT` descriptive.
   - Optional toggles: `MOCK_MODE=1` (offline), `ENABLE_POSTING=1` (allow replies), `USE_LLM=1` + `OPENROUTER_API_KEY`, `RUN_ID` (label).
 - Dry-run / mock:
-  - `python src/api/bot_step1.py` (auth check + mock posts if enabled).
-  - `python src/api/bot_step2_keywords.py` (keyword scan; mock fallback).
-  - `python src/api/bot_step3_replies.py` (matches + suggested replies + approval prompts; logs to `bot_logs.csv`).
+  - `python src/microdose_study_bot/reddit_api/bot_step1.py` (auth check + mock posts if enabled).
+  - `python src/microdose_study_bot/reddit_api/bot_step2_keywords.py` (keyword scan; mock fallback).
+  - `python src/microdose_study_bot/reddit_api/bot_step3_replies.py` (matches + suggested replies + approval prompts; logs to `bot_logs.csv`).
 - Metrics:
-  - After live posts exist: `python src/api/bot_step4_metrics.py` (skips in mock mode) to append `bot_metrics.csv`.
+  - After live posts exist: `python src/microdose_study_bot/reddit_api/bot_step4_metrics.py` (skips in mock mode) to append `bot_metrics.csv`.
 - Scheduled scans:
   - `python scripts/runners/humanized_night_scanner.py` (read-only; uses `config/activity_schedule.json` for windows and `config/accounts.json`).
   - `python scripts/runners/night_scanner.py` (legacy/manual; uses `config/schedule.json`).

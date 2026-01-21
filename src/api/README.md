@@ -1,11 +1,11 @@
-# API Mode Scripts
+# API Mode Scripts (Shim)
 
-Lightweight, step-by-step scripts that use PRAW. Each script handles errors by falling back to mock data so you can test without Reddit credentials.
+This directory is a backward-compatibility shim. Use `src/microdose_study_bot/reddit_api/` for new work.
 
-- `bot_step1.py`: Authenticate and fetch a small batch of posts.
-- `bot_step2_keywords.py`: Fetch posts and print only those matching the configured keywords.
-- `bot_step3_replies.py`: Fetch + filter posts, suggest a reply, ask for human approval, optionally post, and log to `bot_logs.csv`.
-- `bot_step4_metrics.py`: Read posted comment IDs from `bot_logs.csv` and record their score/replies in `bot_metrics.csv`.
+- `bot_step1.py` → `src/microdose_study_bot/reddit_api/bot_step1.py`
+- `bot_step2_keywords.py` → `src/microdose_study_bot/reddit_api/bot_step2_keywords.py`
+- `bot_step3_replies.py` → `src/microdose_study_bot/reddit_api/bot_step3_replies.py`
+- `bot_step4_metrics.py` → `src/microdose_study_bot/reddit_api/bot_step4_metrics.py`
 
 Configuration:
 - Load credentials from `config/credentials.env` (preferred) or `.env` in the repo root. Set `MOCK_MODE=1` to skip real API calls.

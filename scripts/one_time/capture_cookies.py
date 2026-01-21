@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 
 ROOT = Path(__file__).resolve().parents[2]
 
-from selenium_automation.login_manager import LoginManager
+from microdose_study_bot.reddit_selenium.login import LoginManager
 
 
 def build_output_path(name: str, output: str) -> Path:

@@ -4,9 +4,9 @@ import unittest
 from pathlib import Path
 
 # Ensure project root is on path
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
-from shared import api_utils  # noqa: E402
+from microdose_study_bot.core.utils import api_utils  # noqa: E402
 
 
 class DummyPost:

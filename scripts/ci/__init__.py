@@ -1,1 +1,1 @@
-"""CI helper scripts package."""
+# Backward-compatibility shims for legacy imports.

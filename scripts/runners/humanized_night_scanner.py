@@ -24,12 +24,12 @@ except Exception:  # pragma: no cover - fallback for older Python
 ROOT = Path(__file__).resolve().parents[2]
 
 from selenium.webdriver.common.by import By
-from selenium_automation.utils.human_simulator import HumanSimulator
-from selenium_automation.utils.engagement_actions import EngagementActions
-from selenium_automation.login_manager import LoginManager
-from selenium_automation.utils.browser_manager import BrowserManager
-from shared.config_manager import ConfigManager
-from shared.scan_store import (
+from microdose_study_bot.reddit_selenium.utils.human_simulator import HumanSimulator
+from microdose_study_bot.reddit_selenium.utils.engagement_actions import EngagementActions
+from microdose_study_bot.reddit_selenium.login import LoginManager
+from microdose_study_bot.reddit_selenium.utils.browser_manager import BrowserManager
+from microdose_study_bot.core.config import ConfigManager
+from microdose_study_bot.core.storage.scan_store import (
     build_run_paths,
     build_run_scanned_path,
     load_seen,
@@ -37,9 +37,9 @@ from shared.scan_store import (
     SEEN_DEFAULT_PATH,
     SCANNED_DEFAULT_PATH,
 )
-from shared.console_tee import enable_console_tee
-from shared.scan_shards import compute_scan_shard
-from shared.logger import UnifiedLogger
+from microdose_study_bot.core.utils.console_tee import enable_console_tee
+from microdose_study_bot.core.utils.scan_shards import compute_scan_shard
+from microdose_study_bot.core.logging import UnifiedLogger
 from scripts.runners.session_scanner import run_session_scan
 
 ACTION_ALIASES = {
@@ -742,7 +742,7 @@ class MultiAccountOrchestrator:
                     self.logger.error(f"Failed to create browser for {account.get('name')}")
                     continue
                 
-                cookie_file = account.get('cookies_path', 'cookies.pkl')
+                cookie_file = account.get('cookies_path', 'data/cookies_account1.pkl')
                 google_email = account.get('google_email', '')
                 google_password = account.get('google_password', '')
                 login_method = account.get("login_method") or activity_config.get("login_method") or "cookies_then_google"

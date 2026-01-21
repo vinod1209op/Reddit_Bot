@@ -30,7 +30,7 @@
    pip install -r requirements-selenium.txt
    pip install -r requirements-streamlit.txt
    ```
-2) Fill `config/credentials.env` (preferred) or `.env` in the repo root:
+2) Fill `config/credentials.env` (preferred) or `.env` in the repo root (see `config/env/.env.example` for templates):
    - Required for API mode: `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USERNAME`, `REDDIT_PASSWORD`, `REDDIT_USER_AGENT` (descriptive)
    - Optional for Selenium login: `GOOGLE_EMAIL`, `GOOGLE_PASSWORD`
    - Optional toggles:
@@ -40,6 +40,11 @@
      - `RUN_ID` to tag runs in logs
      - `SELENIUM_AUTO_SUBMIT_LIMIT` to cap Streamlit auto-submit per session
      - `SEARCH_CACHE_TTL` (seconds) to cache Streamlit search results (0 disables)
+   - Supabase (Streamlit DB mode + cookie sync):
+     - `SUPABASE_URL`, `SUPABASE_ANON_KEY`
+     - `SUPABASE_SERVICE_ROLE_KEY` (required for uploads and cookie sync)
+     - `SUPABASE_BUCKET` (Storage bucket)
+     - `SUPABASE_COOKIES_ACCOUNT1_PATH` (cookie file path for Streamlit; default `cookies_account1.pkl`)
    - Optional OpenRouter headers:
      - `OPENROUTER_BASE_URL`, `OPENAI_HTTP_REFERER`, `OPENAI_X_TITLE`
 3) (Optional) Configure humanized scheduled scanning in `config/activity_schedule.json`:
@@ -50,17 +55,17 @@
 
 ## How to run (by step)
 - Step 1 (auth + basic read):  
-  `python src/api/bot_step1.py`
+  `python src/microdose_study_bot/reddit_api/bot_step1.py`
 - Step 2 (keyword scan):  
-  `python src/api/bot_step2_keywords.py`
+  `python src/microdose_study_bot/reddit_api/bot_step2_keywords.py`
 - Step 3 (keyword scan + suggested reply + human approval + logging; posting off by default):  
-  `python src/api/bot_step3_replies.py`
+  `python src/microdose_study_bot/reddit_api/bot_step3_replies.py`
 - Step 4 (metrics; checks posted comments’ score/replies; skips in mock mode):  
-  `python src/api/bot_step4_metrics.py`
+  `python src/microdose_study_bot/reddit_api/bot_step4_metrics.py`
 - Selenium mode (manual login, scraping, optional reply staging):  
-  `python apps/unified_bot.py` → choose “Run Selenium Bot”, complete manual Google login, then use the menu to search posts. You can toggle body/comments capture in the prompts. Posting via Selenium is only manual: you must enter the post URL, reply text, and confirm; keep it dry-run unless you have moderator approval.
+  `python apps/cli/microdose_bot.py` → choose “Run Selenium Bot”, complete manual Google login, then use the menu to search posts. You can toggle body/comments capture in the prompts. Posting via Selenium is only manual: you must enter the post URL, reply text, and confirm; keep it dry-run unless you have moderator approval.
 - Streamlit UI (manual prefill, optional auto-submit):  
-  `streamlit run apps/streamlit_app.py` → start the browser, search, draft a reply, and prefill in the live browser. Set `STREAMLIT_APP_PASSWORD` to gate access. Auto-submit is available but should be used only with approval and strict limits (cap with `SELENIUM_AUTO_SUBMIT_LIMIT`).
+  `streamlit run apps/streamlit/app.py` → start the browser, search, draft a reply, and prefill in the live browser. Set `STREAMLIT_APP_PASSWORD` to gate access. Auto-submit is available but should be used only with approval and strict limits (cap with `SELENIUM_AUTO_SUBMIT_LIMIT`).
 - Humanized night scanner (read-only, scheduled):  
   `python scripts/runners/humanized_night_scanner.py` → runs within `config/activity_schedule.json` windows, rotates accounts in `config/accounts.json`, and performs non-comment engagement (if enabled). Posting remains off by default.
 - Legacy night scanner (manual only):  
@@ -68,11 +73,9 @@
 
 ## GitHub Actions (humanized scheduled scan)
 To run scheduled, read-only humanized scans in GitHub Actions (using `.github/workflows/humanized_scan.yml`):
-- Add a GitHub Actions secret named `REDDIT_COOKIES_BASE64` that contains a base64-encoded cookie file (example commands):
-  - macOS: `base64 -b 0 cookies.pkl > /tmp/reddit_cookies.b64`
-  - Linux: `base64 -w 0 cookies.pkl > /tmp/reddit_cookies.b64`
-  - Copy the file contents into the Actions secret value.
-- Or provide `COOKIES_BUNDLE_BASE64` to restore multiple account cookies (zip of `data/cookies_*.pkl`).
+- Store a `cookies_bundle.zip` (zip of `data/cookies_*.pkl`) in Supabase Storage.
+- Set GitHub Actions secrets: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_BUCKET`, and optional `SUPABASE_COOKIES_PATH` (default `cookies/cookies_bundle.zip`).
+- The workflow downloads the bundle at start and uploads refreshed cookies after the run via `scripts/ops/supabase_cookies_sync.py`.
 - Review/adjust the cron schedule in `.github/workflows/humanized_scan.yml` to match your desired time windows (cron is UTC; update for DST as needed).
 - Trigger the workflow once manually in GitHub Actions to verify cookies and Chromium setup.
 - The legacy `selenium_readonly_scan.yml` is manual-only unless you add schedules.
@@ -85,13 +88,19 @@ To run scheduled, read-only humanized scans in GitHub Actions (using `.github/wo
 - `logs/night_queue.json`: review queue of matched posts.
 
 ## Repo map
-- `src/api/`: PRAW-based steps (auth, keyword scan, human-approved replies, metrics) with mock fallbacks.
-- `src/selenium_automation/`: Browser-based helper for manual Google login and subreddit scraping.
-- `src/shared/`: Config loader, logging, and safety utilities used by both modes.
+- `src/microdose_study_bot/reddit_api/`: PRAW-based steps (auth, keyword scan, human-approved replies, metrics) with mock fallbacks.
+- `src/microdose_study_bot/reddit_selenium/`: Browser-based helper for manual Google login and subreddit scraping.
+- `src/microdose_study_bot/core/`: Config loader, logging, and safety utilities used by both modes.
 - `config/`: Keywords/subreddits, rate limits, and credentials template.
 - `config/accounts.json` + `config/activity_schedule.json`: multi-account, scheduled humanized scanning (read-only by default).
 - `config/schedule.json`: legacy time windows for `scripts/runners/night_scanner.py` (manual only).
-- `apps/streamlit_app.py`: Streamlit UI to search and prefill replies using Selenium.
+- `apps/streamlit/app.py`: Streamlit UI to search and prefill replies using Selenium.
 - `scripts/runners/night_scanner.py`: legacy read-only scanning with logs, summary, and queue (manual only by default).
 - `scripts/runners/humanized_night_scanner.py`: scheduled multi-account activity runner (read-only by default).
 - `scripts/one_time/cleanup_logs.py`: optional helper to trim old log files (keeps recent by age/count).
+
+## Docs
+- `docs/README_architecture.md`: architecture overview.
+- `docs/RUNBOOK.md`: operational runbook.
+- `docs/SECURITY.md`: security notes.
+- `docs/ADR/`: architecture decisions.

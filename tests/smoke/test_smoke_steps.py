@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest import mock
 import tempfile
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 class SmokeSteps(unittest.TestCase):
@@ -28,12 +28,12 @@ class SmokeSteps(unittest.TestCase):
                 path.unlink()
 
     def test_step2_runs_in_mock_mode(self):
-        import api.bot_step2_keywords as step2
+        import microdose_study_bot.reddit_api.bot_step2_keywords as step2
         reload(step2)
         step2.main()  # should not raise
 
     def test_step3_runs_in_mock_mode_with_decline(self):
-        import api.bot_step3_replies as step3
+        import microdose_study_bot.reddit_api.bot_step3_replies as step3
         reload(step3)
         # Redirect logging to a temp file to avoid polluting repo
         with tempfile.TemporaryDirectory() as tmpdir:

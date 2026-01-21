@@ -4,10 +4,10 @@ import unittest
 from pathlib import Path
 from datetime import datetime, timedelta
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
-from shared.config_manager import ConfigManager
-from shared.safety_checker import SafetyChecker
+from microdose_study_bot.core.config import ConfigManager
+from microdose_study_bot.core.safety.checker import SafetyChecker
 
 
 class DummyConfig(ConfigManager):

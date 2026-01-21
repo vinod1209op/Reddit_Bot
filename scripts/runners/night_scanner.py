@@ -30,10 +30,10 @@ except ImportError:  # pragma: no cover - Python <3.9
 
 ROOT = Path(__file__).resolve().parents[2]
 
-from shared.config_manager import ConfigManager
-from shared.api_utils import fetch_posts, matched_keywords, normalize_post, make_reddit_client
-from shared.console_tee import enable_console_tee
-from shared.scan_store import (
+from microdose_study_bot.core.config import ConfigManager
+from microdose_study_bot.core.utils.api_utils import fetch_posts, matched_keywords, normalize_post, make_reddit_client
+from microdose_study_bot.core.utils.console_tee import enable_console_tee
+from microdose_study_bot.core.storage.scan_store import (
     add_scanned_post,
     add_to_queue,
     build_run_paths,
@@ -47,7 +47,7 @@ from shared.scan_store import (
     SEEN_DEFAULT_PATH,
     SCANNED_DEFAULT_PATH,
 )
-from shared.scan_shards import compute_scan_shard
+from microdose_study_bot.core.utils.scan_shards import compute_scan_shard
 
 
 MOCK_POSTS: List[Mapping[str, str]] = [
@@ -336,7 +336,7 @@ def main() -> None:
         reddit = None
 
     if mode == "selenium":
-        from selenium_automation.main import RedditAutomation
+        from microdose_study_bot.reddit_selenium.main import RedditAutomation
         account_names = {name.strip() for name in args.account_names.split(",") if name.strip()}
         accounts = []
         if args.accounts_path:
@@ -356,7 +356,7 @@ def main() -> None:
             if cookie_path:
                 config.selenium_settings["cookie_file"] = cookie_path
             try:
-                from tor_proxy import tor_proxy
+                from microdose_study_bot.reddit_selenium.tor_proxy import tor_proxy
                 tor_enabled = os.getenv("USE_TOR_PROXY", "0") == "1"
             except ImportError:
                 tor_enabled = False
@@ -555,7 +555,7 @@ def main() -> None:
         else:
             run_selenium_scan(
                 "",
-                config.selenium_settings.get("cookie_file", "cookies.pkl"),
+                config.selenium_settings.get("cookie_file", "data/cookies_account1.pkl"),
                 "new",
                 "",
                 0,
