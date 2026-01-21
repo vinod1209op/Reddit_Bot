@@ -39,7 +39,8 @@ ROOT = Path(__file__).resolve().parents[2]
 
 from microdose_study_bot.core.config import ConfigManager
 from microdose_study_bot.core.safety.policies import enforce_readonly_env
-from microdose_study_bot.core.utils.api_utils import fetch_posts, matched_keywords, normalize_post, make_reddit_client
+from microdose_study_bot.core.reddit_client import fetch_posts, make_reddit_client
+from microdose_study_bot.core.text_normalization import matched_keywords, normalize_post
 from microdose_study_bot.core.utils.console_tee import enable_console_tee
 from microdose_study_bot.core.storage.scan_store import (
     add_scanned_post,

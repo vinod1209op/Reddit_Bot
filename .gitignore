@@ -21,6 +21,7 @@ bot_logs.csv
 bot_metrics.csv
 *.log
 information/
+data/
 
 # Cookies/session artifacts
 cookies.pkl
@@ -35,6 +36,7 @@ data/cookies_bundle.zip
 
 # Selenium artifacts
 *.png
+chromedriver-mac-x64/
 
 # Compiled tests
 *.pyc

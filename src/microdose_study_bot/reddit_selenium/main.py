@@ -1,6 +1,6 @@
 """
-Purpose: Selenium-based Reddit automation entry point.
-Constraints: Posting requires explicit approval; defaults to dry-run.
+Purpose: Selenium-based automation entry point (internal).
+Constraints: Posting requires explicit approval; prefer apps/cli/microdose_bot.py.
 """
 
 # Imports

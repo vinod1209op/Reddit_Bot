@@ -5,6 +5,7 @@ Constraints: No real enforcement; do not rely on this for protection.
 
 # Imports
 import logging
+import os
 from typing import Dict, Optional
 
 # Constants
@@ -17,6 +18,11 @@ class SafetyEnforcerStub:
     """Minimal stub that allows all actions but warns."""
 
     def validate_action(self, action: str, details: Optional[Dict] = None) -> bool:
+        if os.getenv("ALLOW_SAFETY_STUB", "0") != "1":
+            raise RuntimeError(
+                "SafetyEnforcerStub is non-production and disabled by default. "
+                "Set ALLOW_SAFETY_STUB=1 only for local testing."
+            )
         logger.warning(
             "SafetyEnforcerStub placeholder used for action '%s'; no checks enforced.",
             action,

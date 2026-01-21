@@ -1,48 +1,19 @@
 """
-Purpose: Shared API utilities (normalization, matching, logging helpers).
-Constraints: Pure helpers only; no side-effecting automation.
+Purpose: Create Reddit API clients and fetch posts with fallbacks.
+Constraints: API helpers only; no posting logic.
 """
 
 # Imports
-import csv
 import sys
-from pathlib import Path
-from textwrap import shorten
-from typing import Iterable, Mapping, Sequence, List, Any, Optional
+from typing import Iterable, Mapping, Optional
 
 try:
     import praw
 except ImportError:
     praw = None
 
+
 # Helpers
-
-
-def preview_text(text: str, width: int = 200) -> str:
-    """Return a single-line preview of text, trimmed to width."""
-    if not text:
-        return "(no body text)"
-    sanitized = " ".join(text.split())
-    return shorten(sanitized, width=width, placeholder="...")
-
-
-def normalize_post(post: Any, default_subreddit: str) -> Mapping[str, Any]:
-    """Convert either a PRAW submission or a dict into a consistent mapping."""
-    return {
-        "id": getattr(post, "id", None) or post.get("id", ""),
-        "subreddit": getattr(post, "subreddit", None) or post.get("subreddit", default_subreddit),
-        "title": getattr(post, "title", None) or post.get("title", ""),
-        "score": getattr(post, "score", None) or post.get("score", 0),
-        "body": getattr(post, "selftext", None) or post.get("body", ""),
-    }
-
-
-def matched_keywords(text: str, keywords: Sequence[str]) -> List[str]:
-    """Return a list of keywords that appear in the text (case-insensitive)."""
-    haystack = text.lower()
-    return [kw for kw in keywords if kw.lower() in haystack]
-
-
 def fetch_posts(reddit, subreddit_name: str, limit: int, fallback_posts: Iterable) -> Iterable:
     """
     Fetch posts from Reddit; on error, return fallback_posts.
@@ -55,16 +26,6 @@ def fetch_posts(reddit, subreddit_name: str, limit: int, fallback_posts: Iterabl
         print("Reddit API not available (or access limited). Running in mock mode instead.", file=sys.stderr)
         print(f"Details: {exc}", file=sys.stderr)
         return fallback_posts
-
-
-def append_log(path: Path, row: Mapping[str, Any], header: Sequence[str]) -> None:
-    """Append a row to a CSV log, creating headers on first write."""
-    file_exists = path.exists()
-    with path.open("a", newline="", encoding="utf-8") as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=header)
-        if not file_exists:
-            writer.writeheader()
-        writer.writerow(row)
 
 
 def make_reddit_client(

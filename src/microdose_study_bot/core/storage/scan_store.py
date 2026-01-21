@@ -16,7 +16,7 @@ try:
 except Exception:  # pragma: no cover
     ZoneInfo = None  # type: ignore
 
-from microdose_study_bot.core.utils.api_utils import append_log
+from microdose_study_bot.core.storage.csv_log_writer import append_log
 
 # Constants
 SUMMARY_HEADER = [

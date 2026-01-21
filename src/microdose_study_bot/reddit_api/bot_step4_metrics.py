@@ -1,6 +1,6 @@
 """
 Purpose: Collect engagement metrics for previously posted comments.
-Constraints: Read-only; no replies or posting.
+Constraints: Read-only; internal tool (prefer apps/cli/microdose_bot.py).
 """
 
 # Imports

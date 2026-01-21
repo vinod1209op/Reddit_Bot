@@ -1,6 +1,6 @@
 """
 Purpose: Validate API credentials and fetch a small post sample.
-Constraints: Read-only; no replies or posting.
+Constraints: Read-only; internal tool (prefer apps/cli/microdose_bot.py).
 """
 
 # Imports
@@ -16,7 +16,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 import praw
 from dotenv import load_dotenv
 from microdose_study_bot.core.config import ConfigManager
-from microdose_study_bot.core.utils.api_utils import preview_text, fetch_posts
+from microdose_study_bot.core.text_normalization import preview_text
+from microdose_study_bot.core.reddit_client import fetch_posts
 
 
 # Mock data used when Reddit API is unavailable or credentials are missing.

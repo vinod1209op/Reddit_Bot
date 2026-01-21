@@ -54,6 +54,17 @@
    - Legacy read-only scanning still uses `config/schedule.json` (manual only).
 
 ## How to run (by step)
+Official operator entrypoints:
+- UI: `streamlit run apps/streamlit/app.py`
+- CLI: `python apps/cli/microdose_bot.py`
+
+Internal/dev scripts (use for debugging or tests):
+- `src/microdose_study_bot/reddit_api/bot_step1.py`
+- `src/microdose_study_bot/reddit_api/bot_step2_keywords.py`
+- `src/microdose_study_bot/reddit_api/bot_step3_replies.py`
+- `src/microdose_study_bot/reddit_api/bot_step4_metrics.py`
+- `src/microdose_study_bot/reddit_selenium/main.py`
+
 - Step 1 (auth + basic read):  
   `python src/microdose_study_bot/reddit_api/bot_step1.py`
 - Step 2 (keyword scan):  

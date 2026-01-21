@@ -1,6 +1,6 @@
 """
 Purpose: Keyword scan using API with mock fallback.
-Constraints: Read-only; no replies or posting.
+Constraints: Read-only; internal tool (prefer apps/cli/microdose_bot.py).
 """
 
 # Imports
@@ -16,7 +16,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 import praw
 from dotenv import load_dotenv
 from microdose_study_bot.core.config import ConfigManager
-from microdose_study_bot.core.utils.api_utils import normalize_post, matched_keywords, fetch_posts
+from microdose_study_bot.core.text_normalization import normalize_post, matched_keywords
+from microdose_study_bot.core.reddit_client import fetch_posts
 
 # Mock data for offline/testing mode.
 MOCK_POSTS: List[Mapping[str, str]] = [

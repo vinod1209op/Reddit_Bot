@@ -14,7 +14,7 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parents[2]
 
 from microdose_study_bot.core.safety.checker import SafetyChecker
-from microdose_study_bot.core.utils.api_utils import make_reddit_client
+from microdose_study_bot.core.reddit_client import make_reddit_client
 
 # Helpers
 def _structured_error(message: str, code: str = "error", extra: Dict[str, Any] = None) -> Dict[str, Any]:

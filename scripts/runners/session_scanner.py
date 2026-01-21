@@ -13,7 +13,7 @@ from typing import Sequence, Set
 
 from microdose_study_bot.reddit_selenium.main import RedditAutomation
 from microdose_study_bot.core.safety.policies import enforce_readonly_env
-from microdose_study_bot.core.utils.api_utils import matched_keywords
+from microdose_study_bot.core.text_normalization import matched_keywords
 from microdose_study_bot.core.storage.scan_store import (
     add_scanned_post,
     add_to_queue,

@@ -1,6 +1,6 @@
 """
 Purpose: Keyword filtering + human-approved reply workflow with logging.
-Constraints: Posting requires explicit approval and ENABLE_POSTING=1.
+Constraints: Posting requires explicit approval and ENABLE_POSTING=1; internal tool.
 """
 
 # Imports
@@ -21,7 +21,9 @@ from dotenv import load_dotenv
 from microdose_study_bot.core.config import ConfigManager
 from microdose_study_bot.core.safety.checker import SafetyChecker
 from microdose_study_bot.core.safety.policies import DEFAULT_REPLY_RULES
-from microdose_study_bot.core.utils.api_utils import normalize_post, matched_keywords, fetch_posts, append_log
+from microdose_study_bot.core.text_normalization import normalize_post, matched_keywords
+from microdose_study_bot.core.reddit_client import fetch_posts
+from microdose_study_bot.core.storage.csv_log_writer import append_log
 
 try:
     from openai import OpenAI  # Optional; used only if USE_LLM=1 and OPENAI_API_KEY is set.

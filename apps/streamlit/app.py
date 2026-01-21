@@ -21,7 +21,7 @@ import requests
 
 from microdose_study_bot.core.config import ConfigManager  # type: ignore
 from microdose_study_bot.core.safety.policies import DEFAULT_REPLY_RULES  # type: ignore
-from microdose_study_bot.core.utils.api_utils import matched_keywords as _match_keywords  # type: ignore
+from microdose_study_bot.core.text_normalization import matched_keywords as _match_keywords  # type: ignore
 from microdose_study_bot.reddit_selenium.main import RedditAutomation  # type: ignore
 
 # Constants
