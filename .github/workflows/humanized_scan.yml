@@ -103,6 +103,7 @@ jobs:
       - name: Restore cookie files
         if: steps.gate.outputs.should_run == 'true'
         env:
+          PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET }}
@@ -178,6 +179,7 @@ jobs:
       - name: Upload refreshed cookies to Supabase
         if: steps.gate.outputs.should_run == 'true'
         env:
+          PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET }}
@@ -188,6 +190,7 @@ jobs:
       - name: Upload logs to Supabase
         if: steps.gate.outputs.should_run == 'true'
         env:
+          PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET }}
@@ -198,6 +201,7 @@ jobs:
       - name: Upsert logs into Supabase DB
         if: steps.gate.outputs.should_run == 'true'
         env:
+          PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_QUEUE_PATH: logs/night_queue.json

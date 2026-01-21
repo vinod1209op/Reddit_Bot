@@ -44,6 +44,7 @@ from microdose_study_bot.core.storage.scan_store import (
 )
 from microdose_study_bot.core.utils.console_tee import enable_console_tee
 from microdose_study_bot.core.utils.scan_shards import compute_scan_shard
+from microdose_study_bot.core.utils.vpn_manager import VPNManager
 from microdose_study_bot.core.logging import UnifiedLogger
 from scripts.runners.session_scanner import run_session_scan
 
@@ -117,6 +118,14 @@ def in_time_window(current_time, start_time, end_time) -> bool:
     if start_time <= end_time:
         return start_time <= current_time <= end_time
     return current_time >= start_time or current_time <= end_time
+
+
+def _vpn_enabled() -> bool:
+    if not _env_flag("USE_VPN", False):
+        return False
+    if _env_flag("CI", False) and not _env_flag("USE_VPN_IN_CI", False):
+        return False
+    return True
 
 
 def parse_windows_arg(windows: str, tz_name: str) -> List[Dict[str, Any]]:
@@ -737,6 +746,15 @@ class MultiAccountOrchestrator:
             scanner = None
             try:
                 self.logger.info(f"Starting session for {account.get('name', 'unknown')}")
+
+                if _vpn_enabled():
+                    location = account.get("vpn_location") or os.getenv("VPN_LOCATION", "").strip()
+                    if location:
+                        try:
+                            vpn_info = VPNManager().connect_to_vpn(location)
+                            self.logger.info(f"VPN connected for {account.get('name', '')}: {vpn_info}")
+                        except Exception as exc:
+                            self.logger.warning(f"VPN connection failed for {account.get('name', '')}: {exc}")
                 
                 # Create scanner
                 profile_name = account.get("activity_profile", "") or ""
