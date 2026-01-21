@@ -76,10 +76,14 @@ def _upload_bundle() -> None:
         "Authorization": f"Bearer {service_key}",
         "apikey": service_key,
         "Content-Type": "application/zip",
+        "x-upsert": "true",
     }
     url = _storage_url(base_url, bucket, path)
     with bundle_path.open("rb") as handle:
         resp = requests.post(url, headers=headers, data=handle, timeout=30)
+    if resp.status_code == 409:
+        with bundle_path.open("rb") as handle:
+            resp = requests.put(url, headers=headers, data=handle, timeout=30)
     if resp.status_code >= 300:
         raise SystemExit(f"Supabase upload failed ({resp.status_code}): {resp.text}")
 
