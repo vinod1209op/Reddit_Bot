@@ -143,9 +143,7 @@ def _normalize_cached_posts(posts):
 
 def _supabase_config() -> tuple[str, str]:
     url = os.getenv("SUPABASE_URL", "").strip()
-    key = os.getenv("SUPABASE_ANON_KEY", "").strip()
-    if not key:
-        key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
     return url, key
 
 
@@ -976,7 +974,7 @@ def main() -> None:
             if sb_url and sb_key:
                 st.caption("Supabase: connected")
             else:
-                st.warning("Supabase not configured. Set SUPABASE_URL + SUPABASE_ANON_KEY.")
+                st.warning("Supabase not configured. Set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY.")
 
     if st.session_state.get("last_data_source") != data_source:
         prev_source = st.session_state.get("last_data_source")

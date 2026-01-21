@@ -38,7 +38,7 @@
      - `SELENIUM_AUTO_SUBMIT_LIMIT` to cap Streamlit auto-submit per session
      - `SEARCH_CACHE_TTL` (seconds) to cache Streamlit search results (0 disables)
    - Supabase (Streamlit DB mode + cookie sync):
-     - `SUPABASE_URL`, `SUPABASE_ANON_KEY`
+     - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
      - `SUPABASE_SERVICE_ROLE_KEY` (required for uploads and cookie sync)
      - `SUPABASE_BUCKET` (Storage bucket)
      - `SUPABASE_COOKIES_ACCOUNT1_PATH` (cookie file path for Streamlit; default `cookies_account1.pkl`)
