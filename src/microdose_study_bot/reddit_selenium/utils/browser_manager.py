@@ -181,9 +181,18 @@ class BrowserManager:
 
     def _apply_tor_proxy_to_options(self, options):
         """Add Tor proxy settings to Chrome options if enabled."""
-        if self.use_tor and TOR_AVAILABLE and hasattr(tor_proxy, "proxy_url"):
-            options.add_argument(f"--proxy-server={tor_proxy.proxy_url}")
-            logger.info(f"Applying Tor proxy to browser options: {tor_proxy.proxy_url}")
+        if not self.use_tor:
+            return
+        proxy_url = os.getenv("TOR_PROXY_URL", "").strip()
+        if not proxy_url:
+            port = os.getenv("TOR_SOCKS_PORT", "").strip()
+            if port:
+                proxy_url = f"socks5://127.0.0.1:{port}"
+        if not proxy_url and TOR_AVAILABLE and hasattr(tor_proxy, "proxy_url"):
+            proxy_url = tor_proxy.proxy_url
+        if proxy_url:
+            options.add_argument(f"--proxy-server={proxy_url}")
+            logger.info(f"Applying Tor proxy to browser options: {proxy_url}")
 
     def _create_undetected_driver_ci(self, uc):
         """Create undetected Chrome driver optimized for CI."""

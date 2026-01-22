@@ -2,12 +2,10 @@ name: Reddit Humanized Scan
 
 on:
   schedule:
-    # Early morning (America/Los_Angeles; UTC offset varies with DST)
-    - cron: "0 14 * * *" # account1
-    # Midday (America/Los_Angeles; UTC offset varies with DST)
-    - cron: "0 20 * * *" # account2
-    # Late night (America/Los_Angeles; UTC offset varies with DST)
-    - cron: "0 6 * * *"  # account3
+    # Late night local time per account (UTC values; DST shifts may apply)
+    - cron: "0 7 * * *"  # account1 (US Pacific ~23:00)
+    - cron: "0 23 * * *" # account2 (UK ~23:00)
+    - cron: "0 22 * * *" # account3 (DE ~23:00)
   workflow_dispatch:
     inputs:
       account:
@@ -32,11 +30,17 @@ jobs:
       matrix:
         include:
           - account: account1
-            cron: "0 14 * * *"
+            cron: "0 7 * * *"
+            tor_port: 9050
+            tor_country: us
           - account: account2
-            cron: "0 20 * * *"
+            cron: "0 23 * * *"
+            tor_port: 9051
+            tor_country: gb
           - account: account3
-            cron: "0 6 * * *"
+            cron: "0 22 * * *"
+            tor_port: 9052
+            tor_country: de
 
     steps:
       - name: Gate run by schedule/account
@@ -136,22 +140,24 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y tor
-          sudo service tor start
-          for i in {1..15}; do
-            if systemctl is-active --quiet tor; then
-              echo "Tor service is active"
-              break
-            fi
-            echo "Waiting for Tor service ($i/15)..."
-            sleep 2
-          done
-          if ! systemctl is-active --quiet tor; then
-            echo "Tor service did not become active in time" >&2
-          fi
-          if curl --socks5-hostname 127.0.0.1:9050 https://check.torproject.org/api/ip; then
-            echo "Tor proxy test succeeded"
+          PORT=${{ matrix.tor_port }}
+          DATADIR="/tmp/tor_$PORT"
+          mkdir -p "$DATADIR"
+          chmod 700 "$DATADIR"
+          cat > "$DATADIR/torrc" << EOF
+          SocksPort 127.0.0.1:$PORT
+          DataDirectory $DATADIR
+          ControlPort $((PORT + 100))
+          CookieAuthentication 1
+          ExitNodes {${{ matrix.tor_country }}}
+          StrictNodes 1
+          EOF
+          tor -f "$DATADIR/torrc" --RunAsDaemon 1
+          sleep 8
+          if curl --socks5-hostname 127.0.0.1:$PORT https://check.torproject.org/api/ip; then
+            echo "Tor proxy test succeeded on port $PORT"
           else
-            echo "Tor proxy test failed, continuing anyway"
+            echo "Tor proxy test failed on port $PORT, continuing anyway"
           fi
 
       - name: Run humanized night scanner with Tor
@@ -160,6 +166,8 @@ jobs:
           BOT_MODE: selenium
           ENABLE_POSTING: "0"
           USE_LLM: "0"
+          LOG_LEVEL: "INFO"
+          PYTHONUNBUFFERED: "1"
           PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
           SELENIUM_HEADLESS: "1"
           SELENIUM_USE_UNDETECTED: "1"
@@ -170,10 +178,12 @@ jobs:
           SELENIUM_CONTENT_RETRY_DELAY: "1.0"
           SELENIUM_CLICK_ARTIFACTS: "1"
           USE_TOR_PROXY: "1"
+          TOR_SOCKS_PORT: ${{ matrix.tor_port }}
           CI: "true"
           SCAN_LIMIT: "25"
           HUMANIZED_ACCOUNT_NAMES: ${{ github.event.inputs.account || matrix.account }}
         run: |
+          set -euxo pipefail
           echo "Starting humanized scan..."
           WINDOWS_ARG=""
           if [ -n "${{ github.event.inputs.windows }}" ]; then
@@ -181,7 +191,7 @@ jobs:
           elif [ "${{ github.event.inputs.force_run }}" = "true" ]; then
             WINDOWS_ARG="--force-run"
           fi
-          python scripts/runners/humanized_night_scanner.py $WINDOWS_ARG
+          python scripts/runners/humanized_night_scanner.py $WINDOWS_ARG 2>&1 | tee logs/ci_humanized_scan.log
       
       - name: Upload refreshed cookies to Supabase
         if: steps.gate.outputs.should_run == 'true'

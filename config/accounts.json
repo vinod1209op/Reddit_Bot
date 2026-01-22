@@ -5,7 +5,8 @@
     "password_env_var": "REDDIT_PASSWORD_1",
     "cookies_path": "data/cookies_account1.pkl",
     "activity_profile": "researcher",
-    "night_scanner_enabled": false,
+    "night_scanner_enabled": true,
+    "tor_socks_port": 9050,
     "browser_fingerprint": {
       "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
       "viewport": "1920x1080",
@@ -19,10 +20,11 @@
     "cookies_path": "data/cookies_account2.pkl",
     "activity_profile": "casual_reader",
     "night_scanner_enabled": false,
+    "tor_socks_port": 9051,
     "browser_fingerprint": {
       "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15",
       "viewport": "1440x900",
-      "timezone": "America/Los_Angeles"
+      "timezone": "Europe/London"
     }
   },
   {
@@ -32,12 +34,13 @@
     "cookies_path": "data/cookies_account3.pkl",
     "activity_profile": "night_owl",
     "night_scanner_enabled": false,
+    "tor_socks_port": 9052,
     "scan_sort": "top",
     "scan_time_range": "all",
     "browser_fingerprint": {
       "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
       "viewport": "1536x864",
-      "timezone": "America/Los_Angeles"
+      "timezone": "Europe/Berlin"
     }
   }
 ]

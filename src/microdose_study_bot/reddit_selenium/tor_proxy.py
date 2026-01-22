@@ -19,7 +19,8 @@ logger = logging.getLogger(__name__)
 class TorProxy:
     def __init__(self):
         self.tor_process = None
-        self.proxy_url = "socks5://127.0.0.1:9050"
+        port = os.getenv("TOR_SOCKS_PORT", "9050").strip() or "9050"
+        self.proxy_url = os.getenv("TOR_PROXY_URL", f"socks5://127.0.0.1:{port}").strip()
 
     def start(self) -> bool:
         """Start Tor proxy"""

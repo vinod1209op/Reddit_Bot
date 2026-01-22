@@ -150,6 +150,8 @@ jobs:
           BOT_MODE: selenium
           ENABLE_POSTING: "0"
           USE_LLM: "0"
+          LOG_LEVEL: "INFO"
+          PYTHONUNBUFFERED: "1"
           PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
           SELENIUM_HEADLESS: "1"
           SELENIUM_USE_UNDETECTED: "1"
@@ -163,6 +165,7 @@ jobs:
           CI: "true"
           SCAN_LIMIT: "25"
         run: |
+          set -euxo pipefail
           echo "Starting Tor-based scan..."
           WINDOWS_ARG=""
           if [ -n "${{ github.event.inputs.windows }}" ]; then
@@ -180,7 +183,7 @@ jobs:
             --jitter-max 20 \
             --accounts-path config/accounts.json \
             --account-names ${{ matrix.account }} \
-            $WINDOWS_ARG
+            $WINDOWS_ARG 2>&1 | tee logs/ci_night_scan.log
 
       - name: Upload logs to Supabase
         if: steps.gate.outputs.should_run == 'true'

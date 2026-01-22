@@ -199,7 +199,11 @@ class HumanizedNightScanner:
             # Create BrowserManager with account-specific settings
             headless = resolve_headless(self.activity_config)
             use_undetected = resolve_use_undetected(self.activity_config)
-            os.environ["USE_TOR_PROXY"] = "1"
+            if self.account.get("use_tor_proxy") is not False:
+                os.environ["USE_TOR_PROXY"] = "1"
+            tor_port = self.account.get("tor_socks_port")
+            if tor_port:
+                os.environ["TOR_SOCKS_PORT"] = str(tor_port)
             self.browser_manager = BrowserManager(headless=headless)
             
             # Get driver with optional undetected Chrome
