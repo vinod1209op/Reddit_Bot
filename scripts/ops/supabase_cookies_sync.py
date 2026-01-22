@@ -53,6 +53,16 @@ def _download_bundle() -> None:
 
     resp = retry(_do_request, attempts=3, base_delay=1.0)
     bundle_path.write_bytes(resp.content)
+    if not zipfile.is_zipfile(bundle_path):
+        preview = resp.content[:200]
+        try:
+            preview_text = preview.decode("utf-8", errors="replace")
+        except Exception:
+            preview_text = repr(preview)
+        raise SystemExit(
+            "Downloaded file is not a zip. "
+            f"Check SUPABASE_BUCKET/SUPABASE_COOKIES_PATH. Preview: {preview_text}"
+        )
 
     with zipfile.ZipFile(bundle_path, "r") as zf:
         zf.extractall(".")
