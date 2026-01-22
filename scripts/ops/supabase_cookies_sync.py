@@ -54,6 +54,16 @@ def _download_bundle() -> None:
     resp = retry(_do_request, attempts=3, base_delay=1.0)
     bundle_path.write_bytes(resp.content)
     if not zipfile.is_zipfile(bundle_path):
+        # Some uploads are base64 text of a zip. Try decoding once.
+        try:
+            import base64
+
+            decoded = base64.b64decode(resp.content, validate=True)
+            bundle_path.write_bytes(decoded)
+        except Exception:
+            decoded = None
+
+    if not zipfile.is_zipfile(bundle_path):
         preview = resp.content[:200]
         try:
             preview_text = preview.decode("utf-8", errors="replace")
