@@ -212,9 +212,13 @@ def _download_supabase_account_status(dest_path: Path) -> bool:
         return False
 
 
-def _download_supabase_cookie(dest_path: Path) -> bool:
-    base_url, service_key, bucket, cookie_path = _supabase_cookie_location()
+def _download_supabase_cookie_from_path(dest_path: Path, cookie_path: str) -> bool:
+    base_url, service_key, bucket, _ = _supabase_cookie_location()
     if not base_url or not service_key or not bucket:
+        log_ui("Cookie sync skipped (Supabase config missing).", level="warn")
+        return False
+    if not cookie_path:
+        log_ui("Cookie sync skipped (path missing).", level="warn")
         return False
     url = f"{base_url.rstrip('/')}/storage/v1/object/{bucket}/{cookie_path.lstrip('/')}"
     headers = {"Authorization": f"Bearer {service_key}", "apikey": service_key}
@@ -232,16 +236,28 @@ def _download_supabase_cookie(dest_path: Path) -> bool:
             with zipfile.ZipFile(bundle_path, "r") as zf:
                 zf.extractall(dest_path.parent)
             if dest_path.exists():
+                log_ui("Cookies synced from Supabase bundle.", level="ok")
                 return True
+            log_ui("Cookie bundle missing expected file.", level="warn")
             return False
         dest_path.write_bytes(resp.content)
+        log_ui("Cookies synced from Supabase.", level="ok")
         return True
     except Exception as exc:
+        log_ui(f"Cookie sync failed: {exc}", level="warn")
         return False
+
+
+def _download_supabase_cookie(dest_path: Path) -> bool:
+    _, _, _, cookie_path = _supabase_cookie_location()
+    return _download_supabase_cookie_from_path(dest_path, cookie_path)
 
 
 def _upload_supabase_cookie(src_path: Path) -> bool:
     base_url, service_key, bucket, cookie_path = _supabase_cookie_location()
+    # Never overwrite a bundle path with a single cookie file.
+    if cookie_path.endswith(".zip"):
+        return False
     if not base_url or not service_key or not bucket or not src_path.exists():
         return False
     url = f"{base_url.rstrip('/')}/storage/v1/object/{bucket}/{cookie_path.lstrip('/')}"
@@ -1245,7 +1261,20 @@ def main() -> None:
     os.environ["COOKIE_PATH"] = str(cookie_path)
     if not st.session_state.get("cookie_download_done"):
         st.session_state["cookie_download_done"] = True
-        _download_supabase_cookie(cookie_path)
+        account_cookie_paths = {
+            "account1": os.getenv("SUPABASE_COOKIES_ACCOUNT1_PATH", "").strip(),
+            "account2": os.getenv("SUPABASE_COOKIES_ACCOUNT2_PATH", "").strip(),
+            "account3": os.getenv("SUPABASE_COOKIES_ACCOUNT3_PATH", "").strip(),
+        }
+        downloaded_any = False
+        for name, remote_path in account_cookie_paths.items():
+            if not remote_path:
+                continue
+            dest = PROJECT_ROOT / "data" / f"cookies_{name}.pkl"
+            if _download_supabase_cookie_from_path(dest, remote_path):
+                downloaded_any = True
+        if not downloaded_any:
+            _download_supabase_cookie(cookie_path)
     if not st.session_state.get("account_status_download_done"):
         st.session_state["account_status_download_done"] = True
         _download_supabase_account_status(PROJECT_ROOT / "data" / "account_status.json")

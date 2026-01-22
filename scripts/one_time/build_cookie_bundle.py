@@ -17,6 +17,7 @@ from pathlib import Path
 def main() -> None:
     parser = argparse.ArgumentParser(description="Bundle data/*.pkl into a base64 zip.")
     parser.add_argument("--output", default="", help="Write base64 output to a file.")
+    parser.add_argument("--raw-zip", action="store_true", help="Always write a raw .zip to --output.")
     args = parser.parse_args()
 
     data_dir = Path("data")
@@ -36,7 +37,7 @@ def main() -> None:
     encoded = base64.b64encode(raw_zip).decode("ascii")
     if args.output:
         output_path = Path(args.output)
-        if output_path.suffix.lower() == ".zip":
+        if args.raw_zip or output_path.suffix.lower() == ".zip":
             output_path.write_bytes(raw_zip)
             print(f"Wrote zip bundle to {output_path}")
         else:

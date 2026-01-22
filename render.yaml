@@ -24,7 +24,9 @@ services:
       - key: SUPABASE_BUCKET
         sync: false
       - key: SUPABASE_PREFIX
-        value: scan-results
+        value: scan-results/humanized
+      - key: SUPABASE_COOKIES_ACCOUNT1_PATH
+        sync: false
       - key: REDDIT_CLIENT_ID
         sync: false
       - key: REDDIT_CLIENT_SECRET
