@@ -19,7 +19,7 @@
     "password_env_var": "REDDIT_PASSWORD_2",
     "cookies_path": "data/cookies_account2.pkl",
     "activity_profile": "casual_reader",
-    "night_scanner_enabled": false,
+    "night_scanner_enabled": true,
     "tor_socks_port": 9051,
     "browser_fingerprint": {
       "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15",
@@ -33,7 +33,7 @@
     "password_env_var": "REDDIT_PASSWORD_3",
     "cookies_path": "data/cookies_account3.pkl",
     "activity_profile": "night_owl",
-    "night_scanner_enabled": false,
+    "night_scanner_enabled": true,
     "tor_socks_port": 9052,
     "scan_sort": "top",
     "scan_time_range": "all",

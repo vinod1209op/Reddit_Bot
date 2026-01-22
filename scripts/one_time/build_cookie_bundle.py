@@ -32,10 +32,16 @@ def main() -> None:
         for path in cookie_files:
             zf.write(path, arcname=str(path))
 
-    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    raw_zip = buffer.getvalue()
+    encoded = base64.b64encode(raw_zip).decode("ascii")
     if args.output:
-        Path(args.output).write_text(encoded, encoding="utf-8")
-        print(f"Wrote base64 bundle to {args.output}")
+        output_path = Path(args.output)
+        if output_path.suffix.lower() == ".zip":
+            output_path.write_bytes(raw_zip)
+            print(f"Wrote zip bundle to {output_path}")
+        else:
+            output_path.write_text(encoded, encoding="utf-8")
+            print(f"Wrote base64 bundle to {output_path}")
     else:
         sys.stdout.write(encoded)
 

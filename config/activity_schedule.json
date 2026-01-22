@@ -24,63 +24,63 @@
   "allow_following": true,
   "allow_notifications_check": true,
   "activity_mix": {
-    "browse_subreddit": 35,
+    "browse_subreddit": 25,
     "view_posts": 25,
     "scroll_comments": 20,
-    "vote": 5,
-    "save": 5,
-    "follow": 5,
-    "check_notifications": 5
+    "vote": 12,
+    "save": 10,
+    "follow": 6,
+    "check_notifications": 2
   },
   "profiles": {
     "researcher": {
       "activity_mix": {
-        "browse_subreddit": 30,
-        "view_posts": 40,
-        "scroll_comments": 25,
-        "vote": 2,
-        "save": 2,
-        "follow": 1,
+        "browse_subreddit": 25,
+        "view_posts": 35,
+        "scroll_comments": 20,
+        "vote": 8,
+        "save": 7,
+        "follow": 4,
         "check_notifications": 0
       },
       "randomization": {
         "session_length_minutes": {
-          "min": 5,
-          "max": 10
+          "min": 10,
+          "max": 15
         }
       }
     },
     "casual_reader": {
       "activity_mix": {
-        "browse_subreddit": 45,
+        "browse_subreddit": 35,
         "view_posts": 25,
-        "scroll_comments": 20,
-        "vote": 4,
-        "save": 3,
-        "follow": 1,
+        "scroll_comments": 15,
+        "vote": 10,
+        "save": 8,
+        "follow": 4,
         "check_notifications": 2
       },
       "randomization": {
         "session_length_minutes": {
-          "min": 5,
-          "max": 10
+          "min": 10,
+          "max": 15
         }
       }
     },
     "night_owl": {
       "activity_mix": {
-        "browse_subreddit": 30,
-        "view_posts": 30,
-        "scroll_comments": 30,
-        "vote": 5,
-        "save": 3,
-        "follow": 2,
+        "browse_subreddit": 25,
+        "view_posts": 25,
+        "scroll_comments": 20,
+        "vote": 12,
+        "save": 10,
+        "follow": 6,
         "check_notifications": 0
       },
       "randomization": {
         "session_length_minutes": {
-          "min": 5,
-          "max": 10
+          "min": 10,
+          "max": 15
         }
       }
     }
@@ -93,8 +93,8 @@
       "max_seconds": 12
     },
     "session_length_minutes": {
-      "min": 5,
-      "max": 10,
+      "min": 10,
+      "max": 15,
       "distribution": "normal"
     },
     "jitter_percentage": 20

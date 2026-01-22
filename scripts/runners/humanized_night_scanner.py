@@ -204,6 +204,7 @@ class HumanizedNightScanner:
             tor_port = self.account.get("tor_socks_port")
             if tor_port:
                 os.environ["TOR_SOCKS_PORT"] = str(tor_port)
+                self._log_tor_exit_ip(tor_port)
             self.browser_manager = BrowserManager(headless=headless)
             
             # Get driver with optional undetected Chrome
@@ -230,6 +231,25 @@ class HumanizedNightScanner:
         except Exception as e:
             self.logger.error(f"Failed to setup browser: {e}")
             raise
+
+    def _log_tor_exit_ip(self, tor_port: int) -> None:
+        account_name = self.account.get("name", "unknown")
+        proxy_url = f"socks5h://127.0.0.1:{tor_port}"
+        try:
+            import requests
+
+            response = requests.get(
+                "https://check.torproject.org/api/ip",
+                proxies={"http": proxy_url, "https": proxy_url},
+                timeout=10,
+            )
+            response.raise_for_status()
+            ip = response.json().get("IP", "unknown")
+            self.logger.info(f"Tor exit for {account_name} (port {tor_port}): {ip}")
+        except Exception as exc:
+            self.logger.warning(
+                f"Tor exit lookup failed for {account_name} (port {tor_port}): {exc}"
+            )
 
     def _login_with_cookies(self, cookie_file: str) -> bool:
         if not self.login_manager:
