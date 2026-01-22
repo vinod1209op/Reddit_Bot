@@ -15,8 +15,8 @@ import time
 import random
 import os
 import sys
-import re
-from datetime import datetime
+import json
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -178,6 +178,208 @@ def get_active_window(activity_config: Dict[str, Any]) -> Optional[Dict[str, Any
     return None
 
 
+class AccountStatusTracker:
+    """Tracks account health status across sessions."""
+    
+    def __init__(self, status_file="data/account_status.json"):
+        self.logger = UnifiedLogger("AccountStatusTracker").get_logger()
+        self.status_file = Path(status_file)
+        self.status_file.parent.mkdir(parents=True, exist_ok=True)
+        self.status_data = self._load_status_data()
+    
+    def _load_status_data(self) -> Dict[str, Any]:
+        """Load account status data from file."""
+        try:
+            if self.status_file.exists():
+                with open(self.status_file, 'r') as f:
+                    data = json.load(f)
+                    self.logger.info(f"Loaded account status for {len(data)} accounts from {self.status_file}")
+                    return data
+        except Exception as e:
+            self.logger.warning(f"Could not load account status data: {e}")
+        return {}
+    
+    def _save_status_data(self):
+        """Save account status data to file."""
+        try:
+            with open(self.status_file, 'w') as f:
+                json.dump(self.status_data, f, indent=2)
+            self.logger.debug(f"Saved account status data to {self.status_file}")
+        except Exception as e:
+            self.logger.error(f"Failed to save account status data: {e}")
+    
+    def update_account_status(self, account_name: str, status: str, details: Dict[str, Any] = None):
+        """Update status for an account with details."""
+        if account_name not in self.status_data:
+            self.status_data[account_name] = {
+                "current_status": "unknown",
+                "status_history": [],
+                "first_seen": datetime.now().isoformat(),
+                "total_login_attempts": 0,
+                "failed_login_attempts": 0,
+                "last_success": None
+            }
+        
+        # Update counters
+        self.status_data[account_name]["total_login_attempts"] = \
+            self.status_data[account_name].get("total_login_attempts", 0) + 1
+        
+        if status != "active" and status != "captcha":
+            self.status_data[account_name]["failed_login_attempts"] = \
+                self.status_data[account_name].get("failed_login_attempts", 0) + 1
+        
+        previous_status = self.status_data[account_name].get("current_status", "unknown")
+        self.status_data[account_name]["current_status"] = status
+        self.status_data[account_name]["last_updated"] = datetime.now().isoformat()
+        
+        # Update last success timestamp
+        if status == "active":
+            self.status_data[account_name]["last_success"] = datetime.now().isoformat()
+        
+        # Add to history
+        status_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "status": status,
+            "previous_status": previous_status
+        }
+        if details:
+            status_entry["details"] = details
+        
+        if "status_history" not in self.status_data[account_name]:
+            self.status_data[account_name]["status_history"] = []
+        
+        self.status_data[account_name]["status_history"].append(status_entry)
+        
+        # Keep only last 50 entries
+        if len(self.status_data[account_name]["status_history"]) > 50:
+            self.status_data[account_name]["status_history"] = self.status_data[account_name]["status_history"][-50:]
+        
+        self._save_status_data()
+        
+        # Log status change if it's significant
+        if previous_status != status:
+            if status == "suspended":
+                self.logger.error(f"🚨 ACCOUNT SUSPENDED: {account_name}")
+            elif status == "rate_limited":
+                self.logger.warning(f"⏳ Account rate limited: {account_name}")
+            elif status == "captcha":
+                self.logger.warning(f"🔒 CAPTCHA required: {account_name}")
+            else:
+                self.logger.info(f"Updated account status for {account_name}: {previous_status} -> {status}")
+    
+    def should_skip_account(self, account_name: str) -> bool:
+        """Check if an account should be skipped based on its status."""
+        if account_name not in self.status_data:
+            return False
+        
+        current_status = self.status_data[account_name].get("current_status", "unknown")
+        
+        # Always skip permanently banned/suspended accounts
+        skip_statuses = ["suspended", "permanently_banned"]
+        
+        if current_status in skip_statuses:
+            self.logger.warning(f"🚫 Skipping account {account_name} - Status: {current_status}")
+            return True
+        
+        # Check for rate limit cooldown
+        if current_status == "rate_limited":
+            last_updated_str = self.status_data[account_name].get("last_updated")
+            if last_updated_str:
+                try:
+                    last_updated = datetime.fromisoformat(last_updated_str)
+                    hours_since = (datetime.now() - last_updated).total_seconds() / 3600
+                    
+                    # Skip if rate limited within last 24 hours
+                    if hours_since < 24:
+                        self.logger.info(f"⏳ Skipping rate-limited account {account_name} ({hours_since:.1f} hours ago)")
+                        return True
+                    else:
+                        # Rate limit expired, reset to unknown
+                        self.update_account_status(account_name, "unknown", {"reason": "rate_limit_expired"})
+                except Exception:
+                    pass
+        
+        # Check for CAPTCHA - wait 6 hours
+        if current_status == "captcha":
+            last_updated_str = self.status_data[account_name].get("last_updated")
+            if last_updated_str:
+                try:
+                    last_updated = datetime.fromisoformat(last_updated_str)
+                    hours_since = (datetime.now() - last_updated).total_seconds() / 3600
+                    
+                    if hours_since < 6:
+                        self.logger.info(f"🔒 Skipping account with CAPTCHA {account_name} ({hours_since:.1f} hours ago)")
+                        return True
+                    else:
+                        # CAPTCHA might be cleared, reset to unknown
+                        self.update_account_status(account_name, "unknown", {"reason": "captcha_cooldown_expired"})
+                except Exception:
+                    pass
+        
+        # Check consecutive failures - if 5+ failed logins in a row, skip for 48 hours
+        failed_count = self.status_data[account_name].get("failed_login_attempts", 0)
+        total_count = self.status_data[account_name].get("total_login_attempts", 0)
+        
+        if total_count > 5 and failed_count >= 5 and failed_count == total_count:
+            # All attempts failed
+            self.logger.warning(f"⚠️ Account {account_name} has {failed_count} consecutive failed logins")
+            last_updated_str = self.status_data[account_name].get("last_updated")
+            if last_updated_str:
+                try:
+                    last_updated = datetime.fromisoformat(last_updated_str)
+                    hours_since = (datetime.now() - last_updated).total_seconds() / 3600
+                    
+                    if hours_since < 48:
+                        self.logger.info(f"Skipping account with consecutive failures {account_name}")
+                        return True
+                except Exception:
+                    pass
+        
+        return False
+    
+    def get_account_status(self, account_name: str) -> str:
+        """Get current status of an account."""
+        return self.status_data.get(account_name, {}).get("current_status", "unknown")
+    
+    def get_status_report(self) -> Dict[str, Any]:
+        """Get a summary report of all account statuses."""
+        report = {
+            "total_accounts": len(self.status_data),
+            "active": 0,
+            "suspended": 0,
+            "rate_limited": 0,
+            "captcha": 0,
+            "unknown": 0,
+            "error": 0,
+            "accounts": {}
+        }
+        
+        for account_name, data in self.status_data.items():
+            status = data.get("current_status", "unknown")
+            report["accounts"][account_name] = status
+            
+            if status == "active":
+                report["active"] += 1
+            elif status == "suspended":
+                report["suspended"] += 1
+            elif status == "rate_limited":
+                report["rate_limited"] += 1
+            elif status == "captcha":
+                report["captcha"] += 1
+            elif status == "unknown":
+                report["unknown"] += 1
+            elif status == "error":
+                report["error"] += 1
+        
+        return report
+    
+    def reset_account_status(self, account_name: str, reason: str = "manual_reset"):
+        """Reset an account's status to unknown."""
+        if account_name in self.status_data:
+            self.update_account_status(account_name, "unknown", {"reason": reason})
+            self.logger.info(f"Reset account {account_name} status to unknown")
+
+
 class HumanizedNightScanner:
     def __init__(self, account_config, activity_config):
         self.account = account_config
@@ -252,83 +454,69 @@ class HumanizedNightScanner:
                 f"Tor exit lookup failed for {account_name} (port {tor_port}): {exc}"
             )
 
-    def log_account_age(self) -> None:
-        """Log account cake day (best-effort, Selenium)."""
-        if not self.driver:
-            return
 
-        account_name = self.account.get("name", "unknown")
-        username = self.account.get("username", "")
-        if not username:
-            try:
-                page_source = self.browser_manager.get_page_source_safely(self.driver)
-                matches = re.findall(r"/user/([A-Za-z0-9_-]{3,})", page_source)
-                if matches:
-                    username = matches[0]
-            except Exception:
-                username = ""
-
-        if not username:
-            self.logger.warning(f"Account age lookup skipped for {account_name}: username not found")
-            return
-
-        try:
-            profile_url = f"https://old.reddit.com/user/{username}"
-            self.driver.get(profile_url)
-            self.browser_manager.add_human_delay(1, 2)
-            profile_source = self.browser_manager.get_page_source_safely(self.driver)
-            match = re.search(r'class="cakeday"[^>]*title="([^"]+)"', profile_source)
-            if match:
-                cake_day = match.group(1)
-                self.logger.info(f"Account cake day for {account_name} ({username}): {cake_day}")
-                return
-
-            if "Cake day" in profile_source:
-                self.logger.info(f"Account cake day label found for {account_name} ({username})")
-                return
-
-            self.logger.warning(f"Account cake day not found for {account_name} ({username})")
-        except Exception as exc:
-            self.logger.warning(f"Account age lookup failed for {account_name} ({username}): {exc}")
-
-    def _login_with_cookies(self, cookie_file: str) -> bool:
+    def _login_with_cookies(self, cookie_file: str):
+        """Login with cookies and return (success, status) tuple."""
         if not self.login_manager:
-            return False
+            return False, "login_manager_not_initialized"
         if not cookie_file:
             self.logger.warning("Cookie login skipped: missing cookie file path.")
-            return False
+            return False, "missing_cookie_file"
+        
         cookie_path = Path(cookie_file)
         if not cookie_path.exists():
             self.logger.warning(f"Cookie login skipped: file not found at {cookie_file}")
-            return False
+            return False, "cookie_file_not_found"
+        
         headless = bool(self.browser_manager.headless) if self.browser_manager else True
         return self.login_manager.login_with_cookies(cookie_file=cookie_file, headless=headless)
 
-    def _login_with_google(self, google_email: str, google_password: str) -> bool:
+    def _login_with_google(self, google_email: str, google_password: str):
+        """Login with Google and return (success, status) tuple."""
         if not self.login_manager:
-            return False
+            return False, "login_manager_not_initialized"
         if not google_email or not google_password:
             self.logger.warning("Google OAuth skipped: missing email/password.")
-            return False
+            return False, "missing_credentials"
+        
         headless = bool(self.browser_manager.headless) if self.browser_manager else True
         if headless:
             self.logger.warning("Google OAuth in headless mode may fail; set headless=false for interactive login.")
+        
         return self.login_manager.login_with_google(
             google_email=google_email,
             google_password=google_password,
             headless=headless,
         )
 
-    def login(self, cookie_file: str, google_email: str, google_password: str, login_method: Optional[str] = None) -> bool:
+    def login(self, cookie_file: str, google_email: str, google_password: str, login_method: Optional[str] = None):
+        """
+        Login using specified method and return (success, status) tuple.
+        
+        Returns:
+            tuple: (success_bool, status_string)
+        """
         method = normalize_login_method(login_method)
+        
         if method == "cookies_only":
-            return self._login_with_cookies(cookie_file)
-        if method == "google_only":
-            return self._login_with_google(google_email, google_password)
-
-        if self._login_with_cookies(cookie_file):
-            return True
-        return self._login_with_google(google_email, google_password)
+            success, status = self._login_with_cookies(cookie_file)
+        elif method == "google_only":
+            success, status = self._login_with_google(google_email, google_password)
+        else:  # cookies_then_google (default)
+            success, status = self._login_with_cookies(cookie_file)
+            if not success and status != "active":
+                # Try Google fallback only if cookie login failed with a non-active status
+                self.logger.info(f"Cookie login failed ({status}), trying Google fallback...")
+                success, status = self._login_with_google(google_email, google_password)
+        
+        # Log the result
+        account_name = self.account.get('name', 'unknown')
+        if success:
+            self.logger.info(f"✅ Login successful for {account_name}, status: {status}")
+        else:
+            self.logger.warning(f"❌ Login failed for {account_name}, status: {status}")
+        
+        return success, status
     
     def set_custom_fingerprint(self):
         """Set custom browser fingerprint from account config"""
@@ -702,6 +890,10 @@ class MultiAccountOrchestrator:
             self.scan_window = f"{self.active_window['start']}-{self.active_window['end']}"
         else:
             self.scan_window = "manual"
+        
+        # Initialize account status tracker
+        self.status_tracker = AccountStatusTracker()
+        self.logger.info(f"Account status tracker initialized. Tracking {len(self.status_tracker.status_data)} accounts")
     
     def load_accounts(self):
         """Load accounts from config"""
@@ -799,6 +991,68 @@ class MultiAccountOrchestrator:
         config = self._filter_activity_mix(config)
         return config
 
+    def handle_login_status(self, account_name: str, success: bool, status: str) -> bool:
+        """
+        Handle login status and take appropriate action.
+        Returns True if scanning should proceed, False otherwise.
+        """
+        # Prepare details for status update
+        details = {
+            "success": success,
+            "status": status,
+            "run_id": self.run_id,
+            "scan_window": self.scan_window
+        }
+        
+        # Update status tracker
+        self.status_tracker.update_account_status(account_name, status, details)
+        
+        if success:
+            if status == "active":
+                self.logger.info(f"✅ Account {account_name} is active, proceeding with scan")
+                return True
+            elif status == "captcha":
+                self.logger.warning(f"🔒 Account {account_name} has CAPTCHA but login succeeded. Proceeding carefully.")
+                return True
+            else:
+                # Other successful but non-active status
+                self.logger.info(f"Account {account_name} login successful with status: {status}")
+                return True
+        
+        # Login failed
+        self.logger.warning(f"❌ Login failed for {account_name} with status: {status}")
+        
+        # Handle specific failure cases
+        if status == "suspended":
+            self.logger.error(f"🚨 ACCOUNT SUSPENDED: {account_name}. Skipping all future scans.")
+            # Don't wait, just skip
+            return False
+            
+        elif status == "rate_limited":
+            self.logger.warning(f"⏳ Account {account_name} is rate limited. Skipping for 24 hours.")
+            # Status tracker will handle the cooldown
+            return False
+            
+        elif status == "captcha":
+            self.logger.warning(f"🔒 CAPTCHA detected for {account_name}. Skipping for 6 hours.")
+            return False
+            
+        elif status == "security_check":
+            self.logger.warning(f"🛡️ Security check required for {account_name}. Manual intervention needed.")
+            return False
+            
+        elif status in ["no_cookies", "cookie_file_not_found", "missing_cookie_file"]:
+            self.logger.warning(f"🍪 No valid cookies for {account_name}. Trying Google login or manual refresh needed.")
+            return False
+            
+        elif status == "login_manager_not_initialized":
+            self.logger.error(f"🔧 Login manager not initialized for {account_name}. Browser setup issue.")
+            return False
+            
+        else:
+            self.logger.warning(f"⚠️ Unknown login failure for {account_name}: {status}")
+            return False
+
     def run_rotation(self):
         """Run sessions for all accounts in rotation"""
         if not self.accounts:
@@ -806,19 +1060,39 @@ class MultiAccountOrchestrator:
             return
 
         total_accounts = len(self.accounts)
+        active_accounts = 0
+        skipped_accounts = 0
+        
+        # Print account status report at start
+        report = self.status_tracker.get_status_report()
+        self.logger.info(f"📊 Account Status Report:")
+        self.logger.info(f"   Total accounts: {report['total_accounts']}")
+        self.logger.info(f"   Active: {report['active']}")
+        self.logger.info(f"   Suspended: {report['suspended']}")
+        self.logger.info(f"   Rate limited: {report['rate_limited']}")
+        self.logger.info(f"   CAPTCHA required: {report['captcha']}")
+        
         for idx, account in enumerate(self.accounts):
+            account_name = account.get('name', 'unknown')
+            
+            # Check if account should be skipped based on status
+            if self.status_tracker.should_skip_account(account_name):
+                self.logger.info(f"⏭️ Skipping account {account_name} due to previous status")
+                skipped_accounts += 1
+                continue
+            
             scanner = None
             try:
-                self.logger.info(f"Starting session for {account.get('name', 'unknown')}")
+                self.logger.info(f"🚀 Starting session for {account_name} ({idx+1}/{total_accounts})")
 
                 if _vpn_enabled():
                     location = account.get("vpn_location") or os.getenv("VPN_LOCATION", "").strip()
                     if location:
                         try:
                             vpn_info = VPNManager().connect_to_vpn(location)
-                            self.logger.info(f"VPN connected for {account.get('name', '')}: {vpn_info}")
+                            self.logger.info(f"VPN connected for {account_name}: {vpn_info}")
                         except Exception as exc:
-                            self.logger.warning(f"VPN connection failed for {account.get('name', '')}: {exc}")
+                            self.logger.warning(f"VPN connection failed for {account_name}: {exc}")
                 
                 # Create scanner
                 profile_name = account.get("activity_profile", "") or ""
@@ -826,7 +1100,8 @@ class MultiAccountOrchestrator:
                 scanner = HumanizedNightScanner(account, activity_config)
                 
                 if not scanner.driver:
-                    self.logger.error(f"Failed to create browser for {account.get('name')}")
+                    self.logger.error(f"Failed to create browser for {account_name}")
+                    self.status_tracker.update_account_status(account_name, "error", {"error": "browser_creation_failed"})
                     continue
                 
                 cookie_file = account.get('cookies_path', 'data/cookies_account1.pkl')
@@ -834,15 +1109,21 @@ class MultiAccountOrchestrator:
                 google_password = account.get('google_password', '')
                 login_method = account.get("login_method") or activity_config.get("login_method") or "cookies_then_google"
 
-                if scanner.login(cookie_file, google_email, google_password, login_method):
-                    self.logger.info(f"Logged in to {account.get('name')}")
-                    scanner.log_account_age()
+                # Login and handle status
+                success, status = scanner.login(cookie_file, google_email, google_password, login_method)
+                
+                # Check if we should proceed based on login status
+                should_proceed = self.handle_login_status(account_name, success, status)
+                
+                if should_proceed:
+                    self.logger.info(f"✅ Logged in to {account_name}, proceeding with activities")
+                    active_accounts += 1
                     
                     # Perform activity session
                     actions = scanner.perform_activity_session()
                     
                     if actions:
-                        self.logger.info(f"Session completed for {account.get('name')}: {actions}")
+                        self.logger.info(f"🎉 Session completed for {account_name}: {actions}")
 
                     account_subreddits = account.get("subreddits") or (
                         self.scan_config.bot_settings.get("subreddits") or self.scan_config.default_subreddits
@@ -859,10 +1140,10 @@ class MultiAccountOrchestrator:
                     else:
                         page_offset = default_offset
                     self.logger.info(
-                        f"Scan shard for {account.get('name', '')}: sort={sort}, time={time_range or 'none'}, page_offset={page_offset}"
+                        f"📊 Scan shard for {account_name}: sort={sort}, time={time_range or 'none'}, page_offset={page_offset}"
                     )
                     self.logger.info(
-                        f"Subreddits for {account.get('name', '')}: {', '.join(account_subreddits)}"
+                        f"🔍 Subreddits for {account_name}: {', '.join(account_subreddits)}"
                     )
                     run_session_scan(
                         driver=scanner.driver,
@@ -881,7 +1162,7 @@ class MultiAccountOrchestrator:
                         seen=self.seen,
                         seen_path=self.seen_path,
                         run_id=self.run_id,
-                        account=account.get("name", ""),
+                        account=account_name,
                         tz_name=self.tz_name,
                         scan_window=self.scan_window,
                         mode="selenium",
@@ -895,22 +1176,40 @@ class MultiAccountOrchestrator:
                         scanner.login_manager.save_login_cookies(cookie_file)
                     
                 else:
-                    self.logger.warning(f"Could not login to {account.get('name')}")
+                    self.logger.warning(f"⏸️ Skipping scan for {account_name} due to login status")
+                    skipped_accounts += 1
                 
                 # Cleanup
                 scanner.cleanup()
                 
                 # Wait between accounts (5-15 minutes)
-                if account != self.accounts[-1]:  # Don't wait after last account
+                if idx < len(self.accounts) - 1:  # Don't wait after last account
                     wait_time = random.randint(300, 900)
-                    self.logger.info(f"Waiting {wait_time//60} minutes before next account")
+                    self.logger.info(f"⏳ Waiting {wait_time//60} minutes before next account")
                     time.sleep(wait_time)
                 
             except Exception as e:
-                self.logger.error(f"Error with account {account.get('name', 'unknown')}: {e}")
+                self.logger.error(f"❌ Error with account {account_name}: {e}")
+                # Update status to unknown error
+                self.status_tracker.update_account_status(account_name, "error", {"error": str(e), "traceback": "see logs"})
                 if scanner:
                     scanner.cleanup()
                 continue
+        
+        # Final summary
+        self.logger.info(f"📈 Rotation Complete:")
+        self.logger.info(f"   Total accounts: {total_accounts}")
+        self.logger.info(f"   Active sessions: {active_accounts}")
+        self.logger.info(f"   Skipped accounts: {skipped_accounts}")
+        
+        # Save final status report
+        final_report = self.status_tracker.get_status_report()
+        report_file = Path("logs/account_status_report.json")
+        report_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(report_file, 'w') as f:
+            json.dump(final_report, f, indent=2)
+        
+        self.logger.info(f"📄 Account status report saved to {report_file}")
 
 
 # Helpers

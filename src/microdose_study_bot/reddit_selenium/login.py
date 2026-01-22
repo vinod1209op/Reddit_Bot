@@ -93,7 +93,7 @@ class LoginManager:
             page_source = self.browser_manager.get_page_source_safely(self.driver).lower()
             current_url = (self.driver.current_url or "").lower()
             
-            # Define ban indicators with their priority
+            # Define ban indicators with their priority (captcha tracked separately)
             ban_indicators = {
                 "suspended": [
                     "this account has been suspended",
@@ -114,19 +114,23 @@ class LoginManager:
                     "restricted access",
                     "this content is not available"
                 ],
-                "captcha": [
-                    "recaptcha",
-                    "captcha",
-                    "verify you are human",
-                    "are you a robot"
-                ]
             }
+            captcha_indicators = [
+                "recaptcha",
+                "captcha",
+                "verify you are human",
+                "are you a robot",
+            ]
             
             # Check for each type of issue
             for status_type, phrases in ban_indicators.items():
                 if any(phrase in page_source for phrase in phrases):
                     logger.warning(f"ACCOUNT_STATUS_{status_type.upper()} detected")
                     return status_type
+
+            captcha_detected = any(phrase in page_source for phrase in captcha_indicators)
+            if captcha_detected:
+                logger.warning("ACCOUNT_STATUS_CAPTCHA detected")
             
             # Special check for login page when we expected to be logged in
             if "login" in current_url or "auth" in current_url:
@@ -145,11 +149,18 @@ class LoginManager:
             ]
             
             if any(indicator in page_source for indicator in login_indicators):
+                if captcha_detected:
+                    logger.warning("CAPTCHA detected while logged in; continuing as active")
                 return "active"
             
             # If we're on reddit.com but none of the above, it's probably active
             if "reddit.com" in current_url and "login" not in current_url:
+                if captcha_detected:
+                    logger.warning("CAPTCHA detected on Reddit page; continuing as active")
                 return "active"
+
+            if captcha_detected:
+                return "captcha"
             
             return "unknown"
             

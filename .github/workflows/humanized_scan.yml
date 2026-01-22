@@ -292,3 +292,12 @@ jobs:
             echo "Scan failed with exit code $code"
             exit "$code"
           fi
+
+      - name: Check for suspended accounts
+        if: always()  # Run even if previous steps fail
+        run: |
+          if grep -q "ACCOUNT SUSPENDED" ${{ github.workspace }}/logs/selenium_automation.log; then
+            echo "🚨 SUSPENDED ACCOUNT DETECTED" >> $GITHUB_STEP_SUMMARY
+            echo "Check logs for details" >> $GITHUB_STEP_SUMMARY
+            exit 1  # Fail the workflow (triggers GitHub notifications)
+          fi

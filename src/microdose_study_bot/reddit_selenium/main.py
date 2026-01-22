@@ -207,8 +207,12 @@ class RedditAutomation:
                             cookie_file = ss.get("cookie_file")
                     
                     cookie_file = cookie_file or "data/cookies_account1.pkl"
-                    if self.login_manager.login_with_cookies(cookie_file=cookie_file, headless=False):
-                        logger.info("Restored session with cookies")
+                    cookie_ok, cookie_status = self.login_manager.login_with_cookies(
+                        cookie_file=cookie_file,
+                        headless=False,
+                    )
+                    if cookie_ok:
+                        logger.info(f"Restored session with cookies (status: {cookie_status})")
                         return True
             except Exception:
                 pass
@@ -512,20 +516,25 @@ class RedditAutomation:
             cookie_file = cookie_file or "data/cookies_account1.pkl"
             
             # Try cookie login first
-            if self.login_manager.login_with_cookies(cookie_file=cookie_file, headless=False):
-                logger.info("✓ Logged in with cookies")
+            cookie_ok, cookie_status = self.login_manager.login_with_cookies(
+                cookie_file=cookie_file,
+                headless=False,
+            )
+            if cookie_ok:
+                logger.info(f"✓ Logged in with cookies (status: {cookie_status})")
                 self.driver = self.login_manager.get_driver()
                 return True
             
             # If cookie login failed and not use_cookies_only, try Google login
             if not use_cookies_only and google_email and google_password:
                 logger.info("Attempting Google login...")
-                if self.login_manager.login_with_google(
+                google_ok, google_status = self.login_manager.login_with_google(
                     google_email=google_email,
                     google_password=google_password,
-                    headless=False
-                ):
-                    logger.info("✓ Google login successful")
+                    headless=False,
+                )
+                if google_ok:
+                    logger.info(f"✓ Google login successful (status: {google_status})")
                     self.driver = self.login_manager.get_driver()
                     
                     # Save cookies for next time
@@ -541,12 +550,13 @@ class RedditAutomation:
             
             if reddit_username and reddit_password:
                 logger.info("Attempting direct Reddit login...")
-                if self.login_manager.login_with_credentials(
+                direct_ok, direct_status = self.login_manager.login_with_credentials(
                     username=reddit_username,
                     password=reddit_password,
-                    headless=False
-                ):
-                    logger.info("✓ Direct Reddit login successful")
+                    headless=False,
+                )
+                if direct_ok:
+                    logger.info(f"✓ Direct Reddit login successful (status: {direct_status})")
                     self.driver = self.login_manager.get_driver()
                     
                     # Save cookies
