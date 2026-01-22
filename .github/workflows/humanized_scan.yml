@@ -12,10 +12,6 @@ on:
         description: "Account name to run (default: account1)"
         required: false
         default: "account1"
-      send_test_email:
-        description: "Send a test email only (no scan)"
-        required: false
-        default: "false"
       force_run:
         description: "Override schedule and run immediately (00:00-23:59)"
         required: false
@@ -54,17 +50,11 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_SCHEDULE: ${{ github.event.schedule }}
           DISPATCH_ACCOUNT: ${{ github.event.inputs.account }}
-          DISPATCH_TEST_EMAIL: ${{ github.event.inputs.send_test_email }}
           MATRIX_ACCOUNT: ${{ matrix.account }}
           MATRIX_CRON: ${{ matrix.cron }}
           PAUSE_SCHEDULED_RUNS: ${{ secrets.PAUSE_SCHEDULED_RUNS }}
         run: |
           should_run=false
-          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$DISPATCH_TEST_EMAIL" = "true" ]; then
-            should_run=true
-            echo "should_run=$should_run" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
           if [ "$PAUSE_SCHEDULED_RUNS" = "1" ]; then
             echo "Scheduled runs paused via PAUSE_SCHEDULED_RUNS=1"
             should_run=false
@@ -91,25 +81,6 @@ jobs:
         with:
           python-version: "3.11"
         if: steps.gate.outputs.should_run == 'true'
-
-      - name: Send test email
-        if: steps.gate.outputs.should_run == 'true' && github.event.inputs.send_test_email == 'true'
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 587
-          username: ${{ secrets.SMTP_USERNAME }}
-          password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "✅ Test email: humanized_scan.yml"
-          body: "This is a test email from GitHub Actions."
-          to: ${{ secrets.ALERT_EMAIL_TO }}
-          from: Bot Alerts <${{ secrets.SMTP_USERNAME }}>
-
-      - name: Short-circuit after test email
-        if: steps.gate.outputs.should_run == 'true' && github.event.inputs.send_test_email == 'true'
-        run: |
-          echo "Test email sent. Exiting without running scan."
-          exit 0
 
       - name: Install Chrome and ChromeDriver
         if: steps.gate.outputs.should_run == 'true'
