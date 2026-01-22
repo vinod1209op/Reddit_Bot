@@ -38,7 +38,10 @@
         "browse_subreddit": 30,
         "view_posts": 40,
         "scroll_comments": 25,
-        "check_notifications": 5
+        "vote": 2,
+        "save": 2,
+        "follow": 1,
+        "check_notifications": 0
       },
       "randomization": {
         "session_length_minutes": {
@@ -52,7 +55,10 @@
         "browse_subreddit": 45,
         "view_posts": 25,
         "scroll_comments": 20,
-        "check_notifications": 10
+        "vote": 4,
+        "save": 3,
+        "follow": 1,
+        "check_notifications": 2
       },
       "randomization": {
         "session_length_minutes": {
@@ -66,7 +72,10 @@
         "browse_subreddit": 30,
         "view_posts": 30,
         "scroll_comments": 30,
-        "check_notifications": 10
+        "vote": 5,
+        "save": 3,
+        "follow": 2,
+        "check_notifications": 0
       },
       "randomization": {
         "session_length_minutes": {

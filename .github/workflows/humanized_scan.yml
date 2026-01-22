@@ -164,6 +164,7 @@ jobs:
 
       - name: Run humanized night scanner with Tor
         if: steps.gate.outputs.should_run == 'true'
+        id: run_scan
         env:
           BOT_MODE: selenium
           ENABLE_POSTING: "0"
@@ -194,9 +195,11 @@ jobs:
             WINDOWS_ARG="--force-run"
           fi
           python scripts/runners/humanized_night_scanner.py $WINDOWS_ARG 2>&1 | tee logs/ci_humanized_scan.log
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+        continue-on-error: true
       
       - name: Upload refreshed cookies to Supabase
-        if: steps.gate.outputs.should_run == 'true'
+        if: always() && steps.gate.outputs.should_run == 'true'
         env:
           PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -207,7 +210,7 @@ jobs:
           python scripts/ops/supabase_cookies_sync.py upload
 
       - name: Upload logs to Supabase
-        if: steps.gate.outputs.should_run == 'true'
+        if: always() && steps.gate.outputs.should_run == 'true'
         env:
           PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -218,7 +221,7 @@ jobs:
           python scripts/ops/upload_logs_supabase.py
 
       - name: Upsert logs into Supabase DB
-        if: steps.gate.outputs.should_run == 'true'
+        if: always() && steps.gate.outputs.should_run == 'true'
         env:
           PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -229,7 +232,7 @@ jobs:
           python scripts/ops/upload_logs_supabase_db.py
 
       - name: Upload scan results
-        if: steps.gate.outputs.should_run == 'true'
+        if: always() && steps.gate.outputs.should_run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: humanized-scan-results
@@ -237,3 +240,12 @@ jobs:
             logs/
             data/
           retention-days: 14
+
+      - name: Fail workflow if scan failed
+        if: steps.gate.outputs.should_run == 'true'
+        run: |
+          code="${{ steps.run_scan.outputs.exit_code }}"
+          if [ -n "$code" ] && [ "$code" != "0" ]; then
+            echo "Scan failed with exit code $code"
+            exit "$code"
+          fi
