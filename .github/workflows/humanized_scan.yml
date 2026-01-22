@@ -156,25 +156,12 @@ jobs:
           EOF
           tor -f "$DATADIR/torrc" --RunAsDaemon 1
           sleep 8
+          echo "🔍 Checking Tor IP for ${{ matrix.account }} on port $PORT..."
           if curl --socks5-hostname 127.0.0.1:$PORT https://check.torproject.org/api/ip; then
             echo "Tor proxy test succeeded on port $PORT"
           else
             echo "Tor proxy test failed on port $PORT, continuing anyway"
           fi
-      
-      - name: Verify account-specific IPs
-        if: steps.gate.outputs.should_run == 'true'
-        run: |
-          echo "🔍 Checking IP for each account's Tor port..."
-          echo "Port 9050 (account1 - USA):"
-          curl --socks5-hostname 127.0.0.1:9050 -s https://ipinfo.io/country || true
-          echo ""
-          echo "Port 9051 (account2 - UK):"
-          curl --socks5-hostname 127.0.0.1:9051 -s https://ipinfo.io/country || true
-          echo ""
-          echo "Port 9052 (account3 - Germany):"
-          curl --socks5-hostname 127.0.0.1:9052 -s https://ipinfo.io/country || true
-          echo ""
 
       - name: Run humanized night scanner with Tor
         if: steps.gate.outputs.should_run == 'true'

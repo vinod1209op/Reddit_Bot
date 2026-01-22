@@ -27,6 +27,7 @@ data/
 cookies.pkl
 data/cookies_*.pkl
 data/cookies_bundle.zip
+local_cookies/
 
 # IDE/editor
 .vscode/
@@ -43,3 +44,5 @@ chromedriver-mac-x64/
 
 
 tor-expert-bundle-macos-x86_64-15.0.4/
+config/accounts.json
+cookies_test.pkl

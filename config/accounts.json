@@ -42,5 +42,14 @@
       "viewport": "1536x864",
       "timezone": "Europe/Berlin"
     }
+  },
+  {
+    "name": "account_test",
+    "email_env_var": "GOOGLE_EMAIL",
+    "password_env_var": "GOOGLE_PASSWORD",
+    "cookies_path": "cookies_test.pkl",
+    "activity_profile": "casual_reader",
+    "night_scanner_enabled": false,
+    "use_tor_proxy": false
   }
 ]

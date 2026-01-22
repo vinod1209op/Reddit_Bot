@@ -61,6 +61,7 @@ def main() -> None:
         (f"{prefix}/night_queue.json", root / "logs" / "night_queue.json"),
         (f"{prefix}/night_scan_summary.csv", root / "logs" / "night_scan_summary.csv"),
         (f"{prefix}/seen_post_ids.json", root / "logs" / "seen_post_ids.json"),
+        (f"{prefix}/account_status.json", root / "data" / "account_status.json"),
     ]
     if include_log:
         files.append((f"{prefix}/selenium_automation.log", root / "logs" / "selenium_automation.log"))

@@ -11,7 +11,7 @@ import sys
 import time
 import hashlib
 import html
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -89,14 +89,14 @@ def ensure_bot(cfg: ConfigManager) -> Optional[RedditAutomation]:
 
     # Login best-effort (may rely on saved cookies)
     if not bot.login():
-        st.warning("Login might be required; ensure cookies/creds are valid.")
+        log_ui("Login may be required. Verify cookies or credentials.", level="warn")
     else:
         try:
             bot.save_login_cookies(str(cookie_path))
             _upload_supabase_cookie(cookie_path)
-            st.info(f"Cookies saved to {cookie_path}")
+            log_ui("Browser ready. Cookies refreshed.", level="ok")
         except Exception:
-            st.warning("Logged in, but could not save cookies.")
+            log_ui("Logged in, but cookie save failed.", level="warn")
 
     st.session_state.bot = bot
     return bot
@@ -177,10 +177,44 @@ def _supabase_cookie_location() -> tuple[str, str, str]:
     return base_url, service_key, bucket, cookie_path
 
 
+def _supabase_account_status_location() -> tuple[str, str, str, str]:
+    base_url = os.getenv("SUPABASE_URL", "").strip()
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    bucket = os.getenv("SUPABASE_BUCKET", "").strip()
+    status_path = os.getenv("SUPABASE_ACCOUNT_STATUS_PATH", "").strip()
+    if not status_path:
+        prefix = os.getenv("SUPABASE_PREFIX", "scan-results").strip() or "scan-results"
+        status_path = f"{prefix}/account_status.json"
+    return base_url, service_key, bucket, status_path
+
+
+def _download_supabase_account_status(dest_path: Path) -> bool:
+    base_url, service_key, bucket, status_path = _supabase_account_status_location()
+    if not base_url or not service_key or not bucket:
+        return False
+    url = f"{base_url.rstrip('/')}/storage/v1/object/{bucket}/{status_path.lstrip('/')}"
+    headers = {"Authorization": f"Bearer {service_key}", "apikey": service_key}
+
+    def _do_request():
+        resp = requests.get(url, headers=headers, timeout=30)
+        if resp.status_code >= 300:
+            raise RuntimeError(f"{resp.status_code}: {resp.text}")
+        return resp
+
+    try:
+        resp = retry(_do_request, attempts=3, base_delay=1.0)
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        dest_path.write_bytes(resp.content)
+        log_ui("Account status synced from Supabase.", level="ok")
+        return True
+    except Exception:
+        log_ui("Account status sync failed.", level="warn")
+        return False
+
+
 def _download_supabase_cookie(dest_path: Path) -> bool:
     base_url, service_key, bucket, cookie_path = _supabase_cookie_location()
     if not base_url or not service_key or not bucket:
-        st.warning("Supabase cookie download skipped: missing SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, or SUPABASE_BUCKET.")
         return False
     url = f"{base_url.rstrip('/')}/storage/v1/object/{bucket}/{cookie_path.lstrip('/')}"
     headers = {"Authorization": f"Bearer {service_key}", "apikey": service_key}
@@ -198,22 +232,17 @@ def _download_supabase_cookie(dest_path: Path) -> bool:
             with zipfile.ZipFile(bundle_path, "r") as zf:
                 zf.extractall(dest_path.parent)
             if dest_path.exists():
-                st.success(f"Loaded cookies from Supabase bundle: {cookie_path}")
                 return True
-            st.warning(f"Supabase bundle extracted but {dest_path.name} not found.")
             return False
         dest_path.write_bytes(resp.content)
-        st.success(f"Loaded cookies from Supabase: {cookie_path}")
         return True
     except Exception as exc:
-        st.warning(f"Supabase cookie download error: {exc}")
         return False
 
 
 def _upload_supabase_cookie(src_path: Path) -> bool:
     base_url, service_key, bucket, cookie_path = _supabase_cookie_location()
     if not base_url or not service_key or not bucket or not src_path.exists():
-        st.warning("Supabase cookie upload skipped: missing config or cookie file.")
         return False
     url = f"{base_url.rstrip('/')}/storage/v1/object/{bucket}/{cookie_path.lstrip('/')}"
     headers = {
@@ -234,10 +263,8 @@ def _upload_supabase_cookie(src_path: Path) -> bool:
 
     try:
         retry(_do_request, attempts=3, base_delay=1.0)
-        st.success(f"Uploaded cookies to Supabase: {cookie_path}")
         return True
     except Exception as exc:
-        st.warning(f"Supabase cookie upload error: {exc}")
         return False
 
 
@@ -377,6 +404,193 @@ def save_post_state(state: dict) -> None:
         json.dump(data, f, indent=2)
 
 
+# Account Health Dashboard Functions
+def load_account_status() -> dict:
+    """Load account status from the JSON file."""
+    status_file = PROJECT_ROOT / "data" / "account_status.json"
+    if status_file.exists():
+        try:
+            with open(status_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def get_account_health_report() -> dict:
+    """Generate a health report from account status data."""
+    status_data = load_account_status()
+    
+    report = {
+        "total_accounts": len(status_data),
+        "active": 0,
+        "suspended": 0,
+        "rate_limited": 0,
+        "captcha": 0,
+        "unknown": 0,
+        "error": 0,
+        "accounts": {}
+    }
+    
+    for account_name, data in status_data.items():
+        status = data.get("current_status", "unknown")
+        report["accounts"][account_name] = status
+        
+        if status == "active":
+            report["active"] += 1
+        elif status == "suspended":
+            report["suspended"] += 1
+        elif status == "rate_limited":
+            report["rate_limited"] += 1
+        elif status == "captcha":
+            report["captcha"] += 1
+        elif status == "unknown":
+            report["unknown"] += 1
+        elif status == "error":
+            report["error"] += 1
+    
+    return report
+
+
+def format_time_since(timestamp_str: str) -> str:
+    """Format how long ago a timestamp was."""
+    if not timestamp_str:
+        return "Never"
+    
+    try:
+        timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+        now = datetime.now(timezone.utc) if timestamp.tzinfo else datetime.now()
+        
+        # Make both naive or both aware
+        if timestamp.tzinfo and not now.tzinfo:
+            now = now.replace(tzinfo=timezone.utc)
+        elif not timestamp.tzinfo and now.tzinfo:
+            timestamp = timestamp.replace(tzinfo=timezone.utc)
+        
+        delta = now - timestamp
+        
+        if delta.days > 0:
+            return f"{delta.days}d ago"
+        elif delta.seconds >= 3600:
+            hours = delta.seconds // 3600
+            return f"{hours}h ago"
+        elif delta.seconds >= 60:
+            minutes = delta.seconds // 60
+            return f"{minutes}m ago"
+        else:
+            return "Just now"
+    except Exception:
+        return "Unknown"
+
+
+def get_status_color(status: str) -> str:
+    """Get color for a status."""
+    color_map = {
+        "active": "#10B981",  # Green
+        "suspended": "#EF4444",  # Red
+        "rate_limited": "#F59E0B",  # Amber
+        "captcha": "#F59E0B",  # Amber
+        "security_check": "#F59E0B",  # Amber
+        "error": "#EF4444",  # Red
+        "unknown": "#6B7280",  # Gray
+        "no_cookies": "#8B5CF6",  # Purple
+        "cookie_file_not_found": "#8B5CF6",  # Purple
+        "login_manager_not_initialized": "#8B5CF6",  # Purple
+    }
+    return color_map.get(status, "#6B7280")  # Default gray
+
+
+def get_status_emoji(status: str) -> str:
+    """Get emoji for a status."""
+    emoji_map = {
+        "active": "✅",
+        "suspended": "🚫",
+        "rate_limited": "⏳",
+        "captcha": "🔒",
+        "security_check": "🛡️",
+        "error": "❌",
+        "unknown": "❓",
+        "no_cookies": "🍪",
+        "cookie_file_not_found": "🍪",
+        "login_manager_not_initialized": "⚙️",
+    }
+    return emoji_map.get(status, "❓")
+
+
+def reset_account_status(account_name: str) -> bool:
+    """Reset an account's status to unknown."""
+    status_file = PROJECT_ROOT / "data" / "account_status.json"
+    
+    if not status_file.exists():
+        return False
+    
+    try:
+        with open(status_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        if account_name in data:
+            data[account_name]["current_status"] = "unknown"
+            data[account_name]["last_updated"] = datetime.now().isoformat()
+            
+            # Add to history
+            if "status_history" not in data[account_name]:
+                data[account_name]["status_history"] = []
+            
+            data[account_name]["status_history"].append({
+                "timestamp": datetime.now().isoformat(),
+                "status": "unknown",
+                "previous_status": data[account_name].get("current_status", "unknown"),
+                "details": {"reason": "manual_reset_from_streamlit"}
+            })
+            
+            with open(status_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2)
+            
+            return True
+    except Exception:
+        pass
+    
+    return False
+
+
+def _load_json(path: Path):
+    try:
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return None
+
+
+def log_ui(message: str, level: str = "info") -> None:
+    """Append a short UI log entry for sidebar display."""
+    ts = datetime.now().strftime("%H:%M:%S")
+    log_entry = f"{ts} [{level.upper()}] {message}"
+    log = st.session_state.setdefault("ui_log", [])
+    log.append(log_entry)
+    if len(log) > 80:
+        del log[:-80]
+
+
+def get_queue_count() -> int:
+    queue_path = PROJECT_ROOT / "logs" / "night_queue.json"
+    data = _load_json(queue_path)
+    if isinstance(data, list):
+        return len(data)
+    return 0
+
+
+def get_last_run_timestamp() -> str:
+    log_path = PROJECT_ROOT / "logs" / "selenium_automation.log"
+    if not log_path.exists():
+        return "No runs yet"
+    try:
+        ts = log_path.stat().st_mtime
+        return datetime.fromtimestamp(ts).strftime("%b %d %H:%M")
+    except Exception:
+        return "Unknown"
+
+
 # Public API
 def main() -> None:
     st.set_page_config(page_title="Reddit Reply Helper", layout="wide")
@@ -477,6 +691,37 @@ def main() -> None:
             color: var(--muted-foreground);
             margin-top: 0.4rem;
             font-size: 1.02rem;
+        }
+
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 0.75rem;
+            margin-top: 1.2rem;
+        }
+
+        .kpi-card {
+            background: linear-gradient(140deg, #ffffff, #f4f0ff);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 0.65rem 0.85rem;
+            box-shadow: var(--shadow);
+            animation: fadeIn 0.45s ease-out;
+        }
+
+        .kpi-label {
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.14em;
+            color: var(--muted-foreground);
+            font-weight: 600;
+        }
+
+        .kpi-value {
+            font-size: 1.35rem;
+            font-weight: 700;
+            color: var(--foreground);
+            margin-top: 0.2rem;
         }
 
         .status-row {
@@ -673,6 +918,105 @@ def main() -> None:
             color: var(--muted-foreground) !important;
         }
 
+        /* Account status badges */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            border: 1px solid;
+        }
+        
+        .status-badge-active {
+            background-color: rgba(16, 185, 129, 0.1);
+            border-color: rgba(16, 185, 129, 0.3);
+            color: #065f46;
+        }
+        
+        .status-badge-suspended {
+            background-color: rgba(239, 68, 68, 0.1);
+            border-color: rgba(239, 68, 68, 0.3);
+            color: #7f1d1d;
+        }
+        
+        .status-badge-rate_limited {
+            background-color: rgba(245, 158, 11, 0.1);
+            border-color: rgba(245, 158, 11, 0.3);
+            color: #78350f;
+        }
+        
+        .status-badge-captcha {
+            background-color: rgba(245, 158, 11, 0.1);
+            border-color: rgba(245, 158, 11, 0.3);
+            color: #78350f;
+        }
+        
+        .status-badge-unknown {
+            background-color: rgba(107, 114, 128, 0.1);
+            border-color: rgba(107, 114, 128, 0.3);
+            color: #374151;
+        }
+        
+        .status-badge-error {
+            background-color: rgba(239, 68, 68, 0.1);
+            border-color: rgba(239, 68, 68, 0.3);
+            color: #7f1d1d;
+        }
+        
+        .account-card {
+            background: linear-gradient(180deg, #ffffff 0%, #f8f4ff 100%);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 0.75rem;
+            box-shadow: 0 4px 12px rgba(74, 58, 110, 0.08);
+        }
+
+        .account-card-anchor {
+            display: none;
+        }
+
+        div[data-testid="column"]:has(.account-card-anchor) > div {
+            background: linear-gradient(180deg, #ffffff 0%, #f8f4ff 100%);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1rem;
+            box-shadow: 0 4px 12px rgba(74, 58, 110, 0.08);
+        }
+
+        .account-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            margin-bottom: 0.4rem;
+        }
+
+        .account-name {
+            font-weight: 600;
+            font-size: 1rem;
+            color: var(--foreground);
+            margin-bottom: 0.25rem;
+        }
+
+        .account-meta {
+            font-size: 0.85rem;
+            color: var(--muted-foreground);
+        }
+
+        .account-meta strong {
+            color: var(--foreground);
+        }
+
+        .account-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.6rem;
+        }
+
         /* Radio pills for "Post source" */
         div[data-testid="stRadio"] > div[role="radiogroup"] {
             display: inline-flex;
@@ -777,6 +1121,14 @@ def main() -> None:
             color: var(--sidebar-foreground);
         }
 
+        section[data-testid="stSidebar"] div.stButton > button {
+            min-height: 42px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.35rem;
+        }
+
         .url-bar {
             display: flex;
             align-items: center;
@@ -821,8 +1173,6 @@ def main() -> None:
             transform: translateY(-1px);
             box-shadow: 0 10px 20px rgba(123, 93, 190, 0.26);
         }
-
-
 
         .post-title {
             font-weight: 600;
@@ -896,6 +1246,9 @@ def main() -> None:
     if not st.session_state.get("cookie_download_done"):
         st.session_state["cookie_download_done"] = True
         _download_supabase_cookie(cookie_path)
+    if not st.session_state.get("account_status_download_done"):
+        st.session_state["account_status_download_done"] = True
+        _download_supabase_account_status(PROJECT_ROOT / "data" / "account_status.json")
 
     cfg = load_config()
     post_state = load_post_state()
@@ -909,6 +1262,35 @@ def main() -> None:
     st.session_state.setdefault("auto_submit_guard", {})
     st.session_state.setdefault("page_index", 0)
     st.session_state.setdefault("post_filter", "")
+
+    account_status = load_account_status()
+    health_report = get_account_health_report()
+    queue_count = get_queue_count()
+    last_run = get_last_run_timestamp()
+
+    st.markdown(
+        f"""
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-label">Active Accounts</div>
+                <div class="kpi-value">{health_report['active']}/{health_report['total_accounts']}</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Issues</div>
+                <div class="kpi-value">{health_report['suspended'] + health_report['rate_limited'] + health_report['error']}</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Queue Items</div>
+                <div class="kpi-value">{queue_count}</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Last Run</div>
+                <div class="kpi-value">{last_run}</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     with st.sidebar:
         st.subheader("Source")
@@ -935,16 +1317,16 @@ def main() -> None:
         )
 
         st.subheader("Browser")
-        bot_active = bool(st.session_state.get("bot"))
         bot = st.session_state.get("bot")
         driver_alive = bool(getattr(bot, "driver", None) and getattr(getattr(bot, "driver", None), "session_id", None))
-        status_text = "Ready" if bot_active else "Not started"
-        status_class = "ok" if bot_active else ""
+        browser_ready = bool(st.session_state.get("browser_ready")) or driver_alive
+        status_text = "Ready" if browser_ready else "Not started"
+        status_class = "ok" if browser_ready else ""
         st.markdown(
             f"<div class='status-row'><span class='status-dot {status_class}'></span>{status_text}</div>",
             unsafe_allow_html=True,
         )
-        if driver_alive:
+        if browser_ready:
             current_url = getattr(getattr(bot, "driver", None), "current_url", "") or ""
             display_current_url = _display_reddit_url(current_url)
             st.caption(
@@ -952,13 +1334,23 @@ def main() -> None:
             )
         else:
             st.caption("Driver: not started")
-        if st.button("Start / Reconnect"):
-            if ensure_bot(cfg):
-                st.success("Browser ready.")
-        if st.button("Close"):
-            close_bot()
-            st.info("Browser closed.")
-        if st.button("Clear search cache"):
+        
+        browser_col1, browser_col2 = st.columns(2)
+        with browser_col1:
+            if st.button("▶ Start", use_container_width=True):
+                if ensure_bot(cfg):
+                    st.session_state["browser_ready"] = True
+                    log_ui("Browser ready.", level="ok")
+        with browser_col2:
+            if st.button("■ Close", use_container_width=True):
+                close_bot()
+                st.session_state["browser_ready"] = False
+                log_ui("Browser closed.", level="info")
+        
+        # Quick actions
+        st.subheader("Quick Actions")
+        
+        if st.button("Clear search cache", use_container_width=True):
             for key in list(st.session_state.keys()):
                 if key.startswith(
                     (
@@ -974,18 +1366,34 @@ def main() -> None:
             st.session_state.pop("post_filter", None)
             st.session_state.pop("page_index", None)
             st.info("Search cache cleared.")
+            st.rerun()
+        
+        # Display metrics
         if auto_submit_limit:
             st.caption(f"Auto-submit used: {st.session_state['auto_submit_count']}/{auto_submit_limit}")
         if st.session_state.get("last_action"):
             st.caption(f"Last action: {st.session_state['last_action']}")
         if st.session_state.get("error_count"):
             st.caption(f"Errors: {st.session_state['error_count']}")
+        
+        # Supabase connection status
         if data_source == "Database":
             sb_url, sb_key = _supabase_config()
             if sb_url and sb_key:
                 st.caption("Supabase: connected")
             else:
                 st.warning("Supabase not configured. Set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY.")
+
+        st.subheader("Activity log")
+        with st.expander("Show log", expanded=False):
+            log_entries = st.session_state.get("ui_log", [])
+            if log_entries:
+                st.code("\n".join(log_entries[-8:]))
+            else:
+                st.caption("No activity yet.")
+
+    tabs = st.tabs(["Workspace", "Account Health"])
+    workspace_tab, accounts_tab = tabs
 
     if st.session_state.get("last_data_source") != data_source:
         prev_source = st.session_state.get("last_data_source")
@@ -998,274 +1406,275 @@ def main() -> None:
         st.session_state["page_index"] = st.session_state.get(f"page_index_{data_source}", 0)
         st.session_state["post_filter"] = st.session_state.get(f"post_filter_{data_source}", "")
 
-    st.subheader("Find Posts")
-    if data_source == "Database":
-        selected_subs = st.multiselect(
-            "Subreddits",
-            options=available_subs,
-            default=available_subs[:2] if available_subs else [],
-        )
-        subreddit = ",".join(selected_subs)
-    else:
-        subreddit = st.text_input("Subreddit", value="microdosing", help="Name without r/")
-    limit = st.number_input("How many posts?", min_value=1, max_value=100, value=10, step=5)
-    query_text = st.text_input(
-        "Filter results",
-        key="post_filter",
-        placeholder="Filter by title, URL, or keywords",
-    )
-    st.session_state[f"post_filter_{data_source}"] = st.session_state.get("post_filter", "")
-
-    search_left, search_right = st.columns([1, 6])
-    with search_left:
-        submitted_search = st.button("Search", use_container_width=True)
-    with search_right:
-        pager_slot = st.empty()
-    if submitted_search:
-        st.session_state["page_index"] = 0
-        st.session_state[f"page_index_{data_source}"] = 0
-        requested = int(limit)
-        cache_key = f"search_cache_{data_source}_{subreddit.strip().lower()}_{requested}_{hide_used}"
-        cached = st.session_state.get(cache_key)
-        if cached and search_cache_ttl > 0 and (time.time() - cached.get("ts", 0)) < search_cache_ttl:
-            posts = _normalize_cached_posts(cached.get("posts", []))
-            cached["posts"] = posts
-            st.session_state[cache_key] = cached
-        else:
-            if data_source == "Database":
-                st.caption("Loading posts from Supabase...")
-                posts, total = _fetch_supabase_posts_page(
-                    subreddit.strip().lower(),
-                    requested,
-                    "",
-                    0,
-                    hide_used,
-                )
-                for post in posts:
-                    post["id"] = post.get("post_id", "")
-                posts = _normalize_cached_posts(posts)
-            else:
-                bot = ensure_bot(cfg)
-                if not bot:
-                    posts = []
-                    total = 0
-                else:
-                    st.caption(f"Searching r/{subreddit}...")
-                    fetch_limit = requested
-                    posts = bot.search_posts(
-                        subreddit=subreddit.strip() or None,
-                        limit=fetch_limit,
-                        include_body=False,
-                        include_comments=False,
-                    )
-                    posts = _normalize_cached_posts(posts)
-                    total = len(posts)
-            st.session_state[cache_key] = {"ts": time.time(), "posts": posts, "total": total}
-        st.session_state["last_posts"] = posts
-        st.session_state[f"last_posts_{data_source}"] = posts
-    posts = _normalize_cached_posts(st.session_state.get("last_posts", []))
-    st.session_state["last_posts"] = posts
-    if posts:
-        filtered_posts = []
-        seen = set()
-        query_lower = (query_text or "").strip().lower()
-        for p in posts:
-            key = _post_key(p)
-            dedupe_key = key or p.get("title", "")
-            if dedupe_key in seen:
-                continue
-            if data_source == "Live scan":
-                p["matched_keywords"] = p.get("matched_keywords") or _compute_post_matches(p, keyword_list)
-            if query_lower:
-                title_val = (p.get("title") or "").lower()
-                url_val = (p.get("url") or "").lower()
-                keywords_val = " ".join(p.get("matched_keywords") or [])
-                if query_lower not in title_val and query_lower not in url_val and query_lower not in keywords_val:
-                    continue
-            seen.add(dedupe_key)
-            filtered_posts.append(p)
-        if sort_choice == "Subreddit":
-            filtered_posts.sort(key=lambda row: (row.get("subreddit") or "", row.get("title") or ""))
-        elif sort_choice == "Oldest":
-            filtered_posts.sort(key=lambda row: row.get("last_seen_at") or "")
-        else:
-            filtered_posts.sort(key=lambda row: row.get("last_seen_at") or "", reverse=True)
-
-        total_filtered = len(filtered_posts)
-        page_index = st.session_state.get("page_index", 0)
-        start = page_index * page_size
-        end = start + page_size
-        posts = filtered_posts[start:end]
-        total_pages = max(1, (total_filtered + page_size - 1) // page_size)
-        if total_pages > 1:
-            with pager_slot.container():
-                _, col_prev, col_page, col_next = st.columns([6, 1.2, 1, 1.2], gap="small")
-                with col_prev:
-                    if st.button("Prev", disabled=page_index <= 0, use_container_width=True):
-                        st.session_state["page_index"] = max(0, page_index - 1)
-                        st.session_state[f"page_index_{data_source}"] = st.session_state["page_index"]
-                        st.rerun()
-                with col_page:
-                    st.caption(f"Page {page_index + 1} of {total_pages}")
-                with col_next:
-                    if st.button("Next", disabled=(page_index + 1) >= total_pages, use_container_width=True):
-                        st.session_state["page_index"] = min(total_pages - 1, page_index + 1)
-                        st.session_state[f"page_index_{data_source}"] = st.session_state["page_index"]
-                        st.rerun()
-        st.subheader("Pick a Post")
-        for idx, post in enumerate(posts, 1):
-            title = post.get("title") or "No title"
-            url = post.get("url") or post.get("permalink") or ""
-            post_key = _post_key(post)
-            status_key = f"post_status_{post_key}"
-            if not url:
-                pid = post.get("id")
-                sub = post.get("subreddit")
-                if pid and sub:
-                    url = f"https://old.reddit.com/r/{sub}/comments/{pid}/"
-            subreddit = post.get("subreddit", "")
-            matched = post.get("matched_keywords") or []
-            match_label = ", ".join(matched) if isinstance(matched, list) else ""
-            title_safe = html.escape(title)
-            sub_safe = html.escape(subreddit)
-            st.markdown("<div class='post-card'>", unsafe_allow_html=True)
-            st.markdown(
-                f"<div class='post-title'>{idx}. {title_safe} <span class='post-sub'>(r/{sub_safe})</span></div>",
-                unsafe_allow_html=True,
+    with workspace_tab:
+        st.subheader("Find Posts")
+        if data_source == "Database":
+            selected_subs = st.multiselect(
+                "Subreddits",
+                options=available_subs,
+                default=available_subs[:2] if available_subs else [],
             )
-            if match_label:
-                st.markdown(
-                    f"<div class='post-tags'>Keywords: {html.escape(match_label)}</div>",
-                    unsafe_allow_html=True,
-                )
-            if url:
-                display_url = _display_reddit_url(url)
-                st.markdown(
-                    f"""
-                    <div class="url-bar">
-                        <div class="url-text">{html.escape(display_url)}</div>
-                        <a class="url-open" href="{html.escape(display_url)}" target="_blank" rel="noopener">↗</a>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+            subreddit = ",".join(selected_subs)
+        else:
+            subreddit = st.text_input("Subreddit", value="microdosing", help="Name without r/")
+        limit = st.number_input("How many posts?", min_value=1, max_value=100, value=10, step=5)
+        query_text = st.text_input(
+            "Filter results",
+            key="post_filter",
+            placeholder="Filter by title, URL, or keywords",
+        )
+        st.session_state[f"post_filter_{data_source}"] = st.session_state.get("post_filter", "")
+
+        search_left, search_right = st.columns([1, 6])
+        with search_left:
+            submitted_search = st.button("Search", use_container_width=True)
+        with search_right:
+            pager_slot = st.empty()
+        if submitted_search:
+            st.session_state["page_index"] = 0
+            st.session_state[f"page_index_{data_source}"] = 0
+            requested = int(limit)
+            cache_key = f"search_cache_{data_source}_{subreddit.strip().lower()}_{requested}_{hide_used}"
+            cached = st.session_state.get(cache_key)
+            if cached and search_cache_ttl > 0 and (time.time() - cached.get("ts", 0)) < search_cache_ttl:
+                posts = _normalize_cached_posts(cached.get("posts", []))
+                cached["posts"] = posts
+                st.session_state[cache_key] = cached
             else:
-                st.caption("No link available for this post.")
-            if url:
-                with st.expander(f"Reply options #{idx}", expanded=False):
-                    with st.form(f"inline_prefill_form_{idx}", clear_on_submit=False):
-                        st.markdown("Write your reply")
-                        use_page_context_inline = st.checkbox(
-                            "Use page title/body as context",
-                            value=True,
-                            key=f"use_ctx_{post_key}",
+                if data_source == "Database":
+                    st.caption("Loading posts from Supabase...")
+                    posts, total = _fetch_supabase_posts_page(
+                        subreddit.strip().lower(),
+                        requested,
+                        "",
+                        0,
+                        hide_used,
+                    )
+                    for post in posts:
+                        post["id"] = post.get("post_id", "")
+                    posts = _normalize_cached_posts(posts)
+                else:
+                    bot = ensure_bot(cfg)
+                    if not bot:
+                        posts = []
+                        total = 0
+                    else:
+                        st.caption(f"Searching r/{subreddit}...")
+                        fetch_limit = requested
+                        posts = bot.search_posts(
+                            subreddit=subreddit.strip() or None,
+                            limit=fetch_limit,
+                            include_body=False,
+                            include_comments=False,
                         )
-                        llm_generated = st.session_state.get(f"llm_reply_{post_key}", "")
-                        manual_context_val = st.session_state.get(f"manual_ctx_val_{post_key}", "")
+                        posts = _normalize_cached_posts(posts)
+                        total = len(posts)
+                st.session_state[cache_key] = {"ts": time.time(), "posts": posts, "total": total}
+            st.session_state["last_posts"] = posts
+            st.session_state[f"last_posts_{data_source}"] = posts
+        posts = _normalize_cached_posts(st.session_state.get("last_posts", []))
+        st.session_state["last_posts"] = posts
+        if posts:
+            filtered_posts = []
+            seen = set()
+            query_lower = (query_text or "").strip().lower()
+            for p in posts:
+                key = _post_key(p)
+                dedupe_key = key or p.get("title", "")
+                if dedupe_key in seen:
+                    continue
+                if data_source == "Live scan":
+                    p["matched_keywords"] = p.get("matched_keywords") or _compute_post_matches(p, keyword_list)
+                if query_lower:
+                    title_val = (p.get("title") or "").lower()
+                    url_val = (p.get("url") or "").lower()
+                    keywords_val = " ".join(p.get("matched_keywords") or [])
+                    if query_lower not in title_val and query_lower not in url_val and query_lower not in keywords_val:
+                        continue
+                seen.add(dedupe_key)
+                filtered_posts.append(p)
+            if sort_choice == "Subreddit":
+                filtered_posts.sort(key=lambda row: (row.get("subreddit") or "", row.get("title") or ""))
+            elif sort_choice == "Oldest":
+                filtered_posts.sort(key=lambda row: row.get("last_seen_at") or "")
+            else:
+                filtered_posts.sort(key=lambda row: row.get("last_seen_at") or "", reverse=True)
 
-                        if llm_generated:
-                            edit_key = f"llm_edit_{post_key}"
-                            if edit_key not in st.session_state:
-                                st.session_state[edit_key] = llm_generated
-                            generated_reply = st.text_area(
-                                "Generated reply (editable)",
-                                key=edit_key,
+            total_filtered = len(filtered_posts)
+            page_index = st.session_state.get("page_index", 0)
+            start = page_index * page_size
+            end = start + page_size
+            posts = filtered_posts[start:end]
+            total_pages = max(1, (total_filtered + page_size - 1) // page_size)
+            if total_pages > 1:
+                with pager_slot.container():
+                    _, col_prev, col_page, col_next = st.columns([6, 1.2, 1, 1.2], gap="small")
+                    with col_prev:
+                        if st.button("Prev", disabled=page_index <= 0, use_container_width=True):
+                            st.session_state["page_index"] = max(0, page_index - 1)
+                            st.session_state[f"page_index_{data_source}"] = st.session_state["page_index"]
+                            st.rerun()
+                    with col_page:
+                        st.caption(f"Page {page_index + 1} of {total_pages}")
+                    with col_next:
+                        if st.button("Next", disabled=(page_index + 1) >= total_pages, use_container_width=True):
+                            st.session_state["page_index"] = min(total_pages - 1, page_index + 1)
+                            st.session_state[f"page_index_{data_source}"] = st.session_state["page_index"]
+                            st.rerun()
+            st.subheader("Pick a Post")
+            for idx, post in enumerate(posts, 1):
+                title = post.get("title") or "No title"
+                url = post.get("url") or post.get("permalink") or ""
+                post_key = _post_key(post)
+                status_key = f"post_status_{post_key}"
+                if not url:
+                    pid = post.get("id")
+                    sub = post.get("subreddit")
+                    if pid and sub:
+                        url = f"https://old.reddit.com/r/{sub}/comments/{pid}/"
+                subreddit = post.get("subreddit", "")
+                matched = post.get("matched_keywords") or []
+                match_label = ", ".join(matched) if isinstance(matched, list) else ""
+                title_safe = html.escape(title)
+                sub_safe = html.escape(subreddit)
+                st.markdown("<div class='post-card'>", unsafe_allow_html=True)
+                st.markdown(
+                    f"<div class='post-title'>{idx}. {title_safe} <span class='post-sub'>(r/{sub_safe})</span></div>",
+                    unsafe_allow_html=True,
+                )
+                if match_label:
+                    st.markdown(
+                        f"<div class='post-tags'>Keywords: {html.escape(match_label)}</div>",
+                        unsafe_allow_html=True,
+                    )
+                if url:
+                    display_url = _display_reddit_url(url)
+                    st.markdown(
+                        f"""
+                        <div class="url-bar">
+                            <div class="url-text">{html.escape(display_url)}</div>
+                            <a class="url-open" href="{html.escape(display_url)}" target="_blank" rel="noopener">↗</a>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.caption("No link available for this post.")
+                if url:
+                    with st.expander(f"Reply options #{idx}", expanded=False):
+                        with st.form(f"inline_prefill_form_{idx}", clear_on_submit=False):
+                            st.markdown("Write your reply")
+                            use_page_context_inline = st.checkbox(
+                                "Use page title/body as context",
+                                value=True,
+                                key=f"use_ctx_{post_key}",
                             )
-                            auto_submit = st.checkbox(
-                                "Auto-submit (posts now)",
-                                value=False,
-                                key=f"auto_submit_{post_key}",
-                            )
-                            pad_btn_l, col_btn1, col_btn2, pad_btn_r = st.columns([0.1, 2, 2, 5], gap="small")
-                            with col_btn1:
-                                gen_llm = st.form_submit_button("Generate with LLM")
-                            with col_btn2:
-                                submitted_inline = st.form_submit_button("Prefill / Submit")
-                            manual_context_inline = manual_context_val  # keep last context for regen
-                            manual_reply_inline = ""  # not used in this view
-                        else:
-                            manual_context_inline = st.text_area(
-                                "Manual context (optional)",
-                                key=f"manual_ctx_{post_key}",
-                                placeholder="Provide a brief prompt/context for the reply.",
-                                value=manual_context_val,
-                            )
-                            manual_reply_inline = st.text_area(
-                                "Reply text (edit or paste here)",
-                                key=f"manual_reply_{post_key}",
-                                placeholder="Enter reply text to prefill",
-                                value="",
-                            )
-                            auto_submit = st.checkbox(
-                                "Auto-submit (posts now)",
-                                value=False,
-                                key=f"auto_submit_{post_key}",
-                            )
-                            pad_btn_l, col_btn1, col_btn2, pad_btn_r = st.columns([0.1, 2, 2, 5], gap="small")
-                            with col_btn1:
-                                gen_llm = st.form_submit_button("Generate with LLM")
-                            with col_btn2:
-                                submitted_inline = st.form_submit_button("Prefill / Submit")
+                            llm_generated = st.session_state.get(f"llm_reply_{post_key}", "")
+                            manual_context_val = st.session_state.get(f"manual_ctx_val_{post_key}", "")
 
-                    if submitted_inline:
-                        bot = ensure_bot(cfg)
-                        if not bot:
-                            st.stop()
-                        reply_text = (
-                            st.session_state.get(f"llm_edit_{post_key}", "").strip()
-                            if llm_generated
-                            else manual_reply_inline.strip()
-                        )
-                        if not reply_text:
-                            st.error("No reply text available. Enter a manual reply or enable LLM.")
-                        else:
-                            if auto_submit and auto_submit_limit > 0 and st.session_state["auto_submit_count"] >= auto_submit_limit:
-                                auto_submit = False
-                                st.session_state[status_key] = ("warning", "Auto-submit limit reached; prefilling only.")
-                            if auto_submit:
-                                guard_window = float(os.getenv("AUTO_SUBMIT_GUARD_SECONDS", "20") or 20)
-                                reply_hash = hashlib.sha256(reply_text.encode("utf-8")).hexdigest()
-                                guard = st.session_state.get("auto_submit_guard", {})
-                                guard_entry = guard.get(post_key, {})
-                                last_ts = float(guard_entry.get("ts", 0.0) or 0.0)
-                                if guard_entry.get("hash") == reply_hash and (time.time() - last_ts) < guard_window:
+                            if llm_generated:
+                                edit_key = f"llm_edit_{post_key}"
+                                if edit_key not in st.session_state:
+                                    st.session_state[edit_key] = llm_generated
+                                generated_reply = st.text_area(
+                                    "Generated reply (editable)",
+                                    key=edit_key,
+                                )
+                                auto_submit = st.checkbox(
+                                    "Auto-submit (posts now)",
+                                    value=False,
+                                    key=f"auto_submit_{post_key}",
+                                )
+                                pad_btn_l, col_btn1, col_btn2, pad_btn_r = st.columns([0.1, 2, 2, 5], gap="small")
+                                with col_btn1:
+                                    gen_llm = st.form_submit_button("Generate with LLM")
+                                with col_btn2:
+                                    submitted_inline = st.form_submit_button("Prefill / Submit")
+                                manual_context_inline = manual_context_val  # keep last context for regen
+                                manual_reply_inline = ""  # not used in this view
+                            else:
+                                manual_context_inline = st.text_area(
+                                    "Manual context (optional)",
+                                    key=f"manual_ctx_{post_key}",
+                                    placeholder="Provide a brief prompt/context for the reply.",
+                                    value=manual_context_val,
+                                )
+                                manual_reply_inline = st.text_area(
+                                    "Reply text (edit or paste here)",
+                                    key=f"manual_reply_{post_key}",
+                                    placeholder="Enter reply text to prefill",
+                                    value="",
+                                )
+                                auto_submit = st.checkbox(
+                                    "Auto-submit (posts now)",
+                                    value=False,
+                                    key=f"auto_submit_{post_key}",
+                                )
+                                pad_btn_l, col_btn1, col_btn2, pad_btn_r = st.columns([0.1, 2, 2, 5], gap="small")
+                                with col_btn1:
+                                    gen_llm = st.form_submit_button("Generate with LLM")
+                                with col_btn2:
+                                    submitted_inline = st.form_submit_button("Prefill / Submit")
+
+                        if submitted_inline:
+                            bot = ensure_bot(cfg)
+                            if not bot:
+                                st.stop()
+                            reply_text = (
+                                st.session_state.get(f"llm_edit_{post_key}", "").strip()
+                                if llm_generated
+                                else manual_reply_inline.strip()
+                            )
+                            if not reply_text:
+                                st.error("No reply text available. Enter a manual reply or enable LLM.")
+                            else:
+                                if auto_submit and auto_submit_limit > 0 and st.session_state["auto_submit_count"] >= auto_submit_limit:
                                     auto_submit = False
-                                    st.session_state[status_key] = ("warning", "Auto-submit throttled; prefilling only.")
-                                else:
-                                    guard[post_key] = {"hash": reply_hash, "ts": time.time()}
-                                    st.session_state["auto_submit_guard"] = guard
-                            result = bot.reply_to_post(url, reply_text, dry_run=not auto_submit)
-                            if result.get("success"):
-                                submitted_flag = result.get("submitted")
+                                    st.session_state[status_key] = ("warning", "Auto-submit limit reached; prefilling only.")
                                 if auto_submit:
-                                    if submitted_flag:
-                                        st.session_state[status_key] = ("success", "Auto-submit attempted. Check the thread to confirm it posted.")
+                                    guard_window = float(os.getenv("AUTO_SUBMIT_GUARD_SECONDS", "20") or 20)
+                                    reply_hash = hashlib.sha256(reply_text.encode("utf-8")).hexdigest()
+                                    guard = st.session_state.get("auto_submit_guard", {})
+                                    guard_entry = guard.get(post_key, {})
+                                    last_ts = float(guard_entry.get("ts", 0.0) or 0.0)
+                                    if guard_entry.get("hash") == reply_hash and (time.time() - last_ts) < guard_window:
+                                        auto_submit = False
+                                        st.session_state[status_key] = ("warning", "Auto-submit throttled; prefilling only.")
                                     else:
-                                        st.session_state[status_key] = ("warning", "Filled the comment box but could not confirm submit. Please verify in the browser.")
-                                else:
-                                    st.session_state[status_key] = ("success", "Prefill attempted. Review the browser window and submit manually.")
-                                if submitted_flag:
-                                    post_state["submitted"].add(post_key)
-                                    post_state["submitted_details"].append(
-                                        {
-                                            "key": post_key,
-                                            "title": post.get("title") or post.get("url") or "Untitled",
-                                            "reply": reply_text,
-                                            "subreddit": post.get("subreddit", ""),
-                                        }
-                                    )
+                                        guard[post_key] = {"hash": reply_hash, "ts": time.time()}
+                                        st.session_state["auto_submit_guard"] = guard
+                                result = bot.reply_to_post(url, reply_text, dry_run=not auto_submit)
+                                if result.get("success"):
+                                    submitted_flag = result.get("submitted")
+                                    if auto_submit:
+                                        if submitted_flag:
+                                            st.session_state[status_key] = ("success", "Auto-submit attempted. Check the thread to confirm it posted.")
+                                        else:
+                                            st.session_state[status_key] = ("warning", "Filled the comment box but could not confirm submit. Please verify in the browser.")
+                                    else:
+                                        st.session_state[status_key] = ("success", "Prefill attempted. Review the browser window and submit manually.")
+                                    if submitted_flag:
+                                        post_state["submitted"].add(post_key)
+                                        post_state["submitted_details"].append(
+                                            {
+                                                "key": post_key,
+                                                "title": post.get("title") or post.get("url") or "Untitled",
+                                                "reply": reply_text,
+                                                "subreddit": post.get("subreddit", ""),
+                                            }
+                                        )
                                     save_post_state(post_state)
                                     if auto_submit:
                                         st.session_state["auto_submit_count"] += 1
-                                st.session_state["last_action"] = f"prefill {post_key}"
-                            else:
-                                if auto_submit:
-                                    guard = st.session_state.get("auto_submit_guard", {})
-                                    guard.pop(post_key, None)
-                                    st.session_state["auto_submit_guard"] = guard
-                                st.session_state[status_key] = ("error", f"Failed to prefill: {result.get('error', 'unknown error')}")
-                                st.session_state["error_count"] += 1
-                                st.session_state["last_action"] = f"prefill_failed {post_key}"
+                                    st.session_state["last_action"] = f"prefill {post_key}"
+                                else:
+                                    if auto_submit:
+                                        guard = st.session_state.get("auto_submit_guard", {})
+                                        guard.pop(post_key, None)
+                                        st.session_state["auto_submit_guard"] = guard
+                                    st.session_state[status_key] = ("error", f"Failed to prefill: {result.get('error', 'unknown error')}")
+                                    st.session_state["error_count"] += 1
+                                    st.session_state["last_action"] = f"prefill_failed {post_key}"
                             st.rerun()
                     if 'bot' not in locals():
                         bot = None
@@ -1343,64 +1752,123 @@ def main() -> None:
                 st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
 
-    # Show ignored posts for current subreddit
-    current_sub = subreddit.strip() if 'subreddit' in locals() else ""
-    ignored_list = []
-    ignored_details = []
-    submitted_details = []
-    if current_sub:
-        for p in st.session_state.get("last_posts", []):
-            key = _post_key(p)
-            if key in post_state["ignored"] and p.get("subreddit", "") == current_sub:
-                ignored_list.append(p)
-        submitted_details = [
-            d for d in post_state.get("submitted_details", []) if d.get("subreddit", "") == current_sub
-        ]
-        ignored_details = [
-            d for d in post_state.get("ignored_details", []) if d.get("subreddit", "") == current_sub
-        ]
-    if submitted_details or ignored_details:
-        st.markdown("---")
-        st.subheader("Saved activity")
-        if submitted_details:
-            with st.expander(f"Submitted posts in r/{current_sub}", expanded=False):
-                for idx, d in enumerate(list(submitted_details)):
-                    title = d.get("title") or "Untitled"
-                    key_val = d.get("key", title)
-                    chk_key = f"submitted_item_{current_sub}_{idx}_{key_val}"
-                    checked = st.checkbox(title, value=True, key=chk_key)
-                    if not checked:
-                        post_state["submitted"].discard(key_val)
-                        post_state["submitted_details"] = [
-                            x for x in post_state.get("submitted_details", []) if x.get("key") != key_val
-                        ]
-                        save_post_state(post_state)
-                        st.success("Post unmarked as submitted. It will show up on next search.")
-                        st.session_state["last_action"] = f"unmark_submitted {key_val}"
-                        st.rerun()
-                    reply_text = d.get("reply", "")
-                    if reply_text:
-                        st.code(reply_text)
-        with st.expander(f"Ignored posts in r/{current_sub}", expanded=False):
-            entries = ignored_details
-            if entries:
-                for idx, d in enumerate(list(entries)):
-                    title = d.get("title") or "Untitled"
-                    key_val = d.get("key", title)
-                    chk_key = f"ignored_item_{current_sub}_{idx}_{key_val}"
-                    checked = st.checkbox(title, value=True, key=chk_key)
-                    if not checked:
-                        post_state["ignored"].discard(key_val)
-                        post_state["ignored_details"] = [
-                            x for x in post_state.get("ignored_details", []) if x.get("key") != key_val
-                        ]
-                        save_post_state(post_state)
-                        st.success("Post unignored. It will show up on next search.")
-                        st.session_state["last_action"] = f"unignore {key_val}"
-                        st.rerun()
-            else:
-                st.caption("No ignored posts yet.")
-    # Prefill reply UI is now inline under each post above
+        # Show ignored posts for current subreddit
+        current_sub = subreddit.strip() if 'subreddit' in locals() else ""
+        ignored_list = []
+        ignored_details = []
+        submitted_details = []
+        if current_sub:
+            for p in st.session_state.get("last_posts", []):
+                key = _post_key(p)
+                if key in post_state["ignored"] and p.get("subreddit", "") == current_sub:
+                    ignored_list.append(p)
+            submitted_details = [
+                d for d in post_state.get("submitted_details", []) if d.get("subreddit", "") == current_sub
+            ]
+            ignored_details = [
+                d for d in post_state.get("ignored_details", []) if d.get("subreddit", "") == current_sub
+            ]
+        if submitted_details or ignored_details:
+            st.markdown("---")
+            st.subheader("Saved activity")
+            if submitted_details:
+                with st.expander(f"Submitted posts in r/{current_sub}", expanded=False):
+                    for idx, d in enumerate(list(submitted_details)):
+                        title = d.get("title") or "Untitled"
+                        key_val = d.get("key", title)
+                        chk_key = f"submitted_item_{current_sub}_{idx}_{key_val}"
+                        checked = st.checkbox(title, value=True, key=chk_key)
+                        if not checked:
+                            post_state["submitted"].discard(key_val)
+                            post_state["submitted_details"] = [
+                                x for x in post_state.get("submitted_details", []) if x.get("key") != key_val
+                            ]
+                            save_post_state(post_state)
+                            st.success("Post unmarked as submitted. It will show up on next search.")
+                            st.session_state["last_action"] = f"unmark_submitted {key_val}"
+                            st.rerun()
+                        reply_text = d.get("reply", "")
+                        if reply_text:
+                            st.code(reply_text)
+            with st.expander(f"Ignored posts in r/{current_sub}", expanded=False):
+                entries = ignored_details
+                if entries:
+                    for idx, d in enumerate(list(entries)):
+                        title = d.get("title") or "Untitled"
+                        key_val = d.get("key", title)
+                        chk_key = f"ignored_item_{current_sub}_{idx}_{key_val}"
+                        checked = st.checkbox(title, value=True, key=chk_key)
+                        if not checked:
+                            post_state["ignored"].discard(key_val)
+                            post_state["ignored_details"] = [
+                                x for x in post_state.get("ignored_details", []) if x.get("key") != key_val
+                            ]
+                            save_post_state(post_state)
+                            st.success("Post unignored. It will show up on next search.")
+                            st.session_state["last_action"] = f"unignore {key_val}"
+                            st.rerun()
+                else:
+                    st.caption("No ignored posts yet.")
+        # Prefill reply UI is now inline under each post above
+
+    with accounts_tab:
+        st.subheader("Account health")
+        if not account_status:
+            st.info("No account status data found yet.")
+        else:
+            status_priority = {
+                "suspended": 0,
+                "error": 1,
+                "captcha": 2,
+                "rate_limited": 3,
+                "unknown": 4,
+                "active": 5,
+            }
+            sorted_accounts = sorted(
+                account_status.items(),
+                key=lambda item: (
+                    item[0] == "account_test",
+                    status_priority.get(item[1].get("current_status", "unknown"), 9),
+                    item[0],
+                ),
+            )
+            for idx in range(0, len(sorted_accounts), 2):
+                cols = st.columns(2)
+                for col_idx, col in enumerate(cols):
+                    if idx + col_idx >= len(sorted_accounts):
+                        continue
+                    account_name, data = sorted_accounts[idx + col_idx]
+                    status = data.get("current_status", "unknown")
+                    status_slug = status.replace(" ", "_")
+                    last_updated = format_time_since(data.get("last_updated", ""))
+                    last_success = format_time_since(data.get("last_success", ""))
+                    status_history = data.get("status_history", [])
+                    with col:
+                        st.markdown("<div class='account-card-anchor'></div>", unsafe_allow_html=True)
+                        st.markdown(
+                            f"""
+                            <div class="account-header">
+                                <div class="account-name">{html.escape(account_name)}</div>
+                                <span class="status-badge status-badge-{status_slug}">{get_status_emoji(status)} {html.escape(status)}</span>
+                            </div>
+                            <div class="account-meta">Last update: <strong>{html.escape(last_updated)}</strong> · Last success: <strong>{html.escape(last_success)}</strong></div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+                        if status_history:
+                            with st.expander("Recent status history", expanded=False):
+                                for item in list(status_history)[-5:][::-1]:
+                                    ts = format_time_since(item.get("timestamp", ""))
+                                    item_status = item.get("status", "unknown")
+                                    prev = item.get("previous_status", "unknown")
+                                    st.caption(f"{ts}: {item_status} (was {prev})")
+                        reset_key = f"reset_status_{account_name}"
+                        if st.button("Reset status", key=reset_key):
+                            if reset_account_status(account_name):
+                                st.success(f"Reset {account_name} to unknown.")
+                                st.rerun()
+                            else:
+                                st.warning(f"Unable to reset {account_name}.")
 
 
 if __name__ == "__main__":
