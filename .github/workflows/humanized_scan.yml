@@ -237,6 +237,7 @@ jobs:
           SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET }}
           SUPABASE_COOKIES_PATH: ${{ secrets.SUPABASE_COOKIES_PATH }}
         run: |
+          python scripts/one_time/build_cookie_bundle.py --output data/cookies_bundle.zip
           python scripts/ops/supabase_cookies_sync.py upload
 
       - name: Upload logs to Supabase
