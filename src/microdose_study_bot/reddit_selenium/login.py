@@ -29,6 +29,50 @@ class LoginManager:
         self.browser_manager = browser_manager or BrowserManager(headless=headless)
         self.driver = driver
         self.wait_time = 20  # Default wait time for operations
+
+    def _log_security_challenge(self, context: str) -> None:
+        """Log CAPTCHA/security challenge indicators if present."""
+        if not self.driver:
+            return
+        try:
+            current_url = self.driver.current_url
+        except Exception:
+            current_url = "unknown"
+
+        keywords = [
+            "captcha",
+            "recaptcha",
+            "hcaptcha",
+            "verify you are human",
+            "are you a human",
+            "security challenge",
+            "robot check",
+        ]
+        selectors = [
+            "iframe[src*='recaptcha']",
+            "iframe[src*='hcaptcha']",
+            "div[data-sitekey]",
+            "input[name='captcha']",
+            "div[class*='captcha']",
+            "div[id*='captcha']",
+        ]
+
+        page_source = self.browser_manager.get_page_source_safely(self.driver).lower()
+        keyword_hit = any(key in page_source for key in keywords)
+
+        selector_hit = False
+        try:
+            for selector in selectors:
+                if self.driver.find_elements(By.CSS_SELECTOR, selector):
+                    selector_hit = True
+                    break
+        except Exception:
+            selector_hit = False
+
+        if keyword_hit or selector_hit:
+            logger.warning(
+                f"CAPTCHA_OR_CHALLENGE_DETECTED ({context}) url={current_url}"
+            )
     
     def create_driver(self, headless=False):
         """Create a new browser driver using BrowserManager"""
@@ -306,6 +350,7 @@ return null;
             # Check current URL
             current_url = self.driver.current_url.lower()
             if "login" in current_url or "auth" in current_url or "accounts.google.com" in current_url:
+                self._log_security_challenge("verify_login_success")
                 logger.warning(f"Still on login/auth page: {current_url}")
                 return False
             
@@ -348,6 +393,7 @@ return null;
                 logger.info("Assuming login successful (on Reddit, not login page)")
                 return True
             
+            self._log_security_challenge("verify_login_success")
             return False
             
         except Exception as e:
@@ -424,6 +470,7 @@ return null;
                 logger.info("✓ Logged in with cookies")
                 return True
             else:
+                self._log_security_challenge("cookie_login")
                 logger.warning("Cookie login verification failed")
                 return False
                 

@@ -15,6 +15,7 @@ import time
 import random
 import os
 import sys
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -250,6 +251,45 @@ class HumanizedNightScanner:
             self.logger.warning(
                 f"Tor exit lookup failed for {account_name} (port {tor_port}): {exc}"
             )
+
+    def log_account_age(self) -> None:
+        """Log account cake day (best-effort, Selenium)."""
+        if not self.driver:
+            return
+
+        account_name = self.account.get("name", "unknown")
+        username = self.account.get("username", "")
+        if not username:
+            try:
+                page_source = self.browser_manager.get_page_source_safely(self.driver)
+                matches = re.findall(r"/user/([A-Za-z0-9_-]{3,})", page_source)
+                if matches:
+                    username = matches[0]
+            except Exception:
+                username = ""
+
+        if not username:
+            self.logger.warning(f"Account age lookup skipped for {account_name}: username not found")
+            return
+
+        try:
+            profile_url = f"https://old.reddit.com/user/{username}"
+            self.driver.get(profile_url)
+            self.browser_manager.add_human_delay(1, 2)
+            profile_source = self.browser_manager.get_page_source_safely(self.driver)
+            match = re.search(r'class="cakeday"[^>]*title="([^"]+)"', profile_source)
+            if match:
+                cake_day = match.group(1)
+                self.logger.info(f"Account cake day for {account_name} ({username}): {cake_day}")
+                return
+
+            if "Cake day" in profile_source:
+                self.logger.info(f"Account cake day label found for {account_name} ({username})")
+                return
+
+            self.logger.warning(f"Account cake day not found for {account_name} ({username})")
+        except Exception as exc:
+            self.logger.warning(f"Account age lookup failed for {account_name} ({username}): {exc}")
 
     def _login_with_cookies(self, cookie_file: str) -> bool:
         if not self.login_manager:
@@ -796,6 +836,7 @@ class MultiAccountOrchestrator:
 
                 if scanner.login(cookie_file, google_email, google_password, login_method):
                     self.logger.info(f"Logged in to {account.get('name')}")
+                    scanner.log_account_age()
                     
                     # Perform activity session
                     actions = scanner.perform_activity_session()
