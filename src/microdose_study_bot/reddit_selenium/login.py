@@ -74,6 +74,89 @@ class LoginManager:
                 f"CAPTCHA_OR_CHALLENGE_DETECTED ({context}) url={current_url}"
             )
     
+    def check_account_status(self) -> str:
+        """
+        Check if the current page indicates a ban, restriction, or other account issue.
+        Returns:
+            'active': No issues detected
+            'suspended': Account has been suspended
+            'rate_limited': Rate limit or temporary restriction
+            'blocked': IP or account blocked
+            'captcha': CAPTCHA challenge present
+            'unknown': Could not determine status
+        """
+        if not self.driver:
+            return "unknown"
+        
+        try:
+            # Get page content safely
+            page_source = self.browser_manager.get_page_source_safely(self.driver).lower()
+            current_url = (self.driver.current_url or "").lower()
+            
+            # Define ban indicators with their priority
+            ban_indicators = {
+                "suspended": [
+                    "this account has been suspended",
+                    "account suspension",
+                    "suspended from reddit",
+                    "violated reddit's content policy"
+                ],
+                "rate_limited": [
+                    "you are doing that too much",
+                    "try again in",
+                    "rate limit exceeded",
+                    "too many requests",
+                    "please try again later"
+                ],
+                "blocked": [
+                    "access denied",
+                    "you are blocked",
+                    "restricted access",
+                    "this content is not available"
+                ],
+                "captcha": [
+                    "recaptcha",
+                    "captcha",
+                    "verify you are human",
+                    "are you a robot"
+                ]
+            }
+            
+            # Check for each type of issue
+            for status_type, phrases in ban_indicators.items():
+                if any(phrase in page_source for phrase in phrases):
+                    logger.warning(f"ACCOUNT_STATUS_{status_type.upper()} detected")
+                    return status_type
+            
+            # Special check for login page when we expected to be logged in
+            if "login" in current_url or "auth" in current_url:
+                # Check if this is a forced login (security challenge)
+                if any(keyword in page_source for keyword in ["security check", "verify login"]):
+                    logger.warning("ACCOUNT_STATUS_SECURITY_CHECK - Login verification required")
+                    return "security_check"
+            
+            # Check for successful login indicators
+            login_indicators = [
+                "user menu",
+                "create post",
+                "/u/",
+                "logout",
+                "my profile"
+            ]
+            
+            if any(indicator in page_source for indicator in login_indicators):
+                return "active"
+            
+            # If we're on reddit.com but none of the above, it's probably active
+            if "reddit.com" in current_url and "login" not in current_url:
+                return "active"
+            
+            return "unknown"
+            
+        except Exception as e:
+            logger.error(f"Error checking account status: {e}")
+            return "unknown"
+    
     def create_driver(self, headless=False):
         """Create a new browser driver using BrowserManager"""
         if not self.browser_manager or self.browser_manager.headless != headless:
@@ -206,21 +289,26 @@ return null;
             if not google_button:
                 google_button = self._find_google_button_js()
             if not google_button:
-                if self.verify_login_success():
+                # Check account status before giving up
+                status = self.check_account_status()
+                if status == "active":
                     logger.info("Already logged in; skipping Google login.")
-                    return True
+                    return True, status
                 logger.error("Could not find Google login button")
-                return False
+                return False, status
             
             self.browser_manager.safe_click(self.driver, google_button)
             logger.info("Clicked Google login button")
             
             # Handle Google OAuth flow
-            return self._handle_google_oauth(google_email, google_password)
+            success = self._handle_google_oauth(google_email, google_password)
+            status = self.check_account_status()
+            return success, status
             
         except Exception as e:
             logger.error(f"Google login failed: {str(e)}")
-            return False
+            status = self.check_account_status()
+            return False, status
     
     def _handle_google_oauth(self, email, password):
         """Handle Google OAuth authentication flow using BrowserManager"""
@@ -354,6 +442,12 @@ return null;
                 logger.warning(f"Still on login/auth page: {current_url}")
                 return False
             
+            # Check account status first
+            status = self.check_account_status()
+            if status != "active" and status != "unknown":
+                logger.warning(f"Account status check failed: {status}")
+                return False
+            
             # Try multiple indicators using BrowserManager's wait methods
             indicators = [
                 # User menu button
@@ -449,7 +543,7 @@ return null;
             
             if not cookies:
                 logger.warning("No cookies to load")
-                return False
+                return False, "no_cookies"
             
             # Clear existing cookies and add saved ones
             self.driver.delete_all_cookies()
@@ -468,15 +562,18 @@ return null;
             
             if self.verify_login_success():
                 logger.info("✓ Logged in with cookies")
-                return True
+                return True, "active"
             else:
                 self._log_security_challenge("cookie_login")
-                logger.warning("Cookie login verification failed")
-                return False
+                # Check what specific issue we have
+                status = self.check_account_status()
+                logger.warning(f"Cookie login verification failed. Status: {status}")
+                return False, status
                 
         except Exception as e:
             logger.warning(f"Cookie login failed: {e}")
-            return False
+            status = self.check_account_status()
+            return False, status
     
     def logout(self):
         """Clean logout function"""
@@ -510,7 +607,7 @@ return null;
             )
             if not username_field:
                 logger.error("Could not find Reddit username field")
-                return False
+                return False, "element_not_found"
             
             # Human-like typing for username
             self.browser_manager.human_like_typing(username_field, username)
@@ -525,7 +622,7 @@ return null;
             )
             if not password_field:
                 logger.error("Could not find Reddit password field")
-                return False
+                return False, "element_not_found"
             
             # Human-like typing for password
             self.browser_manager.human_like_typing(password_field, password)
@@ -540,7 +637,7 @@ return null;
             )
             if not login_button:
                 logger.error("Could not find Reddit login button")
-                return False
+                return False, "element_not_found"
             
             # Safe click on login button
             self.browser_manager.safe_click(self.driver, login_button)
@@ -550,14 +647,16 @@ return null;
             if self.verify_login_success():
                 logger.info("✓ Direct Reddit login successful!")
                 self.save_login_cookies()
-                return True
+                return True, "active"
             else:
                 logger.warning("Direct login verification failed")
-                return False
+                status = self.check_account_status()
+                return False, status
                 
         except Exception as e:
             logger.error(f"Direct login failed: {str(e)}")
-            return False
+            status = self.check_account_status()
+            return False, status
     
     def close_browser(self):
         """Close browser using BrowserManager"""

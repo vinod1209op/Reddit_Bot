@@ -212,6 +212,33 @@ jobs:
           python scripts/runners/humanized_night_scanner.py $WINDOWS_ARG 2>&1 | tee logs/ci_humanized_scan.log
           echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
           exit 0
+
+      - name: Flag ban/restriction signals (fail run)
+        if: steps.gate.outputs.should_run == 'true'
+        run: |
+          set -euo pipefail
+          if [ ! -f logs/ci_humanized_scan.log ]; then
+            echo "No ci_humanized_scan.log found; skipping ban signal scan."
+            exit 0
+          fi
+          PATTERN="account suspended|account disabled|account locked|account restricted|you have been permanently banned|you have been temporarily banned|your account has been suspended|your account has been permanently suspended|your account has been temporarily suspended|suspicious activity|challenge|captcha_or_challenge_detected|login failed|cookie login verification failed"
+          if rg -i "$PATTERN" logs/ci_humanized_scan.log; then
+            echo "Ban/restriction signals detected in logs. Failing the run."
+            exit 1
+          fi
+
+      - name: Email on failure (Outlook SMTP)
+        if: failure() && steps.gate.outputs.should_run == 'true'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "❌ Humanized scan failed (${{ matrix.account }})"
+          body: "Check GitHub Actions logs for details."
+          to: ${{ secrets.ALERT_EMAIL_TO }}
+          from: Bot Alerts <${{ secrets.SMTP_USERNAME }}>
         continue-on-error: true
       
       - name: Upload refreshed cookies to Supabase
