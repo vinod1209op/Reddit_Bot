@@ -140,6 +140,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y tor
+          sudo service tor stop || true
+          pkill -f tor || true
           PORT=${{ matrix.tor_port }}
           DATADIR="/tmp/tor_$PORT"
           mkdir -p "$DATADIR"
