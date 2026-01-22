@@ -202,6 +202,7 @@ jobs:
         run: |
           set -euxo pipefail
           echo "Starting humanized scan..."
+          mkdir -p logs
           WINDOWS_ARG=""
           if [ -n "${{ github.event.inputs.windows }}" ]; then
             WINDOWS_ARG="--windows ${{ github.event.inputs.windows }}"
@@ -210,6 +211,7 @@ jobs:
           fi
           python scripts/runners/humanized_night_scanner.py $WINDOWS_ARG 2>&1 | tee logs/ci_humanized_scan.log
           echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          exit 0
         continue-on-error: true
       
       - name: Upload refreshed cookies to Supabase
