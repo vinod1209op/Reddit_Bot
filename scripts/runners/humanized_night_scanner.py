@@ -734,7 +734,7 @@ class HumanizedNightScanner:
                 # Random delay between actions
                 self.random_delay()
             
-             self.logger.info(f"🎯 Humanization metrics: {self.humanization_metrics}")
+            self.logger.info(f"🎯 Humanization metrics: {self.humanization_metrics}")
             self.logger.info(f"📊 Session complete. Actions: {actions_performed}")
             return actions_performed
             
