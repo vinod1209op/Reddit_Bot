@@ -118,10 +118,28 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET }}
-          SUPABASE_COOKIES_PATH: ${{ secrets.SUPABASE_COOKIES_PATH }}
+          SUPABASE_COOKIES_ACCOUNT1_PATH: ${{ secrets.SUPABASE_COOKIES_ACCOUNT1_PATH }}
+          SUPABASE_COOKIES_ACCOUNT2_PATH: ${{ secrets.SUPABASE_COOKIES_ACCOUNT2_PATH }}
+          SUPABASE_COOKIES_ACCOUNT3_PATH: ${{ secrets.SUPABASE_COOKIES_ACCOUNT3_PATH }}
         run: |
           mkdir -p data
-          python scripts/ops/supabase_cookies_sync.py download
+          case "${{ matrix.account }}" in
+            account1) remote_path="${SUPABASE_COOKIES_ACCOUNT1_PATH:-}" ;;
+            account2) remote_path="${SUPABASE_COOKIES_ACCOUNT2_PATH:-}" ;;
+            account3) remote_path="${SUPABASE_COOKIES_ACCOUNT3_PATH:-}" ;;
+            *) remote_path="" ;;
+          esac
+          if [ -z "$remote_path" ]; then
+            echo "No per-account cookie path set for ${{ matrix.account }}; skipping download."
+            exit 0
+          fi
+          url="${SUPABASE_URL%/}/storage/v1/object/${SUPABASE_BUCKET}/${remote_path#/}"
+          curl -sS -X GET \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+            "$url" \
+            -o "data/cookies_${{ matrix.account }}.pkl"
+          ls -la "data/cookies_${{ matrix.account }}.pkl"
 
       - name: Create minimal env file
         if: steps.gate.outputs.should_run == 'true'
@@ -228,92 +246,40 @@ jobs:
           from: Bot Alerts <${{ secrets.SMTP_USERNAME }}>
         continue-on-error: true
       
-      - name: Upload refreshed cookies to Supabase
+      - name: Upload per-account cookies to Supabase
         if: always() && steps.gate.outputs.should_run == 'true'
-        env:
-          PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET }}
-          SUPABASE_COOKIES_PATH: ${{ secrets.SUPABASE_COOKIES_PATH }}
-        run: |
-          python scripts/one_time/build_cookie_bundle.py --output data/cookies_bundle.zip --raw-zip
-          python scripts/ops/supabase_cookies_sync.py upload || true
-
-      - name: Upload account1 cookie file
-        if: always() && steps.gate.outputs.should_run == 'true' && matrix.account == 'account1'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET }}
           SUPABASE_COOKIES_ACCOUNT1_PATH: ${{ secrets.SUPABASE_COOKIES_ACCOUNT1_PATH }}
-        run: |
-          if [ -z "${SUPABASE_COOKIES_ACCOUNT1_PATH}" ]; then
-            echo "SUPABASE_COOKIES_ACCOUNT1_PATH not set; skipping."
-            exit 0
-          fi
-          if [ ! -f data/cookies_account1.pkl ]; then
-            echo "data/cookies_account1.pkl not found; skipping."
-            exit 0
-          fi
-          curl -sS -X PUT \
-            "${SUPABASE_URL%/}/storage/v1/object/${SUPABASE_BUCKET}/${SUPABASE_COOKIES_ACCOUNT1_PATH#/}" \
-            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
-            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
-            -H "Content-Type: application/octet-stream" \
-            -H "x-upsert: true" \
-            --data-binary @data/cookies_account1.pkl \
-            && echo "Uploaded account1 cookie file."
-
-      - name: Upload account2 cookie file
-        if: always() && steps.gate.outputs.should_run == 'true' && matrix.account == 'account2'
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET }}
           SUPABASE_COOKIES_ACCOUNT2_PATH: ${{ secrets.SUPABASE_COOKIES_ACCOUNT2_PATH }}
-        run: |
-          if [ -z "${SUPABASE_COOKIES_ACCOUNT2_PATH}" ]; then
-            echo "SUPABASE_COOKIES_ACCOUNT2_PATH not set; skipping."
-            exit 0
-          fi
-          if [ ! -f data/cookies_account2.pkl ]; then
-            echo "data/cookies_account2.pkl not found; skipping."
-            exit 0
-          fi
-          curl -sS -X PUT \
-            "${SUPABASE_URL%/}/storage/v1/object/${SUPABASE_BUCKET}/${SUPABASE_COOKIES_ACCOUNT2_PATH#/}" \
-            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
-            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
-            -H "Content-Type: application/octet-stream" \
-            -H "x-upsert: true" \
-            --data-binary @data/cookies_account2.pkl \
-            && echo "Uploaded account2 cookie file."
-
-      - name: Upload account3 cookie file
-        if: always() && steps.gate.outputs.should_run == 'true' && matrix.account == 'account3'
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET }}
           SUPABASE_COOKIES_ACCOUNT3_PATH: ${{ secrets.SUPABASE_COOKIES_ACCOUNT3_PATH }}
         run: |
-          if [ -z "${SUPABASE_COOKIES_ACCOUNT3_PATH}" ]; then
-            echo "SUPABASE_COOKIES_ACCOUNT3_PATH not set; skipping."
+          set -euo pipefail
+          case "${{ matrix.account }}" in
+            account1) remote_path="${SUPABASE_COOKIES_ACCOUNT1_PATH:-}" ;;
+            account2) remote_path="${SUPABASE_COOKIES_ACCOUNT2_PATH:-}" ;;
+            account3) remote_path="${SUPABASE_COOKIES_ACCOUNT3_PATH:-}" ;;
+            *) remote_path="" ;;
+          esac
+          local_file="data/cookies_${{ matrix.account }}.pkl"
+          if [ -z "$remote_path" ]; then
+            echo "No per-account cookie path set for ${{ matrix.account }}; skipping upload."
             exit 0
           fi
-          if [ ! -f data/cookies_account3.pkl ]; then
-            echo "data/cookies_account3.pkl not found; skipping."
+          if [ ! -f "$local_file" ]; then
+            echo "$local_file not found; skipping upload."
             exit 0
           fi
           curl -sS -X PUT \
-            "${SUPABASE_URL%/}/storage/v1/object/${SUPABASE_BUCKET}/${SUPABASE_COOKIES_ACCOUNT3_PATH#/}" \
+            "${SUPABASE_URL%/}/storage/v1/object/${SUPABASE_BUCKET}/${remote_path#/}" \
             -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "Content-Type: application/octet-stream" \
             -H "x-upsert: true" \
-            --data-binary @data/cookies_account3.pkl \
-            && echo "Uploaded account3 cookie file."
+            --data-binary @"$local_file" \
+            && echo "Uploaded cookies for ${{ matrix.account }}."
 
       - name: Upload logs to Supabase
         if: always() && steps.gate.outputs.should_run == 'true'
