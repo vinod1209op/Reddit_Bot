@@ -188,28 +188,92 @@ def _supabase_account_status_location() -> tuple[str, str, str, str]:
     return base_url, service_key, bucket, status_path
 
 
-def _download_supabase_account_status(dest_path: Path) -> bool:
-    base_url, service_key, bucket, status_path = _supabase_account_status_location()
-    if not base_url or not service_key or not bucket:
-        return False
-    url = f"{base_url.rstrip('/')}/storage/v1/object/{bucket}/{status_path.lstrip('/')}"
-    headers = {"Authorization": f"Bearer {service_key}", "apikey": service_key}
+def _fetch_account_health_from_supabase() -> dict:
+    base_url = os.getenv("SUPABASE_URL", "").strip()
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    if not base_url or not service_key:
+        return {}
+    url = f"{base_url.rstrip('/')}/rest/v1/account_health"
+    headers = {
+        "Authorization": f"Bearer {service_key}",
+        "apikey": service_key,
+        "Accept": "application/json",
+    }
 
     def _do_request():
-        resp = requests.get(url, headers=headers, timeout=30)
+        resp = requests.get(
+            url,
+            headers=headers,
+            params={"select": "account_name,current_status,last_success_at,last_failure_at,last_status_change_at,updated_at"},
+            timeout=30,
+        )
         if resp.status_code >= 300:
             raise RuntimeError(f"{resp.status_code}: {resp.text}")
         return resp
 
     try:
         resp = retry(_do_request, attempts=3, base_delay=1.0)
-        dest_path.parent.mkdir(parents=True, exist_ok=True)
-        dest_path.write_bytes(resp.content)
-        log_ui("Account status synced from Supabase.", level="ok")
-        return True
+        rows = resp.json() if resp.content else []
     except Exception:
-        log_ui("Account status sync failed.", level="warn")
-        return False
+        return {}
+
+    status_events = _fetch_account_status_events_from_supabase()
+    status_data = {}
+    for row in rows:
+        name = row.get("account_name")
+        if not name:
+            continue
+        status_data[name] = {
+            "current_status": row.get("current_status", "unknown"),
+            "last_success": row.get("last_success_at"),
+            "last_updated": row.get("last_status_change_at") or row.get("updated_at"),
+            "status_history": status_events.get(name, []),
+        }
+    return status_data
+
+
+def _fetch_account_status_events_from_supabase(limit: int = 200) -> dict:
+    base_url = os.getenv("SUPABASE_URL", "").strip()
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    if not base_url or not service_key:
+        return {}
+    url = f"{base_url.rstrip('/')}/rest/v1/account_status_events"
+    headers = {
+        "Authorization": f"Bearer {service_key}",
+        "apikey": service_key,
+        "Accept": "application/json",
+    }
+
+    try:
+        resp = requests.get(
+            url,
+            headers=headers,
+            params={
+                "select": "account_name,status,reason,detected_at",
+                "order": "detected_at.desc",
+                "limit": str(limit),
+            },
+            timeout=30,
+        )
+        if resp.status_code >= 300:
+            return {}
+        rows = resp.json() if resp.content else []
+    except Exception:
+        return {}
+
+    grouped: dict = {}
+    for row in rows:
+        name = row.get("account_name")
+        if not name:
+            continue
+        grouped.setdefault(name, []).append(
+            {
+                "timestamp": row.get("detected_at"),
+                "status": row.get("status"),
+                "details": {"reason": row.get("reason")},
+            }
+        )
+    return grouped
 
 
 def _download_supabase_cookie_from_path(dest_path: Path, cookie_path: str) -> bool:
@@ -422,15 +486,8 @@ def save_post_state(state: dict) -> None:
 
 # Account Health Dashboard Functions
 def load_account_status() -> dict:
-    """Load account status from the JSON file."""
-    status_file = PROJECT_ROOT / "data" / "account_status.json"
-    if status_file.exists():
-        try:
-            with open(status_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
+    """Load account status from Supabase (no local fallback)."""
+    return _fetch_account_health_from_supabase()
 
 
 def get_account_health_report() -> dict:
@@ -534,39 +591,56 @@ def get_status_emoji(status: str) -> str:
 
 
 def reset_account_status(account_name: str) -> bool:
-    """Reset an account's status to unknown."""
-    status_file = PROJECT_ROOT / "data" / "account_status.json"
-    
-    if not status_file.exists():
+    """Reset an account's status to unknown (Supabase only)."""
+    base_url = os.getenv("SUPABASE_URL", "").strip()
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    if not base_url or not service_key:
         return False
-    
+
+    headers = {
+        "Authorization": f"Bearer {service_key}",
+        "apikey": service_key,
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates",
+    }
     try:
-        with open(status_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
-        if account_name in data:
-            data[account_name]["current_status"] = "unknown"
-            data[account_name]["last_updated"] = datetime.now().isoformat()
-            
-            # Add to history
-            if "status_history" not in data[account_name]:
-                data[account_name]["status_history"] = []
-            
-            data[account_name]["status_history"].append({
-                "timestamp": datetime.now().isoformat(),
-                "status": "unknown",
-                "previous_status": data[account_name].get("current_status", "unknown"),
-                "details": {"reason": "manual_reset_from_streamlit"}
-            })
-            
-            with open(status_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2)
-            
-            return True
+        now = datetime.now(timezone.utc).isoformat()
+        requests.post(
+            f"{base_url.rstrip('/')}/rest/v1/accounts?on_conflict=account_name",
+            headers=headers,
+            data=json.dumps({"account_name": account_name, "status": "unknown"}),
+            timeout=30,
+        )
+        requests.post(
+            f"{base_url.rstrip('/')}/rest/v1/account_health?on_conflict=account_name",
+            headers=headers,
+            data=json.dumps(
+                {
+                    "account_name": account_name,
+                    "current_status": "unknown",
+                    "last_status_change_at": now,
+                    "updated_at": now,
+                }
+            ),
+            timeout=30,
+        )
+        requests.post(
+            f"{base_url.rstrip('/')}/rest/v1/account_status_events",
+            headers={**headers, "Prefer": "return=minimal"},
+            data=json.dumps(
+                {
+                    "account_name": account_name,
+                    "status": "unknown",
+                    "reason": "manual_reset_from_streamlit",
+                    "source": "ui",
+                    "detected_at": now,
+                }
+            ),
+            timeout=30,
+        )
+        return True
     except Exception:
-        pass
-    
-    return False
+        return False
 
 
 def _load_json(path: Path):
@@ -1277,7 +1351,6 @@ def main() -> None:
             _download_supabase_cookie(cookie_path)
     if not st.session_state.get("account_status_download_done"):
         st.session_state["account_status_download_done"] = True
-        _download_supabase_account_status(PROJECT_ROOT / "data" / "account_status.json")
 
     cfg = load_config()
     post_state = load_post_state()
