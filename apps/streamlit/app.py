@@ -163,7 +163,7 @@ def _local_cookie_path() -> Path:
     return path
 
 
-def _supabase_cookie_location() -> tuple[str, str, str]:
+def _supabase_cookie_location() -> tuple[str, str, str, str]:
     base_url = os.getenv("SUPABASE_URL", "").strip()
     service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
     bucket = os.getenv("SUPABASE_BUCKET", "").strip()
@@ -1451,7 +1451,7 @@ def main() -> None:
         
         # Quick actions
         st.subheader("Quick Actions")
-        
+
         if st.button("Clear search cache", use_container_width=True):
             for key in list(st.session_state.keys()):
                 if key.startswith(
@@ -1469,6 +1469,13 @@ def main() -> None:
             st.session_state.pop("page_index", None)
             st.info("Search cache cleared.")
             st.rerun()
+
+        if st.button("Test DB connection", use_container_width=True):
+            health = _fetch_account_health_from_supabase()
+            if health:
+                log_ui(f"DB check OK • {len(health)} accounts", level="ok")
+            else:
+                log_ui("DB check failed or no rows returned.", level="warn")
         
         # Display metrics
         if auto_submit_limit:

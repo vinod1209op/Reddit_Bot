@@ -172,6 +172,15 @@ jobs:
           fi
           ls -la data/account_status.json
 
+      - name: Restore account status from Supabase DB
+        if: steps.gate.outputs.should_run == 'true'
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          python scripts/ops/download_account_health_supabase_db.py
+
       - name: Check cookie envs (safe)
         if: steps.gate.outputs.should_run == 'true'
         run: |
@@ -321,17 +330,6 @@ jobs:
             --data-binary @"$local_file" \
             && echo "Uploaded cookies for ${{ matrix.account }}."
 
-      - name: Upload logs to Supabase
-        if: always() && steps.gate.outputs.should_run == 'true'
-        env:
-          PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET }}
-          SUPABASE_PREFIX: scan-results/humanized
-        run: |
-          python scripts/ops/upload_logs_supabase.py
-
       - name: Upsert logs into Supabase DB
         if: always() && steps.gate.outputs.should_run == 'true'
         env:
@@ -343,6 +341,27 @@ jobs:
         run: |
           python scripts/ops/upload_logs_supabase_db.py
 
+      - name: Supabase DB sanity check
+        if: always() && steps.gate.outputs.should_run == 'true'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "Supabase env missing; skipping DB sanity check."
+            exit 0
+          fi
+          url="${SUPABASE_URL%/}/rest/v1/account_health?select=account_name&limit=1"
+          code="$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+            "$url")"
+          if [ "$code" != "200" ]; then
+            echo "Supabase DB sanity check failed (HTTP $code)."
+          else
+            echo "Supabase DB sanity check OK."
+          fi
+
       - name: Upsert account health into Supabase DB
         if: always() && steps.gate.outputs.should_run == 'true'
         env:
@@ -351,6 +370,17 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           python scripts/ops/upload_account_health_supabase_db.py
+
+      - name: Upload logs to Supabase
+        if: always() && steps.gate.outputs.should_run == 'true'
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET }}
+          SUPABASE_PREFIX: ${{ secrets.SUPABASE_PREFIX }}
+        run: |
+          python scripts/ops/upload_logs_supabase.py
 
       - name: Upload scan results
         if: always() && steps.gate.outputs.should_run == 'true'

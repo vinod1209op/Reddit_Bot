@@ -145,6 +145,18 @@ def main() -> None:
     if events_payload:
         _post_json(f"{rest}/account_status_events", key, events_payload)
 
+    merged_snapshot = {
+        name: {
+            "current_status": data.get(name, {}).get("current_status", "unknown"),
+            "status_history": (data.get(name, {}).get("status_history") or []),
+            "last_success": data.get(name, {}).get("last_success"),
+            "last_updated": data.get(name, {}).get("last_updated"),
+        }
+        for name in sorted(known_accounts)
+    }
+    status_out = Path(__file__).resolve().parents[2] / "data" / "account_status.json"
+    status_out.write_text(json.dumps(merged_snapshot, indent=2))
+
     print(
         f"Upserted {len(accounts_payload)} accounts, "
         f"{len(health_payload)} health rows, "
