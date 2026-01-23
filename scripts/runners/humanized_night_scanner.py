@@ -16,6 +16,7 @@ import random
 import os
 import sys
 import json
+import socket
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -393,6 +394,11 @@ class HumanizedNightScanner:
         self.human_sim = None
         self.engagement = None
         
+        # Track session state
+        self.session_start_time = None
+        self.action_count = 0
+        self.last_tor_rotation_time = None
+        
         # Initialize browser with human-like settings
         self.setup_humanized_browser()
         
@@ -436,6 +442,7 @@ class HumanizedNightScanner:
             raise
 
     def _log_tor_exit_ip(self, tor_port: int) -> None:
+        """Log Tor exit IP for the given port"""
         account_name = self.account.get("name", "unknown")
         proxy_url = f"socks5h://127.0.0.1:{tor_port}"
         try:
@@ -448,12 +455,104 @@ class HumanizedNightScanner:
             )
             response.raise_for_status()
             ip = response.json().get("IP", "unknown")
-            self.logger.info(f"Tor exit for {account_name} (port {tor_port}): {ip}")
+            self.logger.info(f"🌐 Tor exit for {account_name} (port {tor_port}): {ip}")
         except Exception as exc:
             self.logger.warning(
                 f"Tor exit lookup failed for {account_name} (port {tor_port}): {exc}"
             )
 
+    def rotate_tor_circuit(self):
+        """Send NEWNYM command to Tor control port to get new IP"""
+        tor_port = self.account.get("tor_socks_port")
+        if not tor_port:
+            return False
+        
+        control_port = tor_port + 100  # Control port is SOCKS port + 100
+        account_name = self.account.get("name", "unknown")
+        
+        # Log IP before rotation
+        self.logger.info(f"🔄 Rotating Tor circuit for {account_name}...")
+        self._log_tor_exit_ip(tor_port)
+        
+        try:
+            # Read Tor control cookie
+            tor_data_dir = os.getenv("TOR_DATA_DIR", f"/tmp/tor_{tor_port}")
+            cookie_file = os.path.join(tor_data_dir, "control_auth_cookie")
+            
+            if not os.path.exists(cookie_file):
+                self.logger.warning(f"Tor control cookie not found at {cookie_file}")
+                return False
+            
+            # Read cookie as hex
+            with open(cookie_file, "rb") as f:
+                cookie_hex = f.read().hex()
+            
+            # Connect to Tor control port and send NEWNYM
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(10)
+            sock.connect(("127.0.0.1", control_port))
+            
+            # Authenticate
+            sock.send(f"AUTHENTICATE {cookie_hex}\r\n".encode())
+            response = sock.recv(1024).decode()
+            
+            if "250" not in response:
+                self.logger.error(f"Tor authentication failed: {response}")
+                sock.close()
+                return False
+            
+            # Send NEWNYM signal
+            sock.send(b"SIGNAL NEWNYM\r\n")
+            response = sock.recv(1024).decode()
+            
+            if "250" not in response:
+                self.logger.error(f"Tor NEWNYM failed: {response}")
+                sock.close()
+                return False
+            
+            sock.close()
+            
+            # Wait for circuit to rebuild
+            time.sleep(5)
+            
+            # Log new IP
+            self.logger.info(f"✅ Tor circuit rotated for {account_name}")
+            self._log_tor_exit_ip(tor_port)
+            
+            self.last_tor_rotation_time = time.time()
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to rotate Tor circuit: {e}")
+            return False
+
+    def should_rotate_tor(self) -> bool:
+        """Determine if we should rotate Tor circuit based on config and randomness"""
+        # Check if Tor is enabled
+        tor_port = self.account.get("tor_socks_port")
+        if not tor_port:
+            return False
+        
+        # Check if rotation is disabled via config
+        humanization_config = self.activity_config.get("humanization", {})
+        if not humanization_config.get("enable_tor_rotation", True):
+            return False
+        
+        # Check time since last rotation (minimum 10 minutes)
+        if self.last_tor_rotation_time:
+            time_since_last = time.time() - self.last_tor_rotation_time
+            if time_since_last < 600:  # 10 minutes
+                return False
+        
+        # Random chance: 5% per check during session
+        if random.random() < 0.05:
+            return True
+        
+        # Rotate after 20 actions
+        if self.action_count > 0 and self.action_count % 20 == 0:
+            return True
+        
+        return False
 
     def _login_with_cookies(self, cookie_file: str):
         """Login with cookies and return (success, status) tuple."""
@@ -555,12 +654,17 @@ class HumanizedNightScanner:
             )
             
             start_time = time.time()
+            self.session_start_time = start_time
+            self.action_count = 0
+            
             actions_performed = {
                 'votes': 0,
                 'saves': 0,
                 'follows': 0,
                 'posts_viewed': 0,
-                'subreddits_browsed': 0
+                'subreddits_browsed': 0,
+                'navigation_errors': 0,
+                'tor_rotations': 0
             }
             
             # Load target subreddits (allow per-account sharding)
@@ -574,8 +678,18 @@ class HumanizedNightScanner:
             self.logger.info(f"Starting {session_length} minute session for {self.account.get('name')}")
             
             while time.time() - start_time < session_length * 60:
+                # Check if we should rotate Tor circuit
+                if self.should_rotate_tor():
+                    if self.rotate_tor_circuit():
+                        actions_performed['tor_rotations'] += 1
+                        self.humanization_metrics['tor_rotations'] += 1
+                
                 # Choose random activity based on mix
                 activity = self.choose_random_activity()
+                
+                # Add mouse movement before activity (30% chance)
+                if self.human_sim and random.random() < 0.3:
+                    self.human_sim.human_mouse_movement()
                 
                 if activity == 'browse_subreddit':
                     if subreddits:
@@ -609,10 +723,19 @@ class HumanizedNightScanner:
                 elif activity == 'check_notifications':
                     self.check_notifications()
                 
+                # Simulate navigation error (5% chance after each action)
+                if self.human_sim and random.random() < 0.05:
+                    if self.human_sim.simulate_navigation_error(self.driver):
+                        actions_performed['navigation_errors'] += 1
+                
+                # Increment action counter
+                self.action_count += 1
+                
                 # Random delay between actions
                 self.random_delay()
             
-            self.logger.info(f"Session complete. Actions: {actions_performed}")
+             self.logger.info(f"🎯 Humanization metrics: {self.humanization_metrics}")
+            self.logger.info(f"📊 Session complete. Actions: {actions_performed}")
             return actions_performed
             
         except Exception as e:
@@ -634,6 +757,10 @@ class HumanizedNightScanner:
                 pixels = random.randint(300, 800)
                 self.browser_manager.scroll_down(self.driver, pixels)
                 self.browser_manager.add_human_delay(1, 3)
+            
+            # Mouse wander while reading (50% chance)
+            if self.human_sim and random.random() < 0.5:
+                self.human_sim.mouse_wander()
             
             # Occasionally view a post (30% chance)
             if random.random() > 0.7:
@@ -657,8 +784,10 @@ class HumanizedNightScanner:
                         continue
                 target = target or post
 
-                # Human-like reading sequence
+                # Human-like reading sequence with mouse movement
                 if self.human_sim:
+                    # Add mouse movement before clicking
+                    self.human_sim.human_mouse_movement(target)
                     self.human_sim.read_post_sequence(target)
                 else:
                     # Fallback
@@ -704,12 +833,21 @@ class HumanizedNightScanner:
                     except Exception:
                         continue
                 target = target or post
+                
+                # Add mouse movement before clicking
+                if self.human_sim:
+                    self.human_sim.human_mouse_movement(target)
+                
                 self.browser_manager.safe_click(self.driver, target)
                 self.browser_manager.add_human_delay(3, 6)
                 
                 # Scroll through the post
                 self.browser_manager.scroll_down(self.driver, random.randint(200, 600))
                 self.browser_manager.add_human_delay(1, 2)
+                
+                # Mouse wander while reading
+                if self.human_sim and random.random() < 0.4:
+                    self.human_sim.mouse_wander()
                 
                 # Go back
                 self.driver.back()
@@ -737,6 +875,11 @@ class HumanizedNightScanner:
                 # Random chance to vote (30%)
                 if random.random() > 0.7:
                     button = random.choice(upvote_buttons[:3])  # Only from top 3
+                    
+                    # Add mouse movement before clicking
+                    if self.human_sim:
+                        self.human_sim.human_mouse_movement(button)
+                    
                     self.browser_manager.safe_click(self.driver, button)
                     self.browser_manager.add_human_delay(0.5, 1)
                     return True
@@ -894,7 +1037,13 @@ class MultiAccountOrchestrator:
         # Initialize account status tracker
         self.status_tracker = AccountStatusTracker()
         self.logger.info(f"Account status tracker initialized. Tracking {len(self.status_tracker.status_data)} accounts")
-    
+        self.humanization_metrics = {
+            'navigation_errors': 0,
+            'tor_rotations': 0,
+            'mouse_movements': 0
+        }
+
+
     def load_accounts(self):
         """Load accounts from config"""
         try:
@@ -989,6 +1138,18 @@ class MultiAccountOrchestrator:
         config = copy.deepcopy(self.base_activity_config) if self.base_activity_config else {}
         config = self._apply_profile(config, profile_name)
         config = self._filter_activity_mix(config)
+        
+        # Add default humanization settings if not present
+        if "humanization" not in config:
+            config["humanization"] = {
+                "enable_mouse_movement": True,
+                "enable_navigation_errors": True,
+                "enable_tor_rotation": True,
+                "mouse_movement_intensity": "medium",
+                "navigation_error_rate": 0.05,
+                "mouse_wander_frequency": 0.3
+            }
+        
         return config
 
     def handle_login_status(self, account_name: str, success: bool, status: str) -> bool:

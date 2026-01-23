@@ -661,8 +661,55 @@ def log_ui(message: str, level: str = "info") -> None:
     if len(log) > 80:
         del log[:-80]
 
+def _fetch_supabase_count(table: str, filters: dict[str, str]) -> int:
+    url, key = _supabase_config()
+    if not url or not key:
+        return 0
+    base = f"{url.rstrip('/')}/rest/v1/{table}"
+    params = {"select": "id", "limit": "1"}
+    params.update(filters)
+    headers = _supabase_headers(key)
+    headers["Prefer"] = "count=exact"
+    try:
+        resp = requests.get(base, headers=headers, params=params, timeout=15)
+        if resp.status_code >= 300:
+            return 0
+        content_range = resp.headers.get("Content-Range", "")
+        if "/" in content_range:
+            return int(content_range.split("/")[-1])
+    except Exception:
+        return 0
+    return 0
+
+def _fetch_supabase_last_run() -> str:
+    url, key = _supabase_config()
+    if not url or not key:
+        return "No runs yet"
+    base = f"{url.rstrip('/')}/rest/v1/scan_runs"
+    params = {"select": "timestamp_utc", "order": "timestamp_utc.desc", "limit": "1"}
+    headers = _supabase_headers(key)
+    try:
+        resp = requests.get(base, headers=headers, params=params, timeout=15)
+        if resp.status_code >= 300:
+            return "No runs yet"
+        rows = resp.json() if isinstance(resp.json(), list) else []
+        if not rows:
+            return "No runs yet"
+        ts = rows[0].get("timestamp_utc")
+        if not ts:
+            return "Unknown"
+        try:
+            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            return dt.strftime("%b %d %H:%M")
+        except Exception:
+            return "Unknown"
+    except Exception:
+        return "No runs yet"
 
 def get_queue_count() -> int:
+    sb_count = _fetch_supabase_count("scan_events", {"status": "eq.pending"})
+    if sb_count:
+        return sb_count
     queue_path = PROJECT_ROOT / "logs" / "night_queue.json"
     data = _load_json(queue_path)
     if isinstance(data, list):
@@ -671,6 +718,9 @@ def get_queue_count() -> int:
 
 
 def get_last_run_timestamp() -> str:
+    sb_last = _fetch_supabase_last_run()
+    if sb_last != "No runs yet":
+        return sb_last
     log_path = PROJECT_ROOT / "logs" / "selenium_automation.log"
     if not log_path.exists():
         return "No runs yet"
