@@ -211,11 +211,18 @@ jobs:
           DataDirectory $DATADIR
           ControlPort $((PORT + 100))
           CookieAuthentication 1
+          Log notice file $DATADIR/tor.log
           ExitNodes {${{ matrix.tor_country }}}
           StrictNodes 1
           EOF
           tor -f "$DATADIR/torrc" --RunAsDaemon 1
-          sleep 8
+          for i in {1..60}; do
+            if [ -f "$DATADIR/tor.log" ] && grep -q "Bootstrapped 100%" "$DATADIR/tor.log"; then
+              echo "Tor bootstrapped."
+              break
+            fi
+            sleep 1
+          done
           echo "TOR_DATA_DIR=$DATADIR" >> "$GITHUB_ENV"
           echo "TOR_CONTROL_PORT=$((PORT + 100))" >> "$GITHUB_ENV"
           echo "🔍 Checking Tor IP for ${{ matrix.account }} on port $PORT..."
