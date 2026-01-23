@@ -225,6 +225,25 @@ jobs:
             echo "Tor proxy test failed on port $PORT, continuing anyway"
           fi
 
+      - name: Debug Tor rotation
+        if: steps.gate.outputs.should_run == 'true'
+        run: |
+          set -euo pipefail
+          if [ -z "${TOR_DATA_DIR:-}" ] || [ -z "${TOR_CONTROL_PORT:-}" ]; then
+            echo "Tor control vars missing; skipping debug."
+            exit 0
+          fi
+          PORT=${{ matrix.tor_port }}
+          echo "TOR_DATA_DIR=$TOR_DATA_DIR"
+          echo "TOR_CONTROL_PORT=$TOR_CONTROL_PORT"
+          echo "Checking Tor IP on port $PORT..."
+          ip_info="$(curl --socks5-hostname 127.0.0.1:$PORT -sS https://check.torproject.org/api/ip || true)"
+          echo "Tor IP Info: $ip_info"
+          echo "Checking control port $TOR_CONTROL_PORT..."
+          nc -z 127.0.0.1 "$TOR_CONTROL_PORT" && echo "Control port OPEN" || echo "Control port CLOSED"
+          COOKIE_FILE="/tmp/tor_$PORT/control_auth_cookie"
+          ls -la $COOKIE_FILE || echo "No cookie file"
+
       - name: Rotate Tor circuit (NEWNYM)
         if: steps.gate.outputs.should_run == 'true'
         run: |

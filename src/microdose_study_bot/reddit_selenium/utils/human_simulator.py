@@ -367,6 +367,8 @@ class HumanSimulator:
     def read_post_sequence(self, post_element, read_time_factor=1.0):
         """Simulate reading a post naturally"""
         try:
+            if not self.driver:
+                return False
             # Move mouse to post with human-like movement
             self.human_mouse_movement(post_element, intensity="medium")
             
@@ -394,11 +396,11 @@ class HumanSimulator:
                 self.safe_upvote()
             
             # Go back or close
-            if random.random() > 0.5:
-                driver.back()
-            else:
-                # Close modal if applicable
-                driver.execute_script("window.history.back();")
+            if self.driver:
+                if random.random() > 0.5:
+                    self.driver.back()
+                else:
+                    self.driver.execute_script("window.history.back();")
             
             time.sleep(random.uniform(1, 3))
             return True

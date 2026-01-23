@@ -401,6 +401,12 @@ class HumanizedNightScanner:
         
         # Initialize browser with human-like settings
         self.setup_humanized_browser()
+        self.humanization_metrics = {
+            'navigation_errors': 0,
+            'tor_rotations': 0,
+            'mouse_movements': 0
+        }
+
         
     def setup_humanized_browser(self):
         """Setup browser with randomized fingerprint using BrowserManager"""
@@ -441,8 +447,8 @@ class HumanizedNightScanner:
             self.logger.error(f"Failed to setup browser: {e}")
             raise
 
-    def _log_tor_exit_ip(self, tor_port: int) -> None:
-        """Log Tor exit IP for the given port"""
+    def _log_tor_exit_ip(self, tor_port: int) -> Optional[str]:
+        """Log Tor exit IP for the given port and return it."""
         account_name = self.account.get("name", "unknown")
         proxy_url = f"socks5h://127.0.0.1:{tor_port}"
         try:
@@ -456,10 +462,12 @@ class HumanizedNightScanner:
             response.raise_for_status()
             ip = response.json().get("IP", "unknown")
             self.logger.info(f"🌐 Tor exit for {account_name} (port {tor_port}): {ip}")
+            return ip
         except Exception as exc:
             self.logger.warning(
                 f"Tor exit lookup failed for {account_name} (port {tor_port}): {exc}"
             )
+            return None
 
     def rotate_tor_circuit(self):
         """Send NEWNYM command to Tor control port to get new IP"""
@@ -472,7 +480,7 @@ class HumanizedNightScanner:
         
         # Log IP before rotation
         self.logger.info(f"🔄 Rotating Tor circuit for {account_name}...")
-        self._log_tor_exit_ip(tor_port)
+        before_ip = self._log_tor_exit_ip(tor_port)
         
         try:
             # Read Tor control cookie
@@ -511,13 +519,24 @@ class HumanizedNightScanner:
                 return False
             
             sock.close()
+            self.logger.info(f"✅ NEWNYM requested for {account_name}")
             
             # Wait for circuit to rebuild
             time.sleep(5)
             
             # Log new IP
-            self.logger.info(f"✅ Tor circuit rotated for {account_name}")
-            self._log_tor_exit_ip(tor_port)
+            after_ip = self._log_tor_exit_ip(tor_port)
+            if before_ip and after_ip:
+                if before_ip == after_ip:
+                    self.logger.warning(
+                        f"⚠️ Tor IP unchanged for {account_name}: {before_ip}"
+                    )
+                else:
+                    self.logger.info(
+                        f"✅ Tor IP changed for {account_name}: {before_ip} -> {after_ip}"
+                    )
+            else:
+                self.logger.info(f"✅ Tor circuit rotated for {account_name}")
             
             self.last_tor_rotation_time = time.time()
             return True
@@ -1037,12 +1056,6 @@ class MultiAccountOrchestrator:
         # Initialize account status tracker
         self.status_tracker = AccountStatusTracker()
         self.logger.info(f"Account status tracker initialized. Tracking {len(self.status_tracker.status_data)} accounts")
-        self.humanization_metrics = {
-            'navigation_errors': 0,
-            'tor_rotations': 0,
-            'mouse_movements': 0
-        }
-
 
     def load_accounts(self):
         """Load accounts from config"""
