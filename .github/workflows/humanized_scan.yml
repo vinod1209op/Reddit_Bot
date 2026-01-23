@@ -141,6 +141,15 @@ jobs:
             -o "data/cookies_${{ matrix.account }}.pkl"
           ls -la "data/cookies_${{ matrix.account }}.pkl"
 
+      - name: Check cookie envs (safe)
+        if: steps.gate.outputs.should_run == 'true'
+        run: |
+          [ -n "${{ secrets.SUPABASE_URL }}" ] && echo "SUPABASE_URL set" || echo "SUPABASE_URL missing"
+          [ -n "${{ secrets.SUPABASE_BUCKET }}" ] && echo "SUPABASE_BUCKET set" || echo "SUPABASE_BUCKET missing"
+          [ -n "${{ secrets.SUPABASE_COOKIES_ACCOUNT1_PATH }}" ] && echo "COOKIES_ACCOUNT1_PATH set" || echo "COOKIES_ACCOUNT1_PATH missing"
+          [ -n "${{ secrets.SUPABASE_COOKIES_ACCOUNT2_PATH }}" ] && echo "COOKIES_ACCOUNT2_PATH set" || echo "COOKIES_ACCOUNT2_PATH missing"
+          [ -n "${{ secrets.SUPABASE_COOKIES_ACCOUNT3_PATH }}" ] && echo "COOKIES_ACCOUNT3_PATH set" || echo "COOKIES_ACCOUNT3_PATH missing"
+
       - name: Create minimal env file
         if: steps.gate.outputs.should_run == 'true'
         run: |
