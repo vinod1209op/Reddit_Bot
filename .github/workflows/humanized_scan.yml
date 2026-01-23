@@ -123,6 +123,10 @@ jobs:
           SUPABASE_COOKIES_ACCOUNT3_PATH: ${{ secrets.SUPABASE_COOKIES_ACCOUNT3_PATH }}
         run: |
           mkdir -p data
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_BUCKET:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "Supabase env missing; skipping cookie download."
+            exit 0
+          fi
           case "${{ matrix.account }}" in
             account1) remote_path="${SUPABASE_COOKIES_ACCOUNT1_PATH:-}" ;;
             account2) remote_path="${SUPABASE_COOKIES_ACCOUNT2_PATH:-}" ;;
@@ -140,6 +144,33 @@ jobs:
             "$url" \
             -o "data/cookies_${{ matrix.account }}.pkl"
           ls -la "data/cookies_${{ matrix.account }}.pkl"
+
+      - name: Restore account_status.json
+        if: steps.gate.outputs.should_run == 'true'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET }}
+          SUPABASE_PREFIX: ${{ secrets.SUPABASE_PREFIX }}
+        run: |
+          mkdir -p data
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_BUCKET:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "Supabase env missing; skipping account status download."
+            exit 0
+          fi
+          prefix="${SUPABASE_PREFIX:-scan-results/humanized}"
+          status_path="${prefix%/}/account_status.json"
+          url="${SUPABASE_URL%/}/storage/v1/object/${SUPABASE_BUCKET}/${status_path#/}"
+          code="$(curl -s -o data/account_status.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+            "$url")"
+          if [ "$code" != "200" ]; then
+            echo "No account_status.json found in Supabase (HTTP $code); continuing."
+            rm -f data/account_status.json
+            exit 0
+          fi
+          ls -la data/account_status.json
 
       - name: Check cookie envs (safe)
         if: steps.gate.outputs.should_run == 'true'
@@ -236,8 +267,8 @@ jobs:
             exit 0
           fi
           PATTERN="account suspended|account disabled|account locked|account restricted|you have been permanently banned|you have been temporarily banned|your account has been suspended|your account has been permanently suspended|your account has been temporarily suspended|suspicious activity|login failed|cookie login verification failed"
-          if rg -i "$PATTERN" logs/ci_humanized_scan.log; then
-            echo "Ban/restriction signals detected in logs. Failing the run."
+          if grep -Eqi "$PATTERN" logs/ci_humanized_scan.log; then
+            echo "Ban/restriction signals detected in logs." | tee -a logs/ban_alert.log
             exit 1
           fi
 

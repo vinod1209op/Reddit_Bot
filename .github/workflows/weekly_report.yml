@@ -1,0 +1,68 @@
+name: Weekly Account Report
+
+on:
+  schedule:
+    - cron: "0 13 * * 1" # Mondays 13:00 UTC
+  workflow_dispatch:
+
+jobs:
+  weekly-report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generate weekly account report
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET }}
+          SUPABASE_PREFIX: ${{ secrets.SUPABASE_PREFIX }}
+        run: |
+          python scripts/weekly_account_report.py
+
+      - name: Prepare email body
+        run: |
+          if [ -f logs/weekly_account_report.md ]; then
+            {
+              echo "EMAIL_BODY<<'EOF'"
+              cat logs/weekly_account_report.md
+              echo "EOF"
+            } >> "$GITHUB_ENV"
+          else
+            echo "EMAIL_BODY=Weekly report generated. Check Supabase logs for details." >> "$GITHUB_ENV"
+          fi
+
+      - name: Upload report to Supabase
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET }}
+          SUPABASE_PREFIX: ${{ secrets.SUPABASE_PREFIX }}
+        run: |
+          python scripts/ops/upload_logs_supabase.py
+
+      - name: Email weekly report
+        if: always()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "Weekly account health report"
+          body: ${{ env.EMAIL_BODY }}
+          to: ${{ secrets.ALERT_EMAIL_TO }}
+          from: Bot Alerts <${{ secrets.SMTP_USERNAME }}>
+        continue-on-error: true
