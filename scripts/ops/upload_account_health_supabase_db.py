@@ -143,7 +143,12 @@ def main() -> None:
     _post_json(f"{rest}/accounts", key, accounts_payload, on_conflict="account_name")
     _post_json(f"{rest}/account_health", key, health_payload, on_conflict="account_name")
     if events_payload:
-        _post_json(f"{rest}/account_status_events", key, events_payload)
+        _post_json(
+            f"{rest}/account_status_events",
+            key,
+            events_payload,
+            on_conflict="account_name,status,source,detected_at",
+        )
 
     merged_snapshot = {
         name: {
