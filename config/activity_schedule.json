@@ -94,8 +94,8 @@
     },
     "session_length_minutes": {
       "min": 10,
-      "max": 15,
-      "distribution": "normal"
+      "max": 25,
+      "distribution": "uniform"
     },
     "jitter_percentage": 20
   },

@@ -52,15 +52,8 @@ jobs:
           DISPATCH_ACCOUNT: ${{ github.event.inputs.account }}
           MATRIX_ACCOUNT: ${{ matrix.account }}
           MATRIX_CRON: ${{ matrix.cron }}
-          PAUSE_SCHEDULED_RUNS: ${{ secrets.PAUSE_SCHEDULED_RUNS }}
         run: |
           should_run=false
-          if [ "$PAUSE_SCHEDULED_RUNS" = "1" ]; then
-            echo "Scheduled runs paused via PAUSE_SCHEDULED_RUNS=1"
-            should_run=false
-            echo "should_run=$should_run" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             if [ -z "$DISPATCH_ACCOUNT" ] || [ "$DISPATCH_ACCOUNT" = "$MATRIX_ACCOUNT" ]; then
               should_run=true
@@ -223,12 +216,38 @@ jobs:
           EOF
           tor -f "$DATADIR/torrc" --RunAsDaemon 1
           sleep 8
+          echo "TOR_DATA_DIR=$DATADIR" >> "$GITHUB_ENV"
+          echo "TOR_CONTROL_PORT=$((PORT + 100))" >> "$GITHUB_ENV"
           echo "🔍 Checking Tor IP for ${{ matrix.account }} on port $PORT..."
           if curl --socks5-hostname 127.0.0.1:$PORT https://check.torproject.org/api/ip; then
             echo "Tor proxy test succeeded on port $PORT"
           else
             echo "Tor proxy test failed on port $PORT, continuing anyway"
           fi
+
+      - name: Rotate Tor circuit (NEWNYM)
+        if: steps.gate.outputs.should_run == 'true'
+        run: |
+          set -euo pipefail
+          if [ -z "${TOR_DATA_DIR:-}" ] || [ -z "${TOR_CONTROL_PORT:-}" ]; then
+            echo "Tor control vars missing; skipping NEWNYM."
+            exit 0
+          fi
+          PORT=${{ matrix.tor_port }}
+          echo "Checking Tor IP before NEWNYM on port $PORT..."
+          before_ip="$(curl --socks5-hostname 127.0.0.1:$PORT -sS https://check.torproject.org/api/ip || true)"
+          echo "Before: ${before_ip:-<unavailable>}"
+          cookie_file="$TOR_DATA_DIR/control_auth_cookie"
+          if [ ! -f "$cookie_file" ]; then
+            echo "Tor control cookie not found at $cookie_file; skipping NEWNYM."
+            exit 0
+          fi
+          cookie_hex="$(hexdump -v -e '/1 "%02x"' "$cookie_file")"
+          printf 'AUTHENTICATE %s\r\nSIGNAL NEWNYM\r\nQUIT\r\n' "$cookie_hex" | nc 127.0.0.1 "$TOR_CONTROL_PORT"
+          sleep 5
+          after_ip="$(curl --socks5-hostname 127.0.0.1:$PORT -sS https://check.torproject.org/api/ip || true)"
+          echo "After: ${after_ip:-<unavailable>}"
+          echo "Tor NEWNYM sent on control port $TOR_CONTROL_PORT"
 
       - name: Run humanized night scanner with Tor
         if: steps.gate.outputs.should_run == 'true'
