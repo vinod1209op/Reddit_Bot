@@ -57,6 +57,20 @@ def _post_json(url: str, key: str, payload: Any, on_conflict: str | None = None)
         raise RuntimeError(f"{resp.status_code}: {resp.text}")
 
 
+def _fetch_accounts(base_url: str, key: str) -> List[str]:
+    url = f"{base_url.rstrip('/')}/rest/v1/accounts"
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "apikey": key,
+        "Accept": "application/json",
+    }
+    resp = requests.get(url, headers=headers, params={"select": "account_name"}, timeout=30)
+    if resp.status_code >= 300:
+        raise RuntimeError(f"{resp.status_code}: {resp.text}")
+    rows = resp.json() if resp.content else []
+    return [row.get("account_name") for row in rows if row.get("account_name")]
+
+
 def main() -> None:
     base_url = _env("SUPABASE_URL")
     key = _env("SUPABASE_SERVICE_ROLE_KEY")
@@ -78,7 +92,12 @@ def main() -> None:
     health_payload = []
     events_payload = []
 
-    for name, info in data.items():
+    known_accounts = set(_fetch_accounts(base_url, key))
+    for name in data.keys():
+        known_accounts.add(name)
+
+    for name in sorted(known_accounts):
+        info = data.get(name, {}) or {}
         current = info.get("current_status", "unknown")
         accounts_payload.append({"account_name": name, "status": current})
 
