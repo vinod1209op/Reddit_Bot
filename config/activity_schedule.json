@@ -63,7 +63,7 @@
         "enable_tor_rotation": false,
         "mouse_movement_intensity": "low",
         "mouse_movement_chance": { "min": 0.4, "max": 0.6 },
-        "navigation_error_rate": { "min": 0.08, "max": 0.12 },
+        "navigation_error_rate": { "min": 0.12, "max": 0.18 },
         "mouse_wander_frequency": 0.2
       }
     },
@@ -89,7 +89,7 @@
         "enable_tor_rotation": true,
         "mouse_movement_intensity": "medium",
         "mouse_movement_chance": { "min": 0.4, "max": 0.6 },
-        "navigation_error_rate": { "min": 0.08, "max": 0.12 },
+        "navigation_error_rate": { "min": 0.12, "max": 0.18 },
         "mouse_wander_frequency": 0.3
       }
     },
@@ -115,7 +115,7 @@
         "enable_tor_rotation": true,
         "mouse_movement_intensity": "high",
         "mouse_movement_chance": { "min": 0.4, "max": 0.6 },
-        "navigation_error_rate": { "min": 0.08, "max": 0.12 },
+        "navigation_error_rate": { "min": 0.12, "max": 0.18 },
         "mouse_wander_frequency": 0.4
       }
     }
@@ -146,10 +146,10 @@
     "enable_tor_rotation": true,
     "mouse_movement_intensity": "medium",
     "mouse_movement_chance": { "min": 0.4, "max": 0.6 },
-    "navigation_error_rate": { "min": 0.08, "max": 0.12 },
+    "navigation_error_rate": { "min": 0.12, "max": 0.18 },
     "mouse_wander_frequency": 0.3,
     "tor_rotation_interval_minutes": 10,
-    "tor_rotation_chance_per_action": { "min": 0.10, "max": 0.15 },
+    "tor_rotation_chance_per_action": { "min": 0.05, "max": 0.08 },
     "mouse_wander_duration_seconds": {
       "min": 2,
       "max": 5

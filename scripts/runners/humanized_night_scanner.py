@@ -664,11 +664,18 @@ class HumanizedNightScanner:
         humanization_config = self.activity_config.get("humanization", {})
         if not humanization_config.get("enable_tor_rotation", True):
             return False
+
+        # Wait at least 10 minutes from session start before first rotation
+        if self.session_start_time:
+            if time.time() - self.session_start_time < 600:
+                return False
         
-        # Check time since last rotation (minimum 10 minutes)
+        # Check time since last rotation (minimum interval from config)
+        min_interval_minutes = float(humanization_config.get("tor_rotation_interval_minutes", 10) or 10)
+        min_interval_seconds = max(600.0, min_interval_minutes * 60.0)
         if self.last_tor_rotation_time:
             time_since_last = time.time() - self.last_tor_rotation_time
-            if time_since_last < 600:  # 10 minutes
+            if time_since_last < min_interval_seconds:
                 return False
         
         # Random chance per check during session
@@ -790,7 +797,6 @@ class HumanizedNightScanner:
             if isinstance(base_mix, dict) and base_mix:
                 jitter_pct = random.uniform(0.35, 0.75)
                 self.activity_config["activity_mix"] = _jitter_activity_mix(base_mix, jitter_pct=jitter_pct)
-                self.logger.info(f"🎲 Activity mix jitter: {int(jitter_pct*100)}%")
             
             start_time = time.time()
             self.session_start_time = start_time
@@ -884,7 +890,6 @@ class HumanizedNightScanner:
                 # Random delay between actions
                 self.random_delay()
             
-            self.logger.info(f"🎯 Humanization metrics: {self.humanization_metrics}")
             self.logger.info(f"📊 Session complete. Actions: {actions_performed}")
             return actions_performed
             
