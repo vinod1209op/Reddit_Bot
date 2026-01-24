@@ -492,6 +492,30 @@ class BrowserManager:
                 self.scroll_to_element(driver, element)
 
             time.sleep(random.uniform(0.2, 0.6))
+            # Try to dismiss blocking modals that intercept clicks
+            try:
+                driver.execute_script(
+                    """
+                    (function() {
+                        const selectors = [
+                            ".archived-error-modal",
+                            ".modal",
+                            "[role='dialog']",
+                            "[aria-modal='true']"
+                        ];
+                        selectors.forEach(sel => {
+                            document.querySelectorAll(sel).forEach(node => {
+                                const close = node.querySelector("button.close, .close, [aria-label='Close']");
+                                if (close) {
+                                    close.click();
+                                }
+                            });
+                        });
+                    })();
+                    """
+                )
+            except Exception:
+                pass
             try:
                 WebDriverWait(driver, self.wait_time).until(
                     lambda d: element.is_displayed() and element.is_enabled()

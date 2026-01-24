@@ -266,7 +266,7 @@ class HumanSimulator:
         try:
             error_type = random.choices(
                 ["wrong_click", "unnecessary_back", "accidental_refresh", "scroll_error", "none"],
-                weights=[0.3, 0.25, 0.2, 0.2, 0.05]  # 5% chance of no error
+                weights=[0.15, 0.35, 0.25, 0.2, 0.05]
             )[0]
             
             if error_type == "none":
@@ -365,15 +365,9 @@ class HumanSimulator:
                 return False
                 
         except Exception as e:
-            self.log(f"Wrong click simulation failed: {e}")
+            print(f"[HumanSimulator] Wrong click simulation failed: {e}")
             return False
-    
-    def log(self, message):
-        """Helper for logging"""
-        try:
-            print(f"[HumanSimulator] {message}")
-        except:
-            pass
+
     
     def read_post_sequence(self, post_element, read_time_factor=1.0):
         """Simulate reading a post naturally"""
