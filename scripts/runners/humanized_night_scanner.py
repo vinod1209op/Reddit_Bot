@@ -19,7 +19,7 @@ import json
 import socket
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 try:
     from zoneinfo import ZoneInfo

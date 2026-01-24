@@ -3,20 +3,28 @@
   "login_method": "cookies_then_google",
   "time_windows": [
     {
-      "name": "early_morning",
-      "start": "06:00",
-      "end": "08:30",
-      "timezone": "America/Los_Angeles",
-      "intensity": "medium",
-      "actions": ["browse", "view_posts", "scroll", "vote", "save", "follow", "check_notifications"]
-    },
-    {
-      "name": "late_night",
+      "name": "account1_late_night",
       "start": "22:00",
       "end": "00:30",
       "timezone": "America/Los_Angeles",
       "intensity": "high",
-      "actions": ["browse", "view_posts", "scroll", "vote", "save", "follow"]
+      "actions": ["browse", "view_posts", "scroll", "vote", "save", "follow", "check_notifications"]
+    },
+    {
+      "name": "account2_late_night",
+      "start": "22:00",
+      "end": "00:30",
+      "timezone": "Europe/London",
+      "intensity": "high",
+      "actions": ["browse", "view_posts", "scroll", "vote", "save", "follow", "check_notifications"]
+    },
+    {
+      "name": "account3_late_night",
+      "start": "22:00",
+      "end": "00:30",
+      "timezone": "Europe/Berlin",
+      "intensity": "high",
+      "actions": ["browse", "view_posts", "scroll", "vote", "save", "follow", "check_notifications"]
     }
   ],
   "allow_voting": true,
