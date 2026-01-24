@@ -119,6 +119,41 @@ def normalize_login_method(value: Optional[str]) -> str:
     return LOGIN_METHOD_ALIASES.get(key, "cookies_then_google")
 
 
+def _rate_from_config(value: Any, default_min: float, default_max: float) -> float:
+    if isinstance(value, dict):
+        try:
+            min_val = float(value.get("min", default_min))
+            max_val = float(value.get("max", default_max))
+            min_val = max(0.0, min(min_val, 1.0))
+            max_val = max(min_val, min(max_val, 1.0))
+            return random.uniform(min_val, max_val)
+        except Exception:
+            return random.uniform(default_min, default_max)
+    if isinstance(value, (int, float)):
+        return max(0.0, min(float(value), 1.0))
+    return random.uniform(default_min, default_max)
+
+
+def _jitter_activity_mix(
+    base_mix: Dict[str, float],
+    jitter_pct: float = 0.5,
+    floor: float = 1.0,
+) -> Dict[str, float]:
+    """Randomize activity weights heavily while preserving available actions."""
+    if not base_mix:
+        return {}
+    jitter_pct = max(0.0, float(jitter_pct))
+    randomized: Dict[str, float] = {}
+    for key, weight in base_mix.items():
+        try:
+            w = float(weight)
+        except Exception:
+            w = 0.0
+        jitter = random.uniform(1.0 - jitter_pct, 1.0 + jitter_pct)
+        randomized[key] = max(floor, w * jitter)
+    return randomized
+
+
 def in_time_window(current_time, start_time, end_time) -> bool:
     if start_time <= end_time:
         return start_time <= current_time <= end_time
@@ -636,8 +671,13 @@ class HumanizedNightScanner:
             if time_since_last < 600:  # 10 minutes
                 return False
         
-        # Random chance: 5% per check during session
-        if random.random() < 0.05:
+        # Random chance per check during session
+        chance = _rate_from_config(
+            humanization_config.get("tor_rotation_chance_per_action"),
+            0.10,
+            0.15,
+        )
+        if random.random() < chance:
             return True
         
         # Rotate after 20 actions
@@ -744,6 +784,13 @@ class HumanizedNightScanner:
                 self.activity_config['randomization']['session_length_minutes']['min'],
                 self.activity_config['randomization']['session_length_minutes']['max']
             )
+
+            # Heavily randomize activity weights per session
+            base_mix = self.activity_config.get("activity_mix", {})
+            if isinstance(base_mix, dict) and base_mix:
+                jitter_pct = random.uniform(0.35, 0.75)
+                self.activity_config["activity_mix"] = _jitter_activity_mix(base_mix, jitter_pct=jitter_pct)
+                self.logger.info(f"🎲 Activity mix jitter: {int(jitter_pct*100)}%")
             
             start_time = time.time()
             self.session_start_time = start_time
@@ -779,8 +826,14 @@ class HumanizedNightScanner:
                 # Choose random activity based on mix
                 activity = self.choose_random_activity()
                 
-                # Add mouse movement before activity (30% chance)
-                if self.human_sim and random.random() < 0.3:
+                humanization_config = self.activity_config.get("humanization", {})
+                mouse_chance = _rate_from_config(
+                    humanization_config.get("mouse_movement_chance"),
+                    0.40,
+                    0.60,
+                )
+                # Add mouse movement before activity
+                if self.human_sim and random.random() < mouse_chance:
                     self.human_sim.human_mouse_movement()
                 
                 if activity == 'browse_subreddit':
@@ -815,8 +868,13 @@ class HumanizedNightScanner:
                 elif activity == 'check_notifications':
                     self.check_notifications()
                 
-                # Simulate navigation error (5% chance after each action)
-                if self.human_sim and random.random() < 0.05:
+                nav_error_chance = _rate_from_config(
+                    humanization_config.get("navigation_error_rate"),
+                    0.08,
+                    0.12,
+                )
+                # Simulate navigation error after each action
+                if self.human_sim and random.random() < nav_error_chance:
                     if self.human_sim.simulate_navigation_error(self.driver):
                         actions_performed['navigation_errors'] += 1
                 
@@ -1077,8 +1135,12 @@ class HumanizedNightScanner:
     def choose_random_activity(self):
         """Choose activity based on weighted distribution"""
         try:
-            activities = list(self.activity_config['activity_mix'].keys())
-            weights = list(self.activity_config['activity_mix'].values())
+            mix = self.activity_config.get("activity_mix", {})
+            activities = list(mix.keys())
+            weights = list(mix.values())
+            if activities and random.random() < 0.1:
+                # Occasionally ignore weights to break patterns
+                return random.choice(activities)
             return random.choices(activities, weights=weights)[0]
         except:
             # Default activities if config is wrong

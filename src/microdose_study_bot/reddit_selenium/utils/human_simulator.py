@@ -331,6 +331,17 @@ class HumanSimulator:
             
             # Choose a random wrong element (not the first one)
             wrong_element = random.choice(clickables[1:min(5, len(clickables))])
+
+            # Skip elements without size/location or not visible
+            try:
+                if not wrong_element.is_displayed():
+                    return False
+                rect = wrong_element.rect or {}
+                if rect.get("width", 0) <= 0 or rect.get("height", 0) <= 0:
+                    return False
+                driver.execute_script("arguments[0].scrollIntoView({block: 'center', inline: 'center'});", wrong_element)
+            except Exception:
+                return False
             
             # Move mouse to wrong element with human-like movement
             self.human_mouse_movement(wrong_element, intensity="low")

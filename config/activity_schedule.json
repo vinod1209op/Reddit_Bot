@@ -53,8 +53,8 @@
       },
       "randomization": {
         "session_length_minutes": {
-          "min": 10,
-          "max": 15
+          "min": 12,
+          "max": 25
         }
       },
       "humanization": {
@@ -62,7 +62,8 @@
         "enable_navigation_errors": false,
         "enable_tor_rotation": false,
         "mouse_movement_intensity": "low",
-        "navigation_error_rate": 0.02,
+        "mouse_movement_chance": { "min": 0.4, "max": 0.6 },
+        "navigation_error_rate": { "min": 0.08, "max": 0.12 },
         "mouse_wander_frequency": 0.2
       }
     },
@@ -78,8 +79,8 @@
       },
       "randomization": {
         "session_length_minutes": {
-          "min": 10,
-          "max": 15
+          "min": 12,
+          "max": 25
         }
       },
       "humanization": {
@@ -87,7 +88,8 @@
         "enable_navigation_errors": true,
         "enable_tor_rotation": true,
         "mouse_movement_intensity": "medium",
-        "navigation_error_rate": 0.05,
+        "mouse_movement_chance": { "min": 0.4, "max": 0.6 },
+        "navigation_error_rate": { "min": 0.08, "max": 0.12 },
         "mouse_wander_frequency": 0.3
       }
     },
@@ -103,8 +105,8 @@
       },
       "randomization": {
         "session_length_minutes": {
-          "min": 10,
-          "max": 15
+          "min": 12,
+          "max": 25
         }
       },
       "humanization": {
@@ -112,7 +114,8 @@
         "enable_navigation_errors": true,
         "enable_tor_rotation": true,
         "mouse_movement_intensity": "high",
-        "navigation_error_rate": 0.08,
+        "mouse_movement_chance": { "min": 0.4, "max": 0.6 },
+        "navigation_error_rate": { "min": 0.08, "max": 0.12 },
         "mouse_wander_frequency": 0.4
       }
     }
@@ -125,7 +128,7 @@
       "max_seconds": 12
     },
     "session_length_minutes": {
-      "min": 10,
+      "min": 12,
       "max": 25,
       "distribution": "uniform"
     },
@@ -142,10 +145,11 @@
     "enable_navigation_errors": true,
     "enable_tor_rotation": true,
     "mouse_movement_intensity": "medium",
-    "navigation_error_rate": 0.05,
+    "mouse_movement_chance": { "min": 0.4, "max": 0.6 },
+    "navigation_error_rate": { "min": 0.08, "max": 0.12 },
     "mouse_wander_frequency": 0.3,
     "tor_rotation_interval_minutes": 10,
-    "tor_rotation_chance_per_action": 0.05,
+    "tor_rotation_chance_per_action": { "min": 0.10, "max": 0.15 },
     "mouse_wander_duration_seconds": {
       "min": 2,
       "max": 5

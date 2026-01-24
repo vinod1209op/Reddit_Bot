@@ -706,6 +706,23 @@ def _fetch_supabase_last_run() -> str:
     except Exception:
         return "No runs yet"
 
+def _fetch_supabase_rows(table: str, params: dict[str, str], limit: int = 1000) -> list[dict]:
+    url, key = _supabase_config()
+    if not url or not key:
+        return []
+    base = f"{url.rstrip('/')}/rest/v1/{table}"
+    headers = _supabase_headers(key)
+    params = dict(params)
+    params.setdefault("limit", str(limit))
+    try:
+        resp = requests.get(base, headers=headers, params=params, timeout=20)
+        if resp.status_code >= 300:
+            return []
+        rows = resp.json()
+        return rows if isinstance(rows, list) else []
+    except Exception:
+        return []
+
 def get_queue_count() -> int:
     sb_count = _fetch_supabase_count("scan_events", {"status": "eq.pending"})
     if sb_count:
@@ -716,6 +733,33 @@ def get_queue_count() -> int:
         return len(data)
     return 0
 
+def get_runs_7d() -> int:
+    since = (datetime.utcnow() - timedelta(days=7)).isoformat() + "Z"
+    sb_count = _fetch_supabase_count("scan_runs", {"timestamp_utc": f"gte.{since}"})
+    if sb_count:
+        return sb_count
+    return 0
+
+def get_match_rate_7d() -> str:
+    since = (datetime.utcnow() - timedelta(days=7)).isoformat() + "Z"
+    rows = _fetch_supabase_rows(
+        "scan_runs",
+        {
+            "select": "posts_scanned,matches_logged",
+            "timestamp_utc": f"gte.{since}",
+            "order": "timestamp_utc.desc",
+        },
+        limit=1000,
+    )
+    scanned = 0
+    matched = 0
+    for row in rows:
+        scanned += int(row.get("posts_scanned") or 0)
+        matched += int(row.get("matches_logged") or 0)
+    if scanned <= 0:
+        return "0%"
+    rate = (matched / scanned) * 100
+    return f"{rate:.1f}%"
 
 def get_last_run_timestamp() -> str:
     sb_last = _fetch_supabase_last_run()
@@ -1417,7 +1461,8 @@ def main() -> None:
 
     account_status = load_account_status()
     health_report = get_account_health_report()
-    queue_count = get_queue_count()
+    runs_7d = get_runs_7d()
+    match_rate_7d = get_match_rate_7d()
     last_run = get_last_run_timestamp()
 
     st.markdown(
@@ -1428,12 +1473,12 @@ def main() -> None:
                 <div class="kpi-value">{health_report['active']}/{health_report['total_accounts']}</div>
             </div>
             <div class="kpi-card">
-                <div class="kpi-label">Issues</div>
-                <div class="kpi-value">{health_report['suspended'] + health_report['rate_limited'] + health_report['error']}</div>
+                <div class="kpi-label">Match Rate (7d)</div>
+                <div class="kpi-value">{match_rate_7d}</div>
             </div>
             <div class="kpi-card">
-                <div class="kpi-label">Queue Items</div>
-                <div class="kpi-value">{queue_count}</div>
+                <div class="kpi-label">Runs (7d)</div>
+                <div class="kpi-value">{runs_7d}</div>
             </div>
             <div class="kpi-card">
                 <div class="kpi-label">Last Run</div>
