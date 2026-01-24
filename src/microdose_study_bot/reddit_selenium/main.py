@@ -32,11 +32,6 @@ except Exception:
 
 project_root = Path(__file__).resolve().parents[2]
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
 # Constants
 logger = logging.getLogger(__name__)
 # Rotate file logs to avoid unbounded growth; fallback to stdout if path unavailable.

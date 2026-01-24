@@ -79,6 +79,7 @@ class UnifiedLogger:
                 
                 self.logger.addHandler(file_handler)
                 self.logger.addHandler(console_handler)
+                self.logger.propagate = False
                 
                 # Optional JSON logging
                 if os.getenv('ENABLE_JSON_LOGGING', '0').lower() in ('1', 'true', 'yes'):

@@ -50,6 +50,9 @@ from microdose_study_bot.core.utils.vpn_manager import VPNManager
 from microdose_study_bot.core.logging import UnifiedLogger
 from scripts.runners.session_scanner import run_session_scan
 
+SUBREDDIT_COVERAGE_PATH = Path("logs/subreddit_coverage.json")
+SUBREDDIT_COVERAGE_WINDOW_DAYS = 7
+
 ACTION_ALIASES = {
     "browse": "browse_subreddit",
     "scroll": "scroll_comments",
@@ -146,6 +149,76 @@ def parse_windows_arg(windows: str, tz_name: str) -> List[Dict[str, Any]]:
             }
         )
     return parsed
+
+
+def _load_subreddit_coverage(path: Path) -> Dict[str, str]:
+    if not path.exists():
+        return {}
+    try:
+        with open(path, "r") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return {str(k): str(v) for k, v in data.items()}
+    except Exception:
+        return {}
+    return {}
+
+
+def _save_subreddit_coverage(path: Path, coverage: Dict[str, str]) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(coverage, f, indent=2)
+    except Exception:
+        pass
+
+
+def _days_since(timestamp: Optional[str]) -> int:
+    if not timestamp:
+        return 9999
+    try:
+        last = datetime.fromisoformat(timestamp)
+        delta = datetime.utcnow() - last.replace(tzinfo=None)
+        return max(int(delta.total_seconds() // 86400), 0)
+    except Exception:
+        return 9999
+
+
+def select_subreddits_for_run(
+    subreddits: Sequence[str],
+    coverage: Dict[str, str],
+    window_days: int,
+) -> List[str]:
+    if not subreddits:
+        return []
+
+    unique = [s for s in subreddits if s]
+    if not unique:
+        return []
+
+    max_per_run = random.randint(1, len(unique))
+
+    must_include = []
+    for sub in unique:
+        days = _days_since(coverage.get(sub))
+        if days >= window_days:
+            must_include.append(sub)
+
+    if len(must_include) > max_per_run:
+        max_per_run = len(must_include)
+
+    remaining = [s for s in unique if s not in must_include]
+    weighted = []
+    for sub in remaining:
+        days = _days_since(coverage.get(sub))
+        weight = 1.0 + min(days, window_days)
+        key = random.random() ** (1.0 / weight)
+        weighted.append((key, sub))
+    weighted.sort(reverse=True)
+    take = max(0, max_per_run - len(must_include))
+    selected = must_include + [sub for _, sub in weighted[:take]]
+    random.shuffle(selected)
+    return selected
 
 
 def get_active_window(activity_config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -1052,6 +1125,8 @@ class MultiAccountOrchestrator:
             self.scan_window = f"{self.active_window['start']}-{self.active_window['end']}"
         else:
             self.scan_window = "manual"
+
+        self.subreddit_coverage = _load_subreddit_coverage(SUBREDDIT_COVERAGE_PATH)
         
         # Initialize account status tracker
         self.status_tracker = AccountStatusTracker()
@@ -1271,6 +1346,19 @@ class MultiAccountOrchestrator:
                 # Create scanner
                 profile_name = account.get("activity_profile", "") or ""
                 activity_config = self.build_activity_config(profile_name)
+
+                config_manager = ConfigManager()
+                global_subreddits = config_manager.load_json('config/subreddits.json')
+                if not isinstance(global_subreddits, list):
+                    global_subreddits = []
+                base_subreddits = global_subreddits
+                account_subreddits = select_subreddits_for_run(
+                    base_subreddits,
+                    self.subreddit_coverage,
+                    window_days=SUBREDDIT_COVERAGE_WINDOW_DAYS,
+                )
+                account["subreddits"] = account_subreddits
+
                 scanner = HumanizedNightScanner(account, activity_config)
                 
                 if not scanner.driver:
@@ -1348,6 +1436,10 @@ class MultiAccountOrchestrator:
                     # Save cookies for next time
                     if scanner.login_manager and cookie_file:
                         scanner.login_manager.save_login_cookies(cookie_file)
+
+                    for subreddit in account_subreddits:
+                        self.subreddit_coverage[subreddit] = datetime.utcnow().isoformat()
+                    _save_subreddit_coverage(SUBREDDIT_COVERAGE_PATH, self.subreddit_coverage)
                     
                 else:
                     self.logger.warning(f"⏸️ Skipping scan for {account_name} due to login status")

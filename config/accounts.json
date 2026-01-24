@@ -7,6 +7,12 @@
     "activity_profile": "researcher",
     "night_scanner_enabled": true,
     "tor_socks_port": 9050,
+    "persona": {
+      "label": "Research-focused reader",
+      "focus": "evidence, long-form posts, studies",
+      "tone": "neutral",
+      "active_hours": "morning"
+    },
     "browser_fingerprint": {
       "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
       "viewport": "1920x1080",
@@ -21,6 +27,12 @@
     "activity_profile": "casual_reader",
     "night_scanner_enabled": true,
     "tor_socks_port": 9051,
+    "persona": {
+      "label": "Wellness skimmer",
+      "focus": "daily support topics, lighter reading",
+      "tone": "casual",
+      "active_hours": "afternoon"
+    },
     "browser_fingerprint": {
       "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15",
       "viewport": "1440x900",
@@ -37,6 +49,12 @@
     "tor_socks_port": 9052,
     "scan_sort": "top",
     "scan_time_range": "all",
+    "persona": {
+      "label": "Late-night deep diver",
+      "focus": "psychedelic policy/therapy threads",
+      "tone": "serious",
+      "active_hours": "late_night"
+    },
     "browser_fingerprint": {
       "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
       "viewport": "1536x864",
@@ -50,6 +68,13 @@
     "cookies_path": "cookies_test.pkl",
     "activity_profile": "casual_reader",
     "night_scanner_enabled": false,
-    "use_tor_proxy": false
+    "use_tor_proxy": false,
+    "persona": {
+      "label": "Test account",
+      "focus": "smoke tests only",
+      "tone": "neutral",
+      "active_hours": "manual"
+    },
+    "subreddits_note": ""
   }
 ]
