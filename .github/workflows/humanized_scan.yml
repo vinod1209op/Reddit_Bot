@@ -53,7 +53,7 @@ jobs:
           MATRIX_ACCOUNT: ${{ matrix.account }}
           MATRIX_CRON: ${{ matrix.cron }}
         run: |
-          should_run=false
+
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             if [ -z "$DISPATCH_ACCOUNT" ] || [ "$DISPATCH_ACCOUNT" = "$MATRIX_ACCOUNT" ]; then
               should_run=true
