@@ -879,11 +879,10 @@ class HumanizedNightScanner:
                     0.08,
                     0.12,
                 )
-
-                if random.random() < nav_error_chance:
-                    self.humanization_metrics['navigation_errors'] += 1
-                    self.logger.debug("Simulating navigation error...")
-                    self.simulate_navigation_error()
+                # Simulate navigation error after each action
+                if self.human_sim and random.random() < nav_error_chance:
+                    if self.human_sim.simulate_navigation_error(self.driver):
+                        actions_performed['navigation_errors'] += 1
                 
                 # Increment action counter
                 self.action_count += 1
