@@ -42,7 +42,9 @@ chromedriver-mac-x64/
 # Compiled tests
 *.pyc
 
-
+# Local-only secrets / artifacts
 tor-expert-bundle-macos-x86_64-15.0.4/
 config/accounts.json
 cookies_test.pkl
+*.pkl
+*.csv

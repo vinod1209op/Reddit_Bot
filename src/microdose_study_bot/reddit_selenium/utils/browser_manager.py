@@ -11,6 +11,9 @@ import time
 import logging
 from pathlib import Path
 
+# Setup logging early so imports below can use it safely.
+logger = logging.getLogger(__name__)
+
 try:
     from microdose_study_bot.reddit_selenium.tor_proxy import tor_proxy
     TOR_AVAILABLE = True
@@ -21,9 +24,7 @@ except ImportError:
 project_root = Path(__file__).resolve().parents[2]
 repo_root = Path(__file__).resolve().parents[4]
 
-# Setup logging
 # Constants
-logger = logging.getLogger(__name__)
 
 def _env_flag(name: str, default: bool) -> bool:
     value = os.getenv(name)

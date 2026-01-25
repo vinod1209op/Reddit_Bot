@@ -18,6 +18,7 @@ class HumanSimulator:
         self.driver = driver
         self.browser_manager = browser_manager
         self.last_mouse_position = None  # Track last known mouse position (x, y)
+        self.navigation_error_count = 0
         
     def human_scroll(self, scroll_times=3):
         """Random scroll patterns with human-like pauses"""
@@ -357,7 +358,7 @@ class HumanSimulator:
                     driver.back()
                     time.sleep(random.uniform(1, 2))
                 
-                self.log(f"Simulated wrong click on element")
+                print("Simulated wrong click on element")
                 return True
                 
             except Exception:
@@ -417,7 +418,7 @@ class HumanSimulator:
     def safe_upvote(self):
         """Safely upvote current post (if enabled)"""
         try:
-            upvote_buttons = driver.find_elements(By.CSS_SELECTOR, "div.arrow.up")
+            upvote_buttons = self.driver.find_elements(By.CSS_SELECTOR, "div.arrow.up")
             if upvote_buttons and random.random() > 0.3:  # 70% chance to upvote if button found
                 target = upvote_buttons[0]
                 
@@ -426,7 +427,7 @@ class HumanSimulator:
                 time.sleep(random.uniform(0.1, 0.3))
                 
                 if self.browser_manager:
-                    self.browser_manager.safe_click(driver, target)
+                    self.browser_manager.safe_click(self.driver, target)
                 else:
                     target.click()
                 time.sleep(random.uniform(0.2, 0.5))
@@ -443,7 +444,7 @@ class HumanSimulator:
             time.sleep(random.uniform(0.1, 0.3))
             
             if self.browser_manager:
-                self.browser_manager.safe_click(driver, element)
+                self.browser_manager.safe_click(self.driver, element)
             else:
                 element.click()
                 
@@ -519,13 +520,13 @@ class HumanSimulator:
         """Random scroll up and down"""
         # Scroll down
         scroll_down = random.randint(200, 600)
-        driver.execute_script(f"window.scrollBy(0, {scroll_down});")
+        self.driver.execute_script(f"window.scrollBy(0, {scroll_down});")
         time.sleep(random.uniform(0.5, 1.5))
         
         # Sometimes scroll up a bit
         if random.random() > 0.7:
             scroll_up = random.randint(50, 200)
-            driver.execute_script(f"window.scrollBy(0, -{scroll_up});")
+            self.driver.execute_script(f"window.scrollBy(0, -{scroll_up});")
             time.sleep(random.uniform(0.3, 0.8))
     
     def pause_thoughtfully(self):
@@ -549,11 +550,11 @@ class HumanSimulator:
         # Find comments section and scroll through it
         try:
             # Try to find comments
-            comments_sections = driver.find_elements(By.CSS_SELECTOR, "div.comment")
+            comments_sections = self.driver.find_elements(By.CSS_SELECTOR, "div.comment")
             if comments_sections:
                 # Scroll through first few comments
                 for _ in range(random.randint(2, 5)):
-                    driver.execute_script("window.scrollBy(0, 300);")
+                    self.driver.execute_script("window.scrollBy(0, 300);")
                     time.sleep(random.uniform(0.8, 1.5))
         except:
             pass
@@ -564,7 +565,7 @@ class HumanSimulator:
         time.sleep(random.uniform(1, 3))
         
         # Navigate
-        driver.get(url)
+        self.driver.get(url)
         
         # Random delay after page load
         time.sleep(random.uniform(2, 5))
@@ -595,13 +596,13 @@ class HumanSimulator:
             ])
             
             if activity_type == "browse_homepage":
-                driver.get("https://old.reddit.com")
+                self.driver.get("https://old.reddit.com")
                 self.human_scroll(random.randint(3, 7))
                 activities_log.append("browsed homepage")
                 
             elif activity_type == "read_post":
                 # Try to find and read a post
-                posts = driver.find_elements(By.CSS_SELECTOR, "div.thing")
+                posts = self.driver.find_elements(By.CSS_SELECTOR, "div.thing")
                 if posts:
                     post = random.choice(posts[:5])
                     target = None
@@ -614,7 +615,7 @@ class HumanSimulator:
             
             # Simulate navigation error (3% chance per activity)
             if random.random() < 0.03:
-                if self.simulate_navigation_error(driver):
+                if self.simulate_navigation_error(self.driver):
                     activities_log.append("navigation error")
             
             # Mouse wander between activities (25% chance)

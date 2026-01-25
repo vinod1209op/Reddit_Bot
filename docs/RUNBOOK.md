@@ -13,13 +13,16 @@ This runbook captures operational tasks for running and maintaining MicrodoseStu
 3) Search posts, draft replies, and prefill. Keep auto-submit off unless approved.
 
 ## CI Run (Humanized Scan)
-1) Ensure Supabase Storage has the latest `cookies_bundle.zip`.
+1) Ensure Supabase Storage has the latest per-account cookies (`data/cookies_account*.pkl`) at the paths set by `SUPABASE_COOKIES_ACCOUNT*_PATH`.
 2) Trigger `.github/workflows/humanized_scan.yml`.
 3) Confirm cookies downloaded and scan logs uploaded.
 
 ## Cookie Rotation
 - Local: run `python scripts/one_time/capture_cookies.py` and refresh `data/cookies_*.pkl`.
-- CI: upload updated `cookies_bundle.zip` to Supabase Storage or allow the workflow to upload refreshed cookies.
+- CI: upload updated per-account cookie files to Supabase Storage, or allow the workflow to upload refreshed cookies after the run.
+
+## Automation Guide
+- See `information/REQUEST_AUTOMATION_DOC.md` for the most complete automation overview.
 
 ## Incident Checks
 - Selenium login failures: verify cookies are valid and Supabase download is working.
