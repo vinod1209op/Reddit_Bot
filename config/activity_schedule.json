@@ -51,12 +51,6 @@
         "follow": 4,
         "check_notifications": 0
       },
-      "randomization": {
-        "session_length_minutes": {
-          "min": 12,
-          "max": 25
-        }
-      },
       "humanization": {
         "enable_mouse_movement": true,
         "enable_navigation_errors": false,
@@ -77,12 +71,6 @@
         "follow": 4,
         "check_notifications": 2
       },
-      "randomization": {
-        "session_length_minutes": {
-          "min": 12,
-          "max": 25
-        }
-      },
       "humanization": {
         "enable_mouse_movement": true,
         "enable_navigation_errors": true,
@@ -102,12 +90,6 @@
         "save": 10,
         "follow": 6,
         "check_notifications": 0
-      },
-      "randomization": {
-        "session_length_minutes": {
-          "min": 12,
-          "max": 25
-        }
       },
       "humanization": {
         "enable_mouse_movement": true,
