@@ -4,89 +4,23 @@ on:
   schedule:
     # Late night local time per account (UTC values; DST shifts may apply)
     - cron: "0 23 * * *" # account2 (UK ~23:00)
-  workflow_dispatch:
-    inputs:
-      account:
-        description: "Account name to run (default: account1)"
-        required: false
-        default: "account1"
-      force_run:
-        description: "Override schedule and run immediately (00:00-23:59)"
-        required: false
-        default: "false"
-      windows:
-        description: "Custom scan windows (HH:MM-HH:MM, comma-separated, no spaces). Overrides force_run if set."
-        required: false
-        default: ""
+  workflow_dispatch: {}
 
 jobs:
   humanized_scan:
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - account: account2
-            cron: "0 23 * * *"
-            tor_port: 9051
-            tor_country: gb
 
     steps:
-      - name: Gate run by schedule/account
-        id: gate
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          EVENT_SCHEDULE: ${{ github.event.schedule }}
-          DISPATCH_ACCOUNT: ${{ github.event.inputs.account }}
-          MATRIX_ACCOUNT: ${{ matrix.account }}
-          MATRIX_CRON: ${{ matrix.cron }}
-        run: |
-          should_run=false
-          schedule_account=""
-
-          echo "EVENT_NAME=$EVENT_NAME"
-          echo "EVENT_SCHEDULE=$EVENT_SCHEDULE"
-          echo "DISPATCH_ACCOUNT=$DISPATCH_ACCOUNT"
-          echo "MATRIX_ACCOUNT=$MATRIX_ACCOUNT"
-          echo "MATRIX_CRON=$MATRIX_CRON"
-
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            if [ -z "$DISPATCH_ACCOUNT" ] || [ "$DISPATCH_ACCOUNT" = "$MATRIX_ACCOUNT" ]; then
-              should_run=true
-            fi
-          elif [ "$EVENT_NAME" = "schedule" ]; then
-            case "$EVENT_SCHEDULE" in
-              "0 7 * * *"|"0 6 * * *")
-                schedule_account="account1"
-                ;;
-              "0 23 * * *"|"0 20 * * *")
-                schedule_account="account2"
-                ;;
-              "0 22 * * *"|"0 14 * * *")
-                schedule_account="account3"
-                ;;
-            esac
-
-            if [ -n "$schedule_account" ] && [ "$schedule_account" = "$MATRIX_ACCOUNT" ]; then
-              should_run=true
-            fi
-          fi
-          echo "should_run=$should_run" >> "$GITHUB_OUTPUT"
-
       - name: Checkout
         uses: actions/checkout@v4
-        if: steps.gate.outputs.should_run == 'true'
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-        if: steps.gate.outputs.should_run == 'true'
 
       - name: Install Chrome and ChromeDriver
-        if: steps.gate.outputs.should_run == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y wget unzip
@@ -109,13 +43,11 @@ jobs:
           echo "CHROMEDRIVER_PATH=/usr/local/bin/chromedriver" >> $GITHUB_ENV
 
       - name: Install Python dependencies
-        if: steps.gate.outputs.should_run == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Restore cookie files
-        if: steps.gate.outputs.should_run == 'true'
         env:
           PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -130,14 +62,9 @@ jobs:
             echo "Supabase env missing; skipping cookie download."
             exit 0
           fi
-          case "${{ matrix.account }}" in
-            account1) remote_path="${SUPABASE_COOKIES_ACCOUNT1_PATH:-}" ;;
-            account2) remote_path="${SUPABASE_COOKIES_ACCOUNT2_PATH:-}" ;;
-            account3) remote_path="${SUPABASE_COOKIES_ACCOUNT3_PATH:-}" ;;
-            *) remote_path="" ;;
-          esac
+          remote_path="${SUPABASE_COOKIES_ACCOUNT2_PATH:-}"
           if [ -z "$remote_path" ]; then
-            echo "No per-account cookie path set for ${{ matrix.account }}; skipping download."
+            echo "No per-account cookie path set for account2; skipping download."
             exit 0
           fi
           url="${SUPABASE_URL%/}/storage/v1/object/${SUPABASE_BUCKET}/${remote_path#/}"
@@ -145,11 +72,10 @@ jobs:
             -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
             "$url" \
-            -o "data/cookies_${{ matrix.account }}.pkl"
-          ls -la "data/cookies_${{ matrix.account }}.pkl"
+            -o "data/cookies_account2.pkl"
+          ls -la "data/cookies_account2.pkl"
 
       - name: Restore account_status.json
-        if: steps.gate.outputs.should_run == 'true'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -176,7 +102,6 @@ jobs:
           ls -la data/account_status.json
 
       - name: Restore account status from Supabase DB
-        if: steps.gate.outputs.should_run == 'true'
         env:
           PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -185,7 +110,6 @@ jobs:
           python scripts/ops/download_account_health_supabase_db.py
 
       - name: Check cookie envs (safe)
-        if: steps.gate.outputs.should_run == 'true'
         run: |
           [ -n "${{ secrets.SUPABASE_URL }}" ] && echo "SUPABASE_URL set" || echo "SUPABASE_URL missing"
           [ -n "${{ secrets.SUPABASE_BUCKET }}" ] && echo "SUPABASE_BUCKET set" || echo "SUPABASE_BUCKET missing"
@@ -194,7 +118,6 @@ jobs:
           [ -n "${{ secrets.SUPABASE_COOKIES_ACCOUNT3_PATH }}" ] && echo "COOKIES_ACCOUNT3_PATH set" || echo "COOKIES_ACCOUNT3_PATH missing"
 
       - name: Create minimal env file
-        if: steps.gate.outputs.should_run == 'true'
         run: |
           mkdir -p config
           if [ ! -f config/credentials.env ]; then
@@ -206,13 +129,12 @@ jobs:
           fi
 
       - name: Setup Tor proxy
-        if: steps.gate.outputs.should_run == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y tor
           sudo service tor stop || true
           pkill -f tor || true
-          PORT=${{ matrix.tor_port }}
+          PORT=9051
           DATADIR="/tmp/tor_$PORT"
           mkdir -p "$DATADIR"
           chmod 700 "$DATADIR"
@@ -222,7 +144,7 @@ jobs:
           ControlPort $((PORT + 100))
           CookieAuthentication 1
           Log notice file $DATADIR/tor.log
-          ExitNodes {${{ matrix.tor_country }}}
+          ExitNodes {gb}
           StrictNodes 1
           EOF
           tor -f "$DATADIR/torrc" --RunAsDaemon 1
@@ -235,7 +157,7 @@ jobs:
           done
           echo "TOR_DATA_DIR=$DATADIR" >> "$GITHUB_ENV"
           echo "TOR_CONTROL_PORT=$((PORT + 100))" >> "$GITHUB_ENV"
-          echo "🔍 Checking Tor IP for ${{ matrix.account }} on port $PORT..."
+          echo "🔍 Checking Tor IP for account2 on port $PORT..."
           if curl --socks5-hostname 127.0.0.1:$PORT https://check.torproject.org/api/ip; then
             echo "Tor proxy test succeeded on port $PORT"
           else
@@ -243,14 +165,13 @@ jobs:
           fi
 
       - name: Debug Tor rotation
-        if: steps.gate.outputs.should_run == 'true'
         run: |
           set -euo pipefail
           if [ -z "${TOR_DATA_DIR:-}" ] || [ -z "${TOR_CONTROL_PORT:-}" ]; then
             echo "Tor control vars missing; skipping debug."
             exit 0
           fi
-          PORT=${{ matrix.tor_port }}
+          PORT=9051
           echo "TOR_DATA_DIR=$TOR_DATA_DIR"
           echo "TOR_CONTROL_PORT=$TOR_CONTROL_PORT"
           echo "Checking Tor IP on port $PORT..."
@@ -262,14 +183,13 @@ jobs:
           ls -la $COOKIE_FILE || echo "No cookie file"
 
       - name: Rotate Tor circuit (NEWNYM)
-        if: steps.gate.outputs.should_run == 'true'
         run: |
           set -euo pipefail
           if [ -z "${TOR_DATA_DIR:-}" ] || [ -z "${TOR_CONTROL_PORT:-}" ]; then
             echo "Tor control vars missing; skipping NEWNYM."
             exit 0
           fi
-          PORT=${{ matrix.tor_port }}
+          PORT=9051
           echo "Checking Tor IP before NEWNYM on port $PORT..."
           before_ip="$(curl --socks5-hostname 127.0.0.1:$PORT -sS https://check.torproject.org/api/ip || true)"
           echo "Before: ${before_ip:-<unavailable>}"
@@ -286,7 +206,6 @@ jobs:
           echo "Tor NEWNYM sent on control port $TOR_CONTROL_PORT"
 
       - name: Run humanized night scanner with Tor
-        if: steps.gate.outputs.should_run == 'true'
         id: run_scan
         env:
           BOT_MODE: selenium
@@ -304,26 +223,19 @@ jobs:
           SELENIUM_CONTENT_RETRY_DELAY: "1.0"
           SELENIUM_CLICK_ARTIFACTS: "1"
           USE_TOR_PROXY: "1"
-          TOR_SOCKS_PORT: ${{ matrix.tor_port }}
+          TOR_SOCKS_PORT: "9051"
           CI: "true"
           SCAN_LIMIT: "25"
-          HUMANIZED_ACCOUNT_NAMES: ${{ github.event.inputs.account || matrix.account }}
+          HUMANIZED_ACCOUNT_NAMES: account2
         run: |
           set -euxo pipefail
           echo "Starting humanized scan..."
           mkdir -p logs
-          WINDOWS_ARG=""
-          if [ -n "${{ github.event.inputs.windows }}" ]; then
-            WINDOWS_ARG="--windows ${{ github.event.inputs.windows }}"
-          elif [ "${{ github.event.inputs.force_run }}" = "true" ]; then
-            WINDOWS_ARG="--force-run"
-          fi
-          python scripts/runners/humanized_night_scanner.py $WINDOWS_ARG 2>&1 | tee logs/ci_humanized_scan.log
+          python scripts/runners/humanized_night_scanner.py 2>&1 | tee logs/ci_humanized_scan.log
           echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
           exit 0
 
       - name: Flag ban/restriction signals (fail run)
-        if: steps.gate.outputs.should_run == 'true'
         run: |
           set -euo pipefail
           if [ ! -f logs/ci_humanized_scan.log ]; then
@@ -337,21 +249,21 @@ jobs:
           fi
 
       - name: Email on failure (Outlook SMTP)
-        if: failure() && steps.gate.outputs.should_run == 'true'
+        if: failure()
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
           server_port: 587
           username: ${{ secrets.SMTP_USERNAME }}
           password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "❌ Humanized scan failed (${{ matrix.account }})"
+          subject: "❌ Humanized scan failed (account2)"
           body: "Check GitHub Actions logs for details."
           to: ${{ secrets.ALERT_EMAIL_TO }}
           from: Bot Alerts <${{ secrets.SMTP_USERNAME }}>
         continue-on-error: true
       
       - name: Upload per-account cookies to Supabase
-        if: always() && steps.gate.outputs.should_run == 'true'
+        if: always()
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -361,15 +273,10 @@ jobs:
           SUPABASE_COOKIES_ACCOUNT3_PATH: ${{ secrets.SUPABASE_COOKIES_ACCOUNT3_PATH }}
         run: |
           set -euo pipefail
-          case "${{ matrix.account }}" in
-            account1) remote_path="${SUPABASE_COOKIES_ACCOUNT1_PATH:-}" ;;
-            account2) remote_path="${SUPABASE_COOKIES_ACCOUNT2_PATH:-}" ;;
-            account3) remote_path="${SUPABASE_COOKIES_ACCOUNT3_PATH:-}" ;;
-            *) remote_path="" ;;
-          esac
-          local_file="data/cookies_${{ matrix.account }}.pkl"
+          remote_path="${SUPABASE_COOKIES_ACCOUNT2_PATH:-}"
+          local_file="data/cookies_account2.pkl"
           if [ -z "$remote_path" ]; then
-            echo "No per-account cookie path set for ${{ matrix.account }}; skipping upload."
+            echo "No per-account cookie path set for account2; skipping upload."
             exit 0
           fi
           if [ ! -f "$local_file" ]; then
@@ -383,10 +290,10 @@ jobs:
             -H "Content-Type: application/octet-stream" \
             -H "x-upsert: true" \
             --data-binary @"$local_file" \
-            && echo "Uploaded cookies for ${{ matrix.account }}."
+            && echo "Uploaded cookies for account2."
 
       - name: Upsert logs into Supabase DB
-        if: always() && steps.gate.outputs.should_run == 'true'
+        if: always()
         env:
           PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -397,7 +304,7 @@ jobs:
           python scripts/ops/upload_logs_supabase_db.py
 
       - name: Supabase DB sanity check
-        if: always() && steps.gate.outputs.should_run == 'true'
+        if: always()
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -418,7 +325,7 @@ jobs:
           fi
 
       - name: Upsert account health into Supabase DB
-        if: always() && steps.gate.outputs.should_run == 'true'
+        if: always()
         env:
           PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -427,7 +334,7 @@ jobs:
           python scripts/ops/upload_account_health_supabase_db.py
 
       - name: Upload logs to Supabase
-        if: always() && steps.gate.outputs.should_run == 'true'
+        if: always()
         env:
           PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -438,7 +345,7 @@ jobs:
           python scripts/ops/upload_logs_supabase.py
 
       - name: Upload scan results
-        if: always() && steps.gate.outputs.should_run == 'true'
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: humanized-scan-results
@@ -448,7 +355,6 @@ jobs:
           retention-days: 14
 
       - name: Fail workflow if scan failed
-        if: steps.gate.outputs.should_run == 'true'
         run: |
           code="${{ steps.run_scan.outputs.exit_code }}"
           if [ -n "$code" ] && [ "$code" != "0" ]; then
