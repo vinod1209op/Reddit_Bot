@@ -1,9 +1,5 @@
 """
-Purpose: Scan within an existing Selenium session (read-only).
-Constraints: Enforces read-only mode for scheduled runs.
-
-# SAFETY GUARANTEE:
-# This module MUST remain read-only. No reply or engagement logic is allowed here.
+Purpose: Scan within an existing Selenium session.
 """
 
 # Imports

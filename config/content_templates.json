@@ -1,0 +1,97 @@
+{
+  "post_templates": [
+    {
+      "type": "research_highlight",
+      "title": "New Study: {study_topic} Shows Promise for {condition}",
+      "content": "A recent study published in {journal} found that {key_finding}. \n\n**Key Points:**\n- Sample size: {sample_size}\n- Methodology: {methodology}\n- Results: {results}\n\n**Implications:**\n{implications}\n\n**Discussion Questions:**\n1. How does this align with your experience?\n2. What further research would you like to see?\n3. How might this impact clinical practice?\n\n*Source: {citation}*",
+      "placeholders": {
+        "study_topic": ["psilocybin therapy", "microdosing protocols", "psychedelic integration"],
+        "condition": ["treatment-resistant depression", "PTSD symptoms", "end-of-life anxiety"],
+        "journal": ["Nature", "JAMA Psychiatry", "The Lancet", "Neuropsychopharmacology"],
+        "key_finding": ["significant reduction in symptoms", "improved quality of life", "lasting changes in brain connectivity"],
+        "sample_size": ["24 participants", "50 patients", "100 subjects"],
+        "methodology": ["double-blind placebo-controlled", "open-label trial", "longitudinal study"],
+        "results": ["67% response rate", "symptoms reduced by 50%", "effects lasted 6+ months"],
+        "implications": ["Potential new treatment pathway", "Supports further research", "Highlights importance of set/setting"],
+        "citation": ["DOI: 10.xxxx/xxxx", "PubMed ID: xxxxxxxx"]
+      }
+    },
+    {
+      "type": "personal_experience",
+      "title": "My Journey with {topic}: What I've Learned After {time_period}",
+      "content": "I wanted to share my personal experience with {topic} in hopes it might help others on similar paths.\n\n**Background:**\n{background}\n\n**The Process:**\n{process}\n\n**Key Insights:**\n{insights}\n\n**Challenges & Solutions:**\n{challenges}\n\n**Where I Am Now:**\n{current_status}\n\n**Advice for Others:**\n{advice}\n\n*Remember: This is my personal experience. Your journey may differ.*",
+      "placeholders": {
+        "topic": ["microdosing psilocybin", "psychedelic integration", "mindfulness practice"],
+        "time_period": ["6 months", "one year", "18 months", "2 years"],
+        "background": ["Struggling with anxiety and depression", "Seeking alternatives to pharmaceuticals", "Curious about consciousness exploration"],
+        "process": ["Started with low doses, kept detailed journal", "Worked with therapist for integration", "Joined supportive community"],
+        "insights": ["Patience is more important than intensity", "Set and setting matter immensely", "Integration is where real change happens"],
+        "challenges": ["Finding reliable information", "Navigating legal concerns", "Managing expectations"],
+        "current_status": ["More emotional balance", "Improved relationships", "Greater sense of purpose"],
+        "advice": ["Start low and go slow", "Find community support", "Focus on integration"]
+      }
+    },
+    {
+      "type": "community_discussion",
+      "title": "Community Discussion: What Does '{concept}' Mean to You?",
+      "content": "Let's have a community discussion about '{concept}' - a term we hear often but might interpret differently.\n\n**My Understanding:**\n{my_understanding}\n\n**Questions for Discussion:**\n1. How do you define '{concept}' in your practice?\n2. What are the essential components of '{concept}'?\n3. How has your understanding evolved over time?\n4. What misconceptions about '{concept}' have you encountered?\n5. How do we practice '{concept}' responsibly?\n\n**Resources for Further Learning:**\n{resources}\n\n*Looking forward to hearing diverse perspectives!*",
+      "placeholders": {
+        "concept": ["harm reduction", "integration", "set and setting", "neuroplasticity", "holistic healing"],
+        "my_understanding": ["A framework for safety and intentionality", "The process of incorporating insights into daily life", "The mindset and environment for therapeutic work"],
+        "resources": ["[MCRDSE Safety Guide](https://mcrdse.com/safety)", "[Research on Therapeutic Frameworks](https://mcrdse.com/studies)", "[Community Guidelines](https://mcrdse.com/community)"]
+      }
+    },
+    {
+      "type": "question_answer",
+      "title": "Q&A: Answering Common Questions About {topic}",
+      "content": "I've noticed several recurring questions about {topic} in the community. Here's my attempt to address some of them based on current research and community wisdom.\n\n**Q1: {question1}**\nA1: {answer1}\n\n**Q2: {question2}**\nA2: {answer2}\n\n**Q3: {question3}**\nA3: {answer3}\n\n**Important Caveats:**\n{caveats}\n\n**What Questions Do You Still Have?**\nLet's continue the discussion below!",
+      "placeholders": {
+        "topic": ["microdosing safety", "psychedelic therapy", "legal considerations"],
+        "question1": ["What's the evidence for microdosing?", "How do I start safely?", "What about tolerance?"],
+        "answer1": ["Current research shows...", "The community consensus is...", "Based on studies..."],
+        "question2": ["How long do effects last?", "What about interactions with medications?", "Is there a risk of HPPD?"],
+        "answer2": ["Duration varies but typically...", "Important to consult healthcare providers about...", "Risk appears low with proper precautions..."],
+        "question3": ["How do I find a qualified therapist?", "What about microdosing without psychedelics?", "How to handle challenging experiences?"],
+        "answer3": ["Look for therapists trained in...", "Alternatives include...", "Integration practices can help..."],
+        "caveats": ["Individual experiences vary", "Research is still evolving", "Legal status differs by location"]
+      }
+    }
+  ],
+  "comment_templates": [
+    {
+      "type": "supportive_response",
+      "triggers": ["thank", "appreciate", "helpful", "useful"],
+      "templates": [
+        "Glad you found it helpful! {follow_up_question}",
+        "Thanks for the kind words! {additional_resource}",
+        "Appreciate you sharing that perspective! {connection_point}"
+      ]
+    },
+    {
+      "type": "question_response",
+      "triggers": ["question", "wonder", "curious", "ask"],
+      "templates": [
+        "That's a great question! Based on {source}, {answer}. What are your thoughts?",
+        "Interesting question! The research suggests {finding}. However, {caveat}.",
+        "I've wondered about that too! From my understanding, {perspective}. Others might have different experiences though."
+      ]
+    },
+    {
+      "type": "experience_acknowledgement",
+      "triggers": ["experience", "story", "journey", "personal"],
+      "templates": [
+        "Thanks for sharing your experience! It sounds like {summary}. {validation}",
+        "Appreciate you being vulnerable and sharing that. {acknowledgement} {open_question}",
+        "Your journey with {aspect} resonates. Many in the community have similar experiences with {common_thread}."
+      ]
+    }
+  ],
+  "engagement_boosters": [
+    "What has your experience been with this?",
+    "Has anyone else encountered something similar?",
+    "How do different perspectives approach this?",
+    "What questions does this raise for you?",
+    "How might this apply in different contexts?",
+    "What resources have you found helpful on this topic?"
+  ]
+}

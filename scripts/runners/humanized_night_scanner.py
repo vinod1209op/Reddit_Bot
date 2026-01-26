@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 """
 Purpose: Scheduled multi-account scanner with human-like browsing behavior.
-Constraints: Read-only by default; posting must remain off.
-
-# SAFETY GUARANTEE:
-# This module MUST remain read-only. No reply or engagement logic is allowed here.
 """
 
 # Imports

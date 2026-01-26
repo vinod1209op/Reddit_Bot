@@ -1,8 +1,7 @@
 # MicrodoseStudyBot (Academic Case Study)
 
 ## What this is
-- A small research bot to explore AI-assisted, harm-reduction-oriented replies on Reddit with a mandatory human-in-the-loop.
-- Not a marketing or growth bot. Low volume, rule-abiding, neutral, and focused on general education.
+- A small research bot to explore AI-assisted, education replies on Reddit with a mandatory human-in-the-loop.
 
 ## Tech stack
 - Python
@@ -11,13 +10,6 @@
 - Optional: OpenAI client configured for OpenRouter reply generation (stubbed fallback included)
 - Optional: Selenium for manual browser automation
 - Optional: Streamlit UI for manual prefill workflow
-
-## Safety constraints
-- No medical or dosing advice; no encouragement of illegal activity.
-- No links or product/brand promotion.
-- Human approval required before posting; posting is disabled by default.
-- Keep volume low (approval cap per run); respect subreddit rules and Reddit policies.
-- Mock mode available to test without API access.
 
 ## Setup
 1) Install deps (within your venv):
@@ -46,9 +38,9 @@
      - `OPENROUTER_BASE_URL`, `OPENAI_HTTP_REFERER`, `OPENAI_X_TITLE`
 3) (Optional) Configure humanized scheduled scanning in `config/activity_schedule.json`:
    - Define `time_windows` + `timezone` for early morning and late night runs.
-   - Enable/disable `allow_voting`, `allow_saving`, and `allow_following` (read-only scanning stays default).
+   - Enable/disable `allow_voting`, `allow_saving`, and `allow_following`.
    - Configure accounts in `config/accounts.json` (cookies paths, profiles).
-   - Legacy read-only scanning still uses `config/schedule.json` (manual only).
+   - Legacy read-only scanning still uses `config/schedule.json`.
 
 ## How to run (by step)
 Official operator entrypoints:
@@ -75,7 +67,7 @@ Internal/dev scripts (use for debugging or tests):
 - Streamlit UI (manual prefill, optional auto-submit):  
   `streamlit run apps/streamlit/app.py` → start the browser, search, draft a reply, and prefill in the live browser. Set `STREAMLIT_APP_PASSWORD` to gate access. Auto-submit is available but should be used only with approval and strict limits (cap with `SELENIUM_AUTO_SUBMIT_LIMIT`).
 - Humanized night scanner (read-only, scheduled):  
-  `python scripts/runners/humanized_night_scanner.py` → runs within `config/activity_schedule.json` windows, rotates accounts in `config/accounts.json`, and performs non-comment engagement (if enabled). Posting remains off by default.
+  `python scripts/runners/humanized_night_scanner.py` → runs within `config/activity_schedule.json` windows, rotates accounts in `config/accounts.json`, and performs engagement (if enabled).
 - Legacy night scanner (manual only):  
   `python scripts/runners/night_scanner.py` → read-only scan with `config/schedule.json` windows; not scheduled by default.
 
