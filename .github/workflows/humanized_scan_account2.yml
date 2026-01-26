@@ -132,8 +132,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y tor
+          sudo systemctl stop tor || true
+          sudo systemctl disable tor || true
           sudo service tor stop || true
-          pkill -f tor || true
+          sudo pkill -f tor || true
           PORT=9051
           DATADIR="/tmp/tor_$PORT"
           mkdir -p "$DATADIR"
