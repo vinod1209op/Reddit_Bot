@@ -1,9 +1,9 @@
-name: Reddit Humanized Scan (account1)
+name: Reddit Humanized Scan (account2)
 
 on:
   schedule:
     # Late night local time per account (UTC values; DST shifts may apply)
-    - cron: "0 12 * * *" # account1 (MST 05:00)
+    - cron: "0 23 * * *" # account2 (UK ~23:00)
   workflow_dispatch:
     inputs:
       account:
@@ -27,10 +27,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - account: account1
-            cron: "0 12 * * *"
-            tor_port: 9050
-            tor_country: us
+          - account: account2
+            cron: "0 23 * * *"
+            tor_port: 9051
+            tor_country: gb
 
     steps:
       - name: Gate run by schedule/account
@@ -58,7 +58,7 @@ jobs:
             fi
           elif [ "$EVENT_NAME" = "schedule" ]; then
             case "$EVENT_SCHEDULE" in
-              "0 12 * * *"|"0 7 * * *"|"0 6 * * *")
+              "0 7 * * *"|"0 6 * * *")
                 schedule_account="account1"
                 ;;
               "0 23 * * *"|"0 20 * * *")

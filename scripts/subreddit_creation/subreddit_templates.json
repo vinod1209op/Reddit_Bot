@@ -1,0 +1,28 @@
+{
+  "subreddit_templates": [
+    {
+      "name_template": "Microdosing{type}",
+      "type_variants": ["Research", "Science", "Support", "Community", "Therapy"],
+      "description": "A community for {focus} discussions about microdosing and psychedelic-assisted therapy.",
+      "focus_variants": [
+        "evidence-based",
+        "scientific",
+        "supportive",
+        "educational",
+        "therapeutic"
+      ],
+      "sidebar_template": "**Welcome to r/{name}!**\n\n## About This Community\nThis is a space for {focus} discussions about microdosing psychedelics for mental health, creativity, and personal growth.\n\n## Community Rules\n1. Be respectful and kind\n2. No sourcing or selling of substances\n3. Share experiences, not medical advice\n4. Cite sources when discussing research\n5. Practice harm reduction principles\n\n## Resources\n- [MCRDSE Research Portal](https://mcrdse.com/research)\n- [Microdosing Safety Guide](https://mcrdse.com/safety)\n- [Psychedelic Research Studies](https://mcrdse.com/studies)\n\n## Disclaimer\nThis community does not provide medical advice. Consult healthcare professionals.",
+      "post_types": ["discussion", "question", "experience", "research", "resource"]
+    }
+  ],
+  "creation_delay": {
+    "min": 3600,
+    "max": 86400
+  },
+  "account_requirements": {
+    "min_age_days": 30,
+    "min_karma": 100,
+    "max_subreddits_per_day": 1,
+    "max_total_subreddits": 10
+  }
+}

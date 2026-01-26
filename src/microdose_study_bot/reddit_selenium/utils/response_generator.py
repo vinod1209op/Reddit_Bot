@@ -155,7 +155,7 @@ class ResponseGenerator:
         
         # Otherwise generate discussion response
         response = self._generate_discussion_response(topic, post_analysis)
-        return self._apply_policy(response), True  # Needs approval for discussion posts
+        return self._apply_policy(response), True  
 
     # Helpers
     def _apply_policy(self, text: str) -> str:
@@ -318,4 +318,3 @@ if __name__ == "__main__":
     response, needs_approval = generator.generate_response(analysis, test_post)
     print("\nGenerated Response:")
     print(response)
-    print(f"\nNeeds human approval: {needs_approval}")

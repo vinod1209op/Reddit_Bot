@@ -1,20 +1,16 @@
 #!/usr/bin/env python3
 """
-Free Subreddit Creation Tool for MCRDSE
-Creates and configures new subreddits with anti-detection measures
+Subreddit Creation Tool for MCRDSE
+With proper error handling for config files
 """
 import json
 import random
 import time
 import logging
+import sys
 from datetime import datetime
 from pathlib import Path
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from typing import Dict, List, Optional, Tuple
 
 # Setup logging
 logging.basicConfig(
@@ -38,26 +34,28 @@ class SubredditCreator:
         self.driver = None
         self.subreddit_names = self.generate_subreddit_names()
         
-    def load_config(self):
-        """Load configuration from files"""
-        config_path = Path("config/subreddit_templates.json")
-        if not config_path.exists():
-            # Default configuration
-            return {
-                "subreddit_templates": [
-                    {
-                        "name_template": "Microdosing{type}",
-                        "type_variants": ["Research", "Science", "Support", "Community", "Therapy"],
-                        "description": "A community for {focus} discussions about microdosing and psychedelic-assisted therapy.",
-                        "focus_variants": [
-                            "evidence-based",
-                            "scientific",
-                            "supportive",
-                            "educational",
-                            "therapeutic"
-                        ],
-                        "sidebar_template": """
-**Welcome to r/{name}!**
+    def load_config(self) -> Dict:
+        """Load configuration from files - FIXED VERSION"""
+        config_path = Path("scripts/subreddit_creation/subreddit_templates.json")
+        
+        # Create config directory if it doesn't exist
+        config_path.parent.mkdir(exist_ok=True, parents=True)
+        
+        # Default configuration
+        default_config = {
+            "subreddit_templates": [
+                {
+                    "name_template": "Microdosing{type}",
+                    "type_variants": ["Research", "Science", "Support", "Community", "Therapy"],
+                    "description": "A community for {focus} discussions about microdosing and psychedelic-assisted therapy.",
+                    "focus_variants": [
+                        "evidence-based",
+                        "scientific",
+                        "supportive",
+                        "educational",
+                        "therapeutic"
+                    ],
+                    "sidebar_template": """**Welcome to r/{name}!**
 
 ## About This Community
 This is a space for {focus} discussions about microdosing psychedelics for mental health, creativity, and personal growth.
@@ -75,23 +73,41 @@ This is a space for {focus} discussions about microdosing psychedelics for menta
 - [Psychedelic Research Studies](https://mcrdse.com/studies)
 
 ## Disclaimer
-This community does not provide medical advice. Consult healthcare professionals.
-                        """,
-                        "post_types": ["discussion", "question", "experience", "research", "resource"]
-                    }
-                ],
-                "creation_delay": {
-                    "min": 3600,  # 1 hour minimum between creations
-                    "max": 86400  # 24 hours maximum between creations
-                },
-                "account_requirements": {
-                    "min_age_days": 30,
-                    "min_karma": 100,
-                    "max_subreddits_per_day": 1,
-                    "max_total_subreddits": 10
+This community does not provide medical advice. Consult healthcare professionals.""",
+                    "post_types": ["discussion", "question", "experience", "research", "resource"]
                 }
+            ],
+            "creation_delay": {
+                "min": 3600,  # 1 hour minimum between creations
+                "max": 86400  # 24 hours maximum between creations
+            },
+            "account_requirements": {
+                "min_age_days": 30,
+                "min_karma": 100,
+                "max_subreddits_per_day": 1,
+                "max_total_subreddits": 10
             }
-        return json.loads(config_path.read_text())
+        }
+        
+        # Check if config file exists and is valid
+        if config_path.exists():
+            try:
+                content = config_path.read_text().strip()
+                if content:  # Check if file is not empty
+                    return json.loads(content)
+                else:
+                    logger.warning(f"Config file {config_path} is empty. Using defaults.")
+            except json.JSONDecodeError as e:
+                logger.error(f"Error parsing JSON in {config_path}: {e}")
+                logger.warning("Using default configuration instead.")
+        else:
+            logger.info(f"Config file {config_path} not found. Creating with defaults.")
+        
+        # Write default config to file
+        config_path.write_text(json.dumps(default_config, indent=2))
+        logger.info(f"Created default config at {config_path}")
+        
+        return default_config
     
     def generate_subreddit_names(self):
         """Generate unique subreddit names"""
@@ -118,7 +134,8 @@ This community does not provide medical advice. Consult healthcare professionals
             "NeuroplasticityResearch"
         ])
         
-        return names
+        # Remove duplicates and return
+        return list(set(names))
     
     def check_account_eligibility(self):
         """Check if account meets Reddit's subreddit creation requirements"""
@@ -146,6 +163,10 @@ This community does not provide medical advice. Consult healthcare professionals
             time.sleep(3)
             
             # Fill subreddit name
+            from selenium.webdriver.common.by import By
+            from selenium.webdriver.support.ui import WebDriverWait
+            from selenium.webdriver.support import expected_conditions as EC
+            
             name_field = WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.ID, "name"))
             )
@@ -374,20 +395,52 @@ Let's build a supportive, evidence-based community together!""",
         """Main execution method"""
         try:
             # Setup Selenium (using existing browser manager)
-            from src.microdose_study_bot.reddit_selenium.utils.browser_manager import BrowserManager
-            browser_manager = BrowserManager()
+            from selenium import webdriver
+            from selenium.webdriver.chrome.options import Options
+            from selenium.webdriver.chrome.service import Service
+            from webdriver_manager.chrome import ChromeDriverManager
             
-            # Configure browser
-            browser_manager.headless = headless
-            browser_manager.stealth_mode = True
+            # Setup Chrome options
+            chrome_options = Options()
+            if headless:
+                chrome_options.add_argument("--headless=new")
             
-            self.driver = browser_manager.get_driver()
+            # Anti-detection settings
+            chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            chrome_options.add_experimental_option('useAutomationExtension', False)
             
-            # Login using existing cookies
-            from src.microdose_study_bot.reddit_selenium.login import login_with_cookies
-            if not login_with_cookies(self.driver, self.account_name):
-                logger.error("Login failed")
-                return
+            # Random user agent
+            user_agents = [
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15",
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
+            ]
+            chrome_options.add_argument(f'user-agent={random.choice(user_agents)}')
+            
+            # Setup driver
+            service = Service(ChromeDriverManager().install())
+            self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            
+            # Execute anti-detection script
+            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            
+            # Login using existing cookies if available
+            cookies_file = Path(f"data/cookies_{self.account_name}.pkl")
+            if cookies_file.exists():
+                logger.info(f"Would load cookies from {cookies_file}")
+                # In real implementation, you would load cookies here
+                # For now, we'll do manual login
+                pass
+            
+            # Navigate to Reddit for manual login
+            self.driver.get("https://old.reddit.com")
+            time.sleep(3)
+            
+            # Check if logged in
+            if "login" in self.driver.page_source.lower():
+                logger.info("Please log in manually in the browser window...")
+                input("Press Enter after you have logged in...")
             
             # Check eligibility
             if not self.check_account_eligibility():
@@ -433,15 +486,60 @@ Let's build a supportive, evidence-based community together!""",
                     )
                     logger.info(f"Waiting {delay/3600:.1f} hours before next creation")
                     time.sleep(delay)
+                else:
+                    logger.warning(f"Failed to create r/{subreddit_name}")
             
             logger.info(f"Created {created_count} subreddits")
             
+        except ImportError as e:
+            logger.error(f"Import error: {e}")
+            logger.info("Install required packages: pip install selenium webdriver-manager")
         except Exception as e:
             logger.error(f"Error in SubredditCreator: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
             if self.driver:
                 self.driver.quit()
 
 if __name__ == "__main__":
-    creator = SubredditCreator(account_name="account1")
-    creator.run(max_subreddits=2, headless=False)
+    # Create a simple command-line interface
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Create MCRDSE subreddits")
+    parser.add_argument("--account", default="account1", help="Reddit account to use")
+    parser.add_argument("--max", type=int, default=2, help="Maximum subreddits to create")
+    parser.add_argument("--headless", action="store_true", help="Run browser in background")
+    parser.add_argument("--test", action="store_true", help="Test mode - only show what would be created")
+    
+    args = parser.parse_args()
+    
+    print("\n" + "="*60)
+    print("MCRDSE Subreddit Creation Tool")
+    print("="*60)
+    
+    if args.test:
+        print("TEST MODE: No subreddits will actually be created")
+    
+    print(f"Account: {args.account}")
+    print(f"Max to create: {args.max}")
+    print(f"Headless mode: {args.headless}")
+    print("="*60 + "\n")
+    
+    # Create creator instance
+    creator = SubredditCreator(account_name=args.account)
+    
+    # Show what subreddits would be created
+    print("Subreddit names that would be created:")
+    for i, name in enumerate(creator.subreddit_names[:args.max], 1):
+        print(f"  {i}. r/{name}")
+    
+    if not args.test:
+        response = input("\nProceed with creation? (yes/no): ")
+        if response.lower() == "yes":
+            creator.run(max_subreddits=args.max, headless=args.headless)
+        else:
+            print("Creation cancelled.")
+    else:
+        print("\nTest mode complete. No subreddits were created.")
+        print("To actually create subreddits, run without --test flag.")
