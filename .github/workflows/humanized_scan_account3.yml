@@ -231,7 +231,11 @@ jobs:
           set -euxo pipefail
           echo "Starting humanized scan..."
           mkdir -p logs
-          python scripts/runners/humanized_night_scanner.py 2>&1 | tee logs/ci_humanized_scan.log
+          WINDOWS_ARG=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            WINDOWS_ARG="--force-run"
+          fi
+          python scripts/runners/humanized_night_scanner.py $WINDOWS_ARG 2>&1 | tee logs/ci_humanized_scan.log
           echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
           exit 0
 
