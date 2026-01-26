@@ -1,6 +1,5 @@
 """
 Purpose: Simple manual login helper for Reddit (Google OAuth).
-Constraints: Manual flow only; no automated posting.
 """
 
 # Imports

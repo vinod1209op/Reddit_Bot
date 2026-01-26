@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 """
-Purpose: Time-windowed, read-only scanning (no replies, no posting).
-Constraints: ENABLE_POSTING and USE_LLM forced off during scheduled runs.
-
-# SAFETY GUARANTEE:
-# This module MUST remain read-only. No reply or engagement logic is allowed here.
+Purpose: Time-windowed scanning.
 
 Usage examples:
   python scripts/runners/night_scanner.py
@@ -13,7 +9,6 @@ Usage examples:
   python scripts/runners/night_scanner.py --schedule-path "config/schedule.json"
 
 Notes:
-- This script only scans and queues matches. It never generates replies or posts.
 - Schedule it via cron/Task Scheduler and run it periodically (e.g., every 15-30 minutes).
 - Precedence: CLI args > env vars > schedule.json (if present).
 """

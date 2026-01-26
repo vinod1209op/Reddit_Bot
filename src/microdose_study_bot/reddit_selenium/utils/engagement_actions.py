@@ -1,6 +1,5 @@
 """
-Purpose: Optional engagement actions for Selenium sessions.
-Constraints: Must remain off by default and respect safety limits.
+Purpose: engagement actions for Selenium sessions.
 """
 
 # Imports

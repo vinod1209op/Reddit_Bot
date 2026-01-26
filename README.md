@@ -1,7 +1,7 @@
 # MicrodoseStudyBot (Academic Case Study)
 
 ## What this is
-- A small research bot to explore AI-assisted, education replies on Reddit with a mandatory human-in-the-loop.
+- A small research bot to explore AI-assisted replies on Reddit.
 
 ## Tech stack
 - Python
@@ -24,7 +24,7 @@
    - Optional for Selenium login: `GOOGLE_EMAIL`, `GOOGLE_PASSWORD`
    - Optional toggles:
      - `MOCK_MODE=1` to force mock data (no API calls)
-     - `ENABLE_POSTING=1` to allow replies (keep off for dry-run)
+     - `ENABLE_POSTING=1` to allow replies
      - `USE_LLM=1` + `OPENROUTER_API_KEY` to try LLM replies (falls back to stub if unavailable)
      - `RUN_ID` to tag runs in logs
      - `SELENIUM_AUTO_SUBMIT_LIMIT` to cap Streamlit auto-submit per session
@@ -85,8 +85,8 @@ pre-commit run --all-files
 ```
 
 ## GitHub Actions (humanized scheduled scan)
-To run scheduled, read-only humanized scans in GitHub Actions (using `.github/workflows/humanized_scan.yml`):
-- Store a `cookies_bundle.zip` (zip of `data/cookies_*.pkl`) in Supabase Storage.
+To run scheduled humanized scans in GitHub Actions (using `.github/workflows/humanized_scan.yml`):
+- Store `data/cookies_*.pkl` in Supabase Storage.
 - Set GitHub Actions secrets: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_BUCKET`, and optional `SUPABASE_COOKIES_PATH` (default `cookies/cookies_bundle.zip`).
 - The workflow downloads the bundle at start and uploads refreshed cookies after the run via `scripts/ops/supabase_cookies_sync.py`.
 - Review/adjust the cron schedule in `.github/workflows/humanized_scan.yml` to match your desired time windows (cron is UTC; update for DST as needed).
@@ -105,7 +105,7 @@ To run scheduled, read-only humanized scans in GitHub Actions (using `.github/wo
 - `src/microdose_study_bot/reddit_selenium/`: Browser-based helper for manual Google login and subreddit scraping.
 - `src/microdose_study_bot/core/`: Config loader, logging, and safety utilities used by both modes.
 - `config/`: Keywords/subreddits, rate limits, and credentials template.
-- `config/accounts.json` + `config/activity_schedule.json`: multi-account, scheduled humanized scanning (read-only by default).
+- `config/accounts.json` + `config/activity_schedule.json`: multi-account, scheduled humanized scanning.
 - `config/schedule.json`: legacy time windows for `scripts/runners/night_scanner.py` (manual only).
 - `apps/streamlit/app.py`: Streamlit UI to search and prefill replies using Selenium.
 - `scripts/runners/night_scanner.py`: legacy read-only scanning with logs, summary, and queue (manual only by default).

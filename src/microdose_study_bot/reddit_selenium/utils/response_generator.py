@@ -1,6 +1,5 @@
 """
 Purpose: Generate research-focused responses for Selenium workflows.
-Constraints: Must follow centralized safety policies and require approval when needed.
 """
 
 # Imports

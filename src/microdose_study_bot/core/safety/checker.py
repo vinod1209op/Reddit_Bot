@@ -1,6 +1,5 @@
 """
 Purpose: Safety checks for Reddit bot operations.
-Constraints: Centralized gating; keep posting off unless approved.
 """
 
 # Imports

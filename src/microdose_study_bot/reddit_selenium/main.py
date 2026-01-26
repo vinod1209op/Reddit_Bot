@@ -1,6 +1,5 @@
 """
 Purpose: Selenium-based automation entry point (internal).
-Constraints: Posting requires explicit approval; prefer apps/cli/microdose_bot.py.
 """
 
 # Imports
