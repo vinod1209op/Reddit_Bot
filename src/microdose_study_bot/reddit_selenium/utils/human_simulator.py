@@ -267,7 +267,7 @@ class HumanSimulator:
         try:
             error_type = random.choices(
                 ["wrong_click", "unnecessary_back", "accidental_refresh", "scroll_error", "none"],
-                weights=[0.15, 0.35, 0.25, 0.2, 0.05]
+                weights=[0.05, 0.08, 0.05, 0.06, 0.76]
             )[0]
             
             if error_type == "none":
@@ -277,7 +277,6 @@ class HumanSimulator:
                 success = self._simulate_wrong_click(driver)
                 if success:
                     self.navigation_error_count += 1
-                    print(f"⚠️ [HumanSim] Navigation error: wrong click (total: {self.navigation_error_count})")
                 return success
             
             elif error_type == "unnecessary_back":
@@ -287,14 +286,12 @@ class HumanSimulator:
                 driver.forward()
                 time.sleep(random.uniform(1, 2))
                 self.navigation_error_count += 1
-                print(f"⚠️ [HumanSim] Navigation error: unnecessary back/forward (total: {self.navigation_error_count})")
                 return True
             
             elif error_type == "accidental_refresh":
                 driver.refresh()
                 time.sleep(random.uniform(2, 4))
                 self.navigation_error_count += 1
-                print(f"⚠️ [HumanSim] Navigation error: accidental refresh (total: {self.navigation_error_count})")
                 return True
             
             elif error_type == "scroll_error":
@@ -309,7 +306,6 @@ class HumanSimulator:
                 time.sleep(random.uniform(0.3, 0.8))
                 
                 self.navigation_error_count += 1
-                print(f"⚠️ [HumanSim] Navigation error: overscroll correction (total: {self.navigation_error_count})")
                 return True
             
         except Exception as e:

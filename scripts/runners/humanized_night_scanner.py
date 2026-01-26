@@ -236,7 +236,7 @@ def select_subreddits_for_run(
             must_include.append(sub)
 
     if len(must_include) > max_per_run:
-        max_per_run = len(must_include)
+        must_include = random.sample(must_include, k=max_per_run)
 
     remaining = [s for s in unique if s not in must_include]
     weighted = []
