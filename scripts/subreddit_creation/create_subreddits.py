@@ -8,9 +8,12 @@ import random
 import time
 import logging
 import sys
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from microdose_study_bot.core.config import ConfigManager
+from microdose_study_bot.reddit_selenium.automation_base import RedditAutomationBase
 
 # Setup logging
 logging.basicConfig(
@@ -19,108 +22,137 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-class SubredditCreator:
+class SubredditCreator(RedditAutomationBase):
     """Creates and configures new subreddits for MCRDSE"""
     
-    def __init__(self, account_name="account1"):
+    def __init__(self, account_name="account1", headless=False, dry_run=False):
         """
         Initialize with account name from config/accounts.json
         
         Args:
             account_name: Which account to use (must be configured)
         """
+        os.environ["SELENIUM_HEADLESS"] = "1" if headless else "0"
         self.account_name = account_name
+        super().__init__(account_name=account_name, dry_run=dry_run)
         self.config = self.load_config()
-        self.driver = None
+        self.profile_name = self.config.get("default_profile") or "conservative"
+        self.profile_config = self.config.get("profiles", {}).get(self.profile_name, {})
         self.subreddit_names = self.generate_subreddit_names()
         
     def load_config(self) -> Dict:
         """Load configuration from files - FIXED VERSION"""
-        config_path = Path("scripts/subreddit_creation/subreddit_templates.json")
-        
-        # Create config directory if it doesn't exist
-        config_path.parent.mkdir(exist_ok=True, parents=True)
-        
-        # Default configuration
-        default_config = {
-            "subreddit_templates": [
-                {
-                    "name_template": "Microdosing{type}",
-                    "type_variants": ["Research", "Science", "Support", "Community", "Therapy"],
-                    "description": "A community for {focus} discussions about microdosing and psychedelic-assisted therapy.",
-                    "focus_variants": [
-                        "evidence-based",
-                        "scientific",
-                        "supportive",
-                        "educational",
-                        "therapeutic"
-                    ],
-                    "sidebar_template": """**Welcome to r/{name}!**
-
-## About This Community
-This is a space for {focus} discussions about microdosing psychedelics for mental health, creativity, and personal growth.
-
-## Community Rules
-1. Be respectful and kind
-2. No sourcing or selling of substances
-3. Share experiences, not medical advice
-4. Cite sources when discussing research
-5. Practice harm reduction principles
-
-## Resources
-- [MCRDSE Research Portal](https://mcrdse.com/research)
-- [Microdosing Safety Guide](https://mcrdse.com/safety)
-- [Psychedelic Research Studies](https://mcrdse.com/studies)
-
-## Disclaimer
-This community does not provide medical advice. Consult healthcare professionals.""",
-                    "post_types": ["discussion", "question", "experience", "research", "resource"]
+        config_manager = ConfigManager()
+        config = config_manager.load_subreddit_creation() or {}
+        templates_path = Path("scripts/subreddit_creation/templates/subreddit_templates.json")
+        templates = config_manager.load_json(str(templates_path), default={}) or {}
+        if isinstance(templates, dict):
+            if "template_sets" in templates and isinstance(templates["template_sets"], dict):
+                config["template_sets"] = templates["template_sets"]
+            elif "subreddit_templates" in templates and isinstance(templates["subreddit_templates"], list):
+                config["subreddit_templates"] = templates["subreddit_templates"]
+        if not config:
+            logger.warning("subreddit_creation.json missing or empty; using defaults.")
+            config = {
+                "default_profile": "conservative",
+                "profiles": {
+                    "conservative": {
+                        "max_subreddits_per_day": 1,
+                        "max_subreddits_per_week": 2,
+                        "min_days_between_creations": 7,
+                        "template_set": "research_focused",
+                        "delay_min_minutes": 1440,
+                        "delay_max_minutes": 10080,
+                        "safety_check_requirements": {
+                            "account_min_age_days": 90,
+                            "account_min_karma": 500,
+                            "verify_email": True
+                        }
+                    },
+                    "moderate": {
+                        "max_subreddits_per_day": 2,
+                        "max_subreddits_per_week": 4,
+                        "min_days_between_creations": 3,
+                        "template_set": "mixed",
+                        "delay_min_minutes": 720,
+                        "delay_max_minutes": 4320
+                    }
+                },
+                "template_sets": {
+                    "research_focused": {
+                        "name_templates": ["Microdosing{type}", "Psychedelic{type}", "MCRDSE_{type}"],
+                        "type_variants": ["Research", "Science", "Studies", "Academy", "Institute"],
+                        "description_templates": [
+                            "A subreddit for {type} discussions about psychedelics and microdosing.",
+                            "Explore {type} related to psychedelic research and microdosing.",
+                            "Join the {type} community for scientific discourse on psychedelics."
+                        ],
+                        "sidebar_templates": [
+                            "**Welcome to r/{name}!**\\n\\n## About This Community\\nThis is a space for {type_lower} discussions about microdosing and psychedelic research.\\n\\n## Community Rules\\n1. Be respectful and kind\\n2. No sourcing or selling of substances\\n3. Share experiences, not medical advice\\n4. Cite sources when discussing research\\n5. Practice harm reduction principles\\n\\n## Disclaimer\\nThis community does not provide medical advice. Consult healthcare professionals."
+                        ]
+                    },
+                    "mixed": {
+                        "name_templates": [
+                            "Psychedelic{type}Hub",
+                            "Microdosing{type}Zone",
+                            "Psychedelic{type}Community",
+                            "Microdosing{type}Forum"
+                        ],
+                        "type_variants": ["Discussion", "Support", "Experiences", "Research", "Therapy"],
+                        "description_templates": [
+                            "A subreddit for {type} discussions about psychedelics and microdosing.",
+                            "Explore {type} related to psychedelic research and microdosing.",
+                            "Join the {type} community for scientific discourse on psychedelics."
+                        ],
+                        "sidebar_templates": [
+                            "**Welcome to r/{name}!**\\n\\n## About This Community\\nThis is a space for {type_lower} discussions about microdosing and psychedelic-assisted therapy.\\n\\n## Community Rules\\n1. Be respectful and kind\\n2. No sourcing or selling of substances\\n3. Share experiences, not medical advice\\n4. Cite sources when discussing research\\n5. Practice harm reduction principles\\n\\n## Disclaimer\\nThis community does not provide medical advice. Consult healthcare professionals."
+                        ]
+                    }
                 }
-            ],
-            "creation_delay": {
-                "min": 3600,  # 1 hour minimum between creations
-                "max": 86400  # 24 hours maximum between creations
-            },
-            "account_requirements": {
-                "min_age_days": 30,
-                "min_karma": 100,
-                "max_subreddits_per_day": 1,
-                "max_total_subreddits": 10
             }
-        }
-        
-        # Check if config file exists and is valid
-        if config_path.exists():
-            try:
-                content = config_path.read_text().strip()
-                if content:  # Check if file is not empty
-                    return json.loads(content)
-                else:
-                    logger.warning(f"Config file {config_path} is empty. Using defaults.")
-            except json.JSONDecodeError as e:
-                logger.error(f"Error parsing JSON in {config_path}: {e}")
-                logger.warning("Using default configuration instead.")
-        else:
-            logger.info(f"Config file {config_path} not found. Creating with defaults.")
-        
-        # Write default config to file
-        config_path.write_text(json.dumps(default_config, indent=2))
-        logger.info(f"Created default config at {config_path}")
-        
-        return default_config
+        return config
+
+    def _get_template_set(self) -> Dict:
+        if "subreddit_templates" in self.config:
+            return {}
+        template_sets = self.config.get("template_sets", {})
+        if not isinstance(template_sets, dict) or not template_sets:
+            return {}
+        set_name = self.profile_config.get("template_set") or self.config.get("default_template_set")
+        if not set_name:
+            set_name = next(iter(template_sets))
+        return template_sets.get(set_name, {})
+
+    def _get_creation_delay_seconds(self) -> Tuple[int, int]:
+        if "creation_delay" in self.config:
+            delay = self.config.get("creation_delay", {})
+            return int(delay.get("min", 3600)), int(delay.get("max", 86400))
+        min_minutes = int(self.profile_config.get("delay_min_minutes", 60))
+        max_minutes = int(self.profile_config.get("delay_max_minutes", 1440))
+        return min_minutes * 60, max_minutes * 60
     
     def generate_subreddit_names(self):
         """Generate unique subreddit names"""
         names = []
-        for template in self.config.get("subreddit_templates", []):
-            base = template["name_template"]
-            for variant in template.get("type_variants", []):
-                # Create variations
-                names.append(base.replace("{type}", variant))
-                # Add alternative spellings
-                names.append(base.replace("{type}", variant.lower()))
-                # Add with underscores
-                names.append(base.replace("{type}", variant.replace(" ", "_")))
+        if "subreddit_templates" in self.config:
+            for template in self.config.get("subreddit_templates", []):
+                base = template["name_template"]
+                for variant in template.get("type_variants", []):
+                    # Create variations
+                    names.append(base.replace("{type}", variant))
+                    # Add alternative spellings
+                    names.append(base.replace("{type}", variant.lower()))
+                    # Add with underscores
+                    names.append(base.replace("{type}", variant.replace(" ", "_")))
+        else:
+            template_set = self._get_template_set()
+            name_templates = template_set.get("name_templates", [])
+            type_variants = template_set.get("type_variants", [])
+            for base in name_templates:
+                for variant in type_variants:
+                    names.append(base.replace("{type}", variant))
+                    names.append(base.replace("{type}", variant.lower()))
+                    names.append(base.replace("{type}", variant.replace(" ", "_")))
         
         # Add MCRDSE branded names
         names.extend([
@@ -394,53 +426,22 @@ Let's build a supportive, evidence-based community together!""",
     def run(self, max_subreddits=3, headless=False):
         """Main execution method"""
         try:
-            # Setup Selenium (using existing browser manager)
-            from selenium import webdriver
-            from selenium.webdriver.chrome.options import Options
-            from selenium.webdriver.chrome.service import Service
-            from webdriver_manager.chrome import ChromeDriverManager
-            
-            # Setup Chrome options
-            chrome_options = Options()
-            if headless:
-                chrome_options.add_argument("--headless=new")
-            
-            # Anti-detection settings
-            chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-            chrome_options.add_experimental_option('useAutomationExtension', False)
-            
-            # Random user agent
-            user_agents = [
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15",
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
-            ]
-            chrome_options.add_argument(f'user-agent={random.choice(user_agents)}')
-            
-            # Setup driver
-            service = Service(ChromeDriverManager().install())
-            self.driver = webdriver.Chrome(service=service, options=chrome_options)
-            
-            # Execute anti-detection script
-            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            
-            # Login using existing cookies if available
-            cookies_file = Path(f"data/cookies_{self.account_name}.pkl")
-            if cookies_file.exists():
-                logger.info(f"Would load cookies from {cookies_file}")
-                # In real implementation, you would load cookies here
-                # For now, we'll do manual login
-                pass
-            
-            # Navigate to Reddit for manual login
-            self.driver.get("https://old.reddit.com")
-            time.sleep(3)
-            
-            # Check if logged in
-            if "login" in self.driver.page_source.lower():
-                logger.info("Please log in manually in the browser window...")
-                input("Press Enter after you have logged in...")
+            validation = self.run_validations()
+            logger.info(f"Validation summary: {validation}")
+            enabled, reason = self.is_feature_enabled("subreddit_creation")
+            if not enabled:
+                logger.info(f"Subreddit creation disabled ({reason}); exiting.")
+                return
+            if not self.dry_run:
+                if not self.driver:
+                    self._setup_browser()
+                if not self.logged_in:
+                    result = self._login_with_fallback()
+                    if not result.success:
+                        logger.error("Login failed; aborting subreddit creation.")
+                        return
+            else:
+                logger.info("[dry-run] Skipping browser setup/login")
             
             # Check eligibility
             if not self.check_account_eligibility():
@@ -450,57 +451,135 @@ Let's build a supportive, evidence-based community together!""",
             # Create subreddits
             created_count = 0
             for subreddit_name in self.subreddit_names[:max_subreddits]:
+                if not self.status_tracker.can_perform_action(
+                    self.account_name, "creation", subreddit=subreddit_name
+                ):
+                    logger.info(f"Skipping creation for r/{subreddit_name} due to cooldown/limits")
+                    continue
                 logger.info(f"Processing: r/{subreddit_name}")
                 
                 # Generate description and sidebar
-                template = random.choice(self.config["subreddit_templates"])
-                focus = random.choice(template["focus_variants"])
-                
-                description = template["description"].replace("{focus}", focus)
-                sidebar = template["sidebar_template"].format(
-                    name=subreddit_name,
-                    focus=focus
-                )
+                if "subreddit_templates" in self.config:
+                    template = random.choice(self.config["subreddit_templates"])
+                    focus = random.choice(template.get("focus_variants", ["supportive"]))
+                    description = template["description"].replace("{focus}", focus)
+                    sidebar = template["sidebar_template"].format(
+                        name=subreddit_name,
+                        focus=focus
+                    )
+                else:
+                    template_set = self._get_template_set()
+                    name_templates = template_set.get("name_templates", [])
+                    type_variants = template_set.get("type_variants", [])
+                    description_templates = template_set.get("description_templates", [])
+                    sidebar_templates = template_set.get("sidebar_templates", [])
+                    chosen_type = random.choice(type_variants) if type_variants else "Community"
+                    description_template = random.choice(description_templates) if description_templates else "A subreddit for {type} discussions."
+                    description = description_template.replace("{type}", chosen_type)
+                    if sidebar_templates:
+                        sidebar_template = random.choice(sidebar_templates)
+                        sidebar = (
+                            sidebar_template
+                            .replace("{name}", subreddit_name)
+                            .replace("{type}", chosen_type)
+                            .replace("{type_lower}", chosen_type.lower())
+                        )
+                    else:
+                        sidebar = (
+                            f"**Welcome to r/{subreddit_name}!**\n\n"
+                            f"## About This Community\n"
+                            f"This is a space for {chosen_type.lower()} discussions about microdosing and psychedelic research.\n\n"
+                            f"## Community Rules\n"
+                            f"1. Be respectful and kind\n"
+                            f"2. No sourcing or selling of substances\n"
+                            f"3. Share experiences, not medical advice\n"
+                            f"4. Cite sources when discussing research\n"
+                            f"5. Practice harm reduction principles\n\n"
+                            f"## Disclaimer\n"
+                            f"This community does not provide medical advice. Consult healthcare professionals."
+                        )
                 
                 # Create subreddit
-                if self.create_subreddit(subreddit_name, description, sidebar):
+                creation_result = self.execute_safely(
+                    lambda: self.create_subreddit(subreddit_name, description, sidebar),
+                    max_retries=2,
+                    login_required=True,
+                    action_name="create_subreddit",
+                )
+                if creation_result.success and creation_result.result:
                     # Configure settings
                     time.sleep(5)
-                    self.configure_subreddit(subreddit_name)
+                    self.execute_safely(
+                        lambda: self.configure_subreddit(subreddit_name),
+                        max_retries=2,
+                        login_required=True,
+                    )
                     
                     # Setup AutoModerator
                     time.sleep(3)
-                    self.setup_automod(subreddit_name)
+                    self.execute_safely(
+                        lambda: self.setup_automod(subreddit_name),
+                        max_retries=2,
+                        login_required=True,
+                    )
                     
                     # Create initial content
                     time.sleep(3)
-                    self.create_initial_content(subreddit_name)
+                    self.execute_safely(
+                        lambda: self.create_initial_content(subreddit_name),
+                        max_retries=2,
+                        login_required=True,
+                    )
                     
                     created_count += 1
+                    self.status_tracker.record_subreddit_creation(
+                        self.account_name, subreddit_name, True
+                    )
+                    self._record_created_subreddit(subreddit_name)
                     logger.info(f"Successfully setup r/{subreddit_name}")
                     
                     # Delay between creations
-                    delay = random.randint(
-                        self.config["creation_delay"]["min"],
-                        self.config["creation_delay"]["max"]
-                    )
-                    logger.info(f"Waiting {delay/3600:.1f} hours before next creation")
-                    time.sleep(delay)
+                    delay_min, delay_max = self._get_creation_delay_seconds()
+                    delay = random.randint(delay_min, delay_max)
+                    if self.dry_run:
+                        logger.info(f"[dry-run] Would wait {delay/3600:.1f} hours before next creation")
+                    else:
+                        logger.info(f"Waiting {delay/3600:.1f} hours before next creation")
+                        time.sleep(delay)
                 else:
+                    self.status_tracker.record_subreddit_creation(
+                        self.account_name, subreddit_name, False
+                    )
                     logger.warning(f"Failed to create r/{subreddit_name}")
             
             logger.info(f"Created {created_count} subreddits")
             
-        except ImportError as e:
-            logger.error(f"Import error: {e}")
-            logger.info("Install required packages: pip install selenium webdriver-manager")
         except Exception as e:
             logger.error(f"Error in SubredditCreator: {e}")
             import traceback
             traceback.print_exc()
         finally:
-            if self.driver:
-                self.driver.quit()
+            self.cleanup()
+
+    def _record_created_subreddit(self, subreddit_name: str) -> None:
+        history_path = Path("scripts/subreddit_creation/history/created_subreddits.json")
+        try:
+            history_path.parent.mkdir(parents=True, exist_ok=True)
+            existing = []
+            if history_path.exists():
+                content = history_path.read_text().strip()
+                if content:
+                    existing = json.loads(content)
+            entry = {
+                "timestamp": datetime.now().isoformat(),
+                "account": self.account_name,
+                "subreddit": subreddit_name,
+                "profile": self.profile_name,
+            }
+            existing.append(entry)
+            history_path.write_text(json.dumps(existing, indent=2))
+        except Exception as exc:
+            logger.warning(f"Failed to record subreddit history: {exc}")
 
 if __name__ == "__main__":
     # Create a simple command-line interface
@@ -511,6 +590,8 @@ if __name__ == "__main__":
     parser.add_argument("--max", type=int, default=2, help="Maximum subreddits to create")
     parser.add_argument("--headless", action="store_true", help="Run browser in background")
     parser.add_argument("--test", action="store_true", help="Test mode - only show what would be created")
+    parser.add_argument("--dry-run", action="store_true", help="Simulate actions without executing")
+    parser.add_argument("--validate-only", action="store_true", help="Validate configs/accounts and exit")
     
     args = parser.parse_args()
     
@@ -527,7 +608,17 @@ if __name__ == "__main__":
     print("="*60 + "\n")
     
     # Create creator instance
-    creator = SubredditCreator(account_name=args.account)
+    creator = SubredditCreator(
+        account_name=args.account,
+        headless=args.headless,
+        dry_run=bool(args.test or args.dry_run),
+    )
+
+    if args.validate_only:
+        validation = creator.run_validations()
+        print(f"Validation summary: {validation}")
+        creator.cleanup()
+        sys.exit(0)
     
     # Show what subreddits would be created
     print("Subreddit names that would be created:")
@@ -535,11 +626,7 @@ if __name__ == "__main__":
         print(f"  {i}. r/{name}")
     
     if not args.test:
-        response = input("\nProceed with creation? (yes/no): ")
-        if response.lower() == "yes":
-            creator.run(max_subreddits=args.max, headless=args.headless)
-        else:
-            print("Creation cancelled.")
+        creator.run(max_subreddits=args.max, headless=args.headless)
     else:
         print("\nTest mode complete. No subreddits were created.")
         print("To actually create subreddits, run without --test flag.")

@@ -1,0 +1,14 @@
+{
+  "profiles": {
+    "low_frequency": {
+      "max_posts_per_day": 2,
+      "content_mix": {
+        "discussion": 40,
+        "resource": 30,
+        "question": 20,
+        "experience": 10
+      },
+      "time_windows": ["09:00-11:00", "19:00-21:00"]
+    }
+  }
+}

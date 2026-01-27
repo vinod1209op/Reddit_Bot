@@ -44,6 +44,8 @@ from microdose_study_bot.core.utils.console_tee import enable_console_tee
 from microdose_study_bot.core.utils.scan_shards import compute_scan_shard
 from microdose_study_bot.core.utils.vpn_manager import VPNManager
 from microdose_study_bot.core.logging import UnifiedLogger
+from microdose_study_bot.core.rate_limiter import RateLimiter
+from microdose_study_bot.core.account_status import AccountStatusTracker
 from scripts.runners.session_scanner import run_session_scan
 
 SUBREDDIT_COVERAGE_PATH = Path("logs/subreddit_coverage.json")
@@ -283,208 +285,6 @@ def get_active_window(activity_config: Dict[str, Any]) -> Optional[Dict[str, Any
     return None
 
 
-class AccountStatusTracker:
-    """Tracks account health status across sessions."""
-    
-    def __init__(self, status_file="data/account_status.json"):
-        self.logger = UnifiedLogger("AccountStatusTracker").get_logger()
-        self.status_file = Path(status_file)
-        self.status_file.parent.mkdir(parents=True, exist_ok=True)
-        self.status_data = self._load_status_data()
-    
-    def _load_status_data(self) -> Dict[str, Any]:
-        """Load account status data from file."""
-        try:
-            if self.status_file.exists():
-                with open(self.status_file, 'r') as f:
-                    data = json.load(f)
-                    self.logger.info(f"Loaded account status for {len(data)} accounts from {self.status_file}")
-                    return data
-        except Exception as e:
-            self.logger.warning(f"Could not load account status data: {e}")
-        return {}
-    
-    def _save_status_data(self):
-        """Save account status data to file."""
-        try:
-            with open(self.status_file, 'w') as f:
-                json.dump(self.status_data, f, indent=2)
-            self.logger.debug(f"Saved account status data to {self.status_file}")
-        except Exception as e:
-            self.logger.error(f"Failed to save account status data: {e}")
-    
-    def update_account_status(self, account_name: str, status: str, details: Dict[str, Any] = None):
-        """Update status for an account with details."""
-        if account_name not in self.status_data:
-            self.status_data[account_name] = {
-                "current_status": "unknown",
-                "status_history": [],
-                "first_seen": datetime.now().isoformat(),
-                "total_login_attempts": 0,
-                "failed_login_attempts": 0,
-                "last_success": None
-            }
-        
-        # Update counters
-        self.status_data[account_name]["total_login_attempts"] = \
-            self.status_data[account_name].get("total_login_attempts", 0) + 1
-        
-        if status != "active" and status != "captcha":
-            self.status_data[account_name]["failed_login_attempts"] = \
-                self.status_data[account_name].get("failed_login_attempts", 0) + 1
-        
-        previous_status = self.status_data[account_name].get("current_status", "unknown")
-        self.status_data[account_name]["current_status"] = status
-        self.status_data[account_name]["last_updated"] = datetime.now().isoformat()
-        
-        # Update last success timestamp
-        if status == "active":
-            self.status_data[account_name]["last_success"] = datetime.now().isoformat()
-        
-        # Add to history
-        status_entry = {
-            "timestamp": datetime.now().isoformat(),
-            "status": status,
-            "previous_status": previous_status
-        }
-        if details:
-            status_entry["details"] = details
-        
-        if "status_history" not in self.status_data[account_name]:
-            self.status_data[account_name]["status_history"] = []
-        
-        self.status_data[account_name]["status_history"].append(status_entry)
-        
-        # Keep only last 50 entries
-        if len(self.status_data[account_name]["status_history"]) > 50:
-            self.status_data[account_name]["status_history"] = self.status_data[account_name]["status_history"][-50:]
-        
-        self._save_status_data()
-        
-        # Log status change if it's significant
-        if previous_status != status:
-            if status == "suspended":
-                self.logger.error(f"🚨 ACCOUNT SUSPENDED: {account_name}")
-            elif status == "rate_limited":
-                self.logger.warning(f"⏳ Account rate limited: {account_name}")
-            elif status == "captcha":
-                self.logger.warning(f"🔒 CAPTCHA required: {account_name}")
-            else:
-                self.logger.info(f"Updated account status for {account_name}: {previous_status} -> {status}")
-    
-    def should_skip_account(self, account_name: str) -> bool:
-        """Check if an account should be skipped based on its status."""
-        if account_name not in self.status_data:
-            return False
-        
-        current_status = self.status_data[account_name].get("current_status", "unknown")
-        
-        # Always skip permanently banned/suspended accounts
-        skip_statuses = ["suspended", "permanently_banned"]
-        
-        if current_status in skip_statuses:
-            self.logger.warning(f"🚫 Skipping account {account_name} - Status: {current_status}")
-            return True
-        
-        # Check for rate limit cooldown
-        if current_status == "rate_limited":
-            last_updated_str = self.status_data[account_name].get("last_updated")
-            if last_updated_str:
-                try:
-                    last_updated = datetime.fromisoformat(last_updated_str)
-                    hours_since = (datetime.now() - last_updated).total_seconds() / 3600
-                    
-                    # Skip if rate limited within last 24 hours
-                    if hours_since < 24:
-                        self.logger.info(f"⏳ Skipping rate-limited account {account_name} ({hours_since:.1f} hours ago)")
-                        return True
-                    else:
-                        # Rate limit expired, reset to unknown
-                        self.update_account_status(account_name, "unknown", {"reason": "rate_limit_expired"})
-                except Exception:
-                    pass
-        
-        # Check for CAPTCHA - wait 6 hours
-        if current_status == "captcha":
-            last_updated_str = self.status_data[account_name].get("last_updated")
-            if last_updated_str:
-                try:
-                    last_updated = datetime.fromisoformat(last_updated_str)
-                    hours_since = (datetime.now() - last_updated).total_seconds() / 3600
-                    
-                    if hours_since < 6:
-                        self.logger.info(f"🔒 Skipping account with CAPTCHA {account_name} ({hours_since:.1f} hours ago)")
-                        return True
-                    else:
-                        # CAPTCHA might be cleared, reset to unknown
-                        self.update_account_status(account_name, "unknown", {"reason": "captcha_cooldown_expired"})
-                except Exception:
-                    pass
-        
-        # Check consecutive failures - if 5+ failed logins in a row, skip for 48 hours
-        failed_count = self.status_data[account_name].get("failed_login_attempts", 0)
-        total_count = self.status_data[account_name].get("total_login_attempts", 0)
-        
-        if total_count > 5 and failed_count >= 5 and failed_count == total_count:
-            # All attempts failed
-            self.logger.warning(f"⚠️ Account {account_name} has {failed_count} consecutive failed logins")
-            last_updated_str = self.status_data[account_name].get("last_updated")
-            if last_updated_str:
-                try:
-                    last_updated = datetime.fromisoformat(last_updated_str)
-                    hours_since = (datetime.now() - last_updated).total_seconds() / 3600
-                    
-                    if hours_since < 48:
-                        self.logger.info(f"Skipping account with consecutive failures {account_name}")
-                        return True
-                except Exception:
-                    pass
-        
-        return False
-    
-    def get_account_status(self, account_name: str) -> str:
-        """Get current status of an account."""
-        return self.status_data.get(account_name, {}).get("current_status", "unknown")
-    
-    def get_status_report(self) -> Dict[str, Any]:
-        """Get a summary report of all account statuses."""
-        report = {
-            "total_accounts": len(self.status_data),
-            "active": 0,
-            "suspended": 0,
-            "rate_limited": 0,
-            "captcha": 0,
-            "unknown": 0,
-            "error": 0,
-            "accounts": {}
-        }
-        
-        for account_name, data in self.status_data.items():
-            status = data.get("current_status", "unknown")
-            report["accounts"][account_name] = status
-            
-            if status == "active":
-                report["active"] += 1
-            elif status == "suspended":
-                report["suspended"] += 1
-            elif status == "rate_limited":
-                report["rate_limited"] += 1
-            elif status == "captcha":
-                report["captcha"] += 1
-            elif status == "unknown":
-                report["unknown"] += 1
-            elif status == "error":
-                report["error"] += 1
-        
-        return report
-    
-    def reset_account_status(self, account_name: str, reason: str = "manual_reset"):
-        """Reset an account's status to unknown."""
-        if account_name in self.status_data:
-            self.update_account_status(account_name, "unknown", {"reason": reason})
-            self.logger.info(f"Reset account {account_name} status to unknown")
-
-
 class HumanizedNightScanner:
     def __init__(self, account_config, activity_config):
         self.account = account_config
@@ -497,6 +297,7 @@ class HumanizedNightScanner:
         self.driver = None
         self.human_sim = None
         self.engagement = None
+        self.rate_limiter = RateLimiter()
         
         # Track session state
         self.session_start_time = None
@@ -807,6 +608,7 @@ class HumanizedNightScanner:
                 'navigation_errors': 0,
                 'tor_rotations': 0
             }
+            rate_limits = self.activity_config.get("rate_limits", {})
             
             # Load target subreddits (allow per-account sharding)
             subreddits = self.account.get("subreddits")
@@ -853,17 +655,23 @@ class HumanizedNightScanner:
                     self.scroll_comments()
                     
                 elif activity == 'vote' and actions_performed['votes'] < self.activity_config['safety_limits']['max_votes_per_session']:
-                    if self.safe_vote():
+                    allowed, _wait = self.rate_limiter.check_rate_limit(self.account.get("name", "account"), "vote", rate_limits)
+                    if allowed and self.safe_vote():
+                        self.rate_limiter.record_action(self.account.get("name", "account"), "vote")
                         actions_performed['votes'] += 1
                         self.logger.debug(f"Voted (total: {actions_performed['votes']})")
                 
                 elif activity == 'save' and actions_performed['saves'] < self.activity_config['safety_limits']['max_saves_per_session']:
-                    if self.safe_save():
+                    allowed, _wait = self.rate_limiter.check_rate_limit(self.account.get("name", "account"), "save", rate_limits)
+                    if allowed and self.safe_save():
+                        self.rate_limiter.record_action(self.account.get("name", "account"), "save")
                         actions_performed['saves'] += 1
                         self.logger.debug(f"Saved post (total: {actions_performed['saves']})")
                 
                 elif activity == 'follow' and actions_performed['follows'] < self.activity_config['safety_limits']['max_follows_per_session']:
-                    if self.safe_follow():
+                    allowed, _wait = self.rate_limiter.check_rate_limit(self.account.get("name", "account"), "follow", rate_limits)
+                    if allowed and self.safe_follow():
+                        self.rate_limiter.record_action(self.account.get("name", "account"), "follow")
                         actions_performed['follows'] += 1
                         self.logger.debug(f"Followed user (total: {actions_performed['follows']})")
                 

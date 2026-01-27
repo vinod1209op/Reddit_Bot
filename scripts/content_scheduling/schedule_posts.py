@@ -8,10 +8,10 @@ import json
 import time
 import logging
 import random
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
-from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait, Select
@@ -19,6 +19,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import schedule
 import threading
+from microdose_study_bot.reddit_selenium.automation_base import RedditAutomationBase
 
 # Setup logging
 logging.basicConfig(
@@ -31,10 +32,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-class MCRDSEPostScheduler:
+class MCRDSEPostScheduler(RedditAutomationBase):
     """Schedule and post content to MCRDSE subreddits using Selenium"""
     
-    def __init__(self, account_name="account1", headless=True):
+    def __init__(self, account_name="account1", headless=True, dry_run=False):
         """
         Initialize post scheduler
         
@@ -42,18 +43,19 @@ class MCRDSEPostScheduler:
             account_name: Which Reddit account to use
             headless: Run browser in background
         """
+        os.environ["SELENIUM_HEADLESS"] = "1" if headless else "0"
         self.account_name = account_name
         self.headless = headless
-        self.driver = None
+        super().__init__(account_name=account_name, dry_run=dry_run)
         self.config = self.load_config()
-        self.schedule_file = Path("data/post_schedule.json")
+        self.schedule_file = Path("scripts/content_scheduling/schedule/post_schedule.json")
         self.post_templates = self.load_templates()
         self.is_running = False
         self.scheduler_thread = None
         
     def load_config(self) -> Dict:
         """Load scheduler configuration"""
-        config_path = Path("config/post_scheduler_config.json")
+        config_path = Path("config/post_scheduling.json")
         
         if config_path.exists():
             try:
@@ -132,7 +134,7 @@ class MCRDSEPostScheduler:
     
     def load_templates(self) -> Dict:
         """Load post templates"""
-        templates_path = Path("config/post_templates.json")
+        templates_path = Path("scripts/content_scheduling/templates/post_templates.json")
         
         if templates_path.exists():
             try:
@@ -303,7 +305,7 @@ class MCRDSEPostScheduler:
         
         # Backup old schedule
         if self.schedule_file.exists():
-            backup_dir = Path("data/schedule_backups")
+            backup_dir = Path("scripts/content_scheduling/schedule/backups")
             backup_dir.mkdir(exist_ok=True, parents=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_file = backup_dir / f"schedule_backup_{timestamp}.json"
@@ -343,6 +345,7 @@ class MCRDSEPostScheduler:
         
         # Generate scheduled time
         scheduled_time = self.generate_scheduled_time()
+        quality_score = min(1.0, max(0.0, len(content) / 500.0))
         
         post = {
             "id": f"post_{int(time.time())}_{random.randint(1000, 9999)}",
@@ -358,7 +361,8 @@ class MCRDSEPostScheduler:
             "last_attempt": None,
             "posted_at": None,
             "post_url": None,
-            "error": None
+            "error": None,
+            "quality_score": round(quality_score, 2)
         }
         
         return post
@@ -427,43 +431,11 @@ class MCRDSEPostScheduler:
     def setup_browser(self):
         """Setup Selenium browser with anti-detection measures"""
         try:
-            from selenium.webdriver.chrome.options import Options
-            from selenium.webdriver.chrome.service import Service
-            from webdriver_manager.chrome import ChromeDriverManager
-            
-            # Setup Chrome options
-            chrome_options = Options()
-            
-            if self.headless:
-                chrome_options.add_argument("--headless=new")
-            
-            # Anti-detection settings
-            chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-            chrome_options.add_experimental_option('useAutomationExtension', False)
-            
-            # Random user agent
-            user_agents = [
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0"
-            ]
-            chrome_options.add_argument(f'user-agent={random.choice(user_agents)}')
-            
-            # Disable automation flags
-            chrome_options.add_argument('--disable-dev-shm-usage')
-            chrome_options.add_argument('--no-sandbox')
-            
-            # Setup driver
-            service = Service(ChromeDriverManager().install())
-            self.driver = webdriver.Chrome(service=service, options=chrome_options)
-            
-            # Execute anti-detection script
-            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            
-            logger.info("Browser setup complete")
+            if self.driver:
+                return True
+            self._setup_browser()
+            logger.info("Browser setup complete (base)")
             return True
-            
         except Exception as e:
             logger.error(f"Failed to setup browser: {e}")
             return False
@@ -471,47 +443,10 @@ class MCRDSEPostScheduler:
     def login_with_cookies(self) -> bool:
         """Login to Reddit using saved cookies"""
         try:
-            # Load cookies from your existing bot system
-            cookies_file = Path(f"data/cookies_{self.account_name}.pkl")
-            
-            if cookies_file.exists():
-                logger.info(f"Loading cookies from {cookies_file}")
-                # In real implementation, load and add cookies here
-                # For now, we'll navigate to Reddit
-                pass
-            
-            # Navigate to Reddit to check login status
-            self.driver.get("https://old.reddit.com")
-            time.sleep(3)
-            
-            # Check if logged in
-            page_source = self.driver.page_source.lower()
-            
-            if "logout" in page_source:
-                logger.info(f"Already logged in as {self.account_name}")
+            if self.logged_in:
                 return True
-            else:
-                logger.warning("Not logged in. Please log in manually.")
-                
-                if not self.headless:
-                    input("Press Enter after you have logged in...")
-                    time.sleep(2)
-                    
-                    # Verify login
-                    self.driver.get("https://old.reddit.com")
-                    time.sleep(2)
-                    
-                    if "logout" in self.driver.page_source.lower():
-                        logger.info("Login successful")
-                        return True
-                    else:
-                        logger.error("Login verification failed")
-                        return False
-                else:
-                    # In headless mode, we can't do manual login easily
-                    logger.error("Cannot do manual login in headless mode")
-                    return False
-                
+            result = self._login_with_fallback()
+            return result.success
         except Exception as e:
             logger.error(f"Login failed: {e}")
             return False
@@ -537,9 +472,25 @@ class MCRDSEPostScheduler:
     def submit_post(self, post_data: Dict) -> Tuple[bool, Optional[str]]:
         """Submit a post to Reddit using Selenium"""
         try:
+            if self.dry_run:
+                logger.info("[dry-run] Skipping submit_post execution")
+                return True, "dry_run"
             subreddit = post_data["subreddit"]
             title = post_data["title"]
             content = post_data["content"]
+            if not self.status_tracker.can_perform_action(
+                self.account_name, "posting", subreddit=subreddit, daily_limit=self.config["posting_settings"]["max_posts_per_day"]
+            ):
+                logger.info(f"Posting limited for {self.account_name}; skipping r/{subreddit}")
+                return False, "posting_limited"
+            limits = (self.activity_schedule or {}).get("rate_limits", {})
+            allowed, wait_seconds = self.rate_limiter.check_rate_limit(
+                self.account_name, "submit_post", limits
+            )
+            if not allowed:
+                self.status_tracker.set_cooldown(self.account_name, "posting", wait_seconds)
+                logger.info(f"Rate limited for posting; wait {wait_seconds}s")
+                return False, "rate_limited"
             
             logger.info(f"Submitting post to r/{subreddit}: {title[:50]}...")
             
@@ -602,6 +553,11 @@ class MCRDSEPostScheduler:
             if "comments" in self.driver.current_url:
                 post_url = self.driver.current_url
                 logger.info(f"Post successful: {post_url}")
+                self.rate_limiter.record_action(self.account_name, "submit_post")
+                self.status_tracker.record_post_activity(
+                    self.account_name, subreddit, post_data.get("type", "unknown"), True,
+                    daily_limit=self.config["posting_settings"]["max_posts_per_day"]
+                )
                 return True, post_url
             else:
                 # Check for errors
@@ -617,13 +573,25 @@ class MCRDSEPostScheduler:
                 for error in error_messages:
                     if error in page_text:
                         logger.error(f"Post failed: {error}")
+                        self.status_tracker.record_post_activity(
+                            self.account_name, subreddit, post_data.get("type", "unknown"), False,
+                            daily_limit=self.config["posting_settings"]["max_posts_per_day"]
+                        )
                         return False, error
                 
                 logger.error("Post failed for unknown reason")
+                self.status_tracker.record_post_activity(
+                    self.account_name, subreddit, post_data.get("type", "unknown"), False,
+                    daily_limit=self.config["posting_settings"]["max_posts_per_day"]
+                )
                 return False, "Unknown error"
             
         except Exception as e:
             logger.error(f"Error submitting post: {e}")
+            self.status_tracker.record_post_activity(
+                self.account_name, post_data.get("subreddit", "unknown"), post_data.get("type", "unknown"), False,
+                daily_limit=self.config["posting_settings"]["max_posts_per_day"]
+            )
             return False, str(e)
     
     def schedule_post(self, post_data: Dict):
@@ -709,6 +677,10 @@ class MCRDSEPostScheduler:
         
         logger.info(f"Found {len(due_posts)} posts due for posting")
         
+        if self.dry_run:
+            logger.info("[dry-run] Would process %s due posts", len(due_posts))
+            return len(due_posts)
+
         # Setup browser if needed
         if not self.driver:
             if not self.setup_browser():
@@ -863,7 +835,7 @@ class MCRDSEPostScheduler:
             logger.info("Scheduler daemon stopped by user")
         finally:
             if self.driver:
-                self.driver.quit()
+                self.cleanup()
             self.is_running = False
     
     def start_daemon(self):
@@ -967,6 +939,8 @@ def main():
     parser.add_argument("--process", action="store_true", help="Process due posts once")
     parser.add_argument("--cleanup", action="store_true", help="Cleanup old schedule")
     parser.add_argument("--headless", action="store_true", help="Run browser in background")
+    parser.add_argument("--dry-run", action="store_true", help="Simulate actions without executing")
+    parser.add_argument("--validate-only", action="store_true", help="Validate configs/accounts and exit")
     parser.add_argument("--days", type=int, default=7, help="Days ahead to view/generate for")
     
     args = parser.parse_args()
@@ -978,8 +952,20 @@ def main():
     # Initialize scheduler
     scheduler = MCRDSEPostScheduler(
         account_name=args.account,
-        headless=args.headless
+        headless=args.headless,
+        dry_run=args.dry_run,
     )
+    logger.info(f"Validation summary: {scheduler.run_validations()}")
+    enabled, reason = scheduler.is_feature_enabled("post_scheduling")
+    if not enabled:
+        print(f"Post scheduling disabled ({reason}); exiting.")
+        scheduler.cleanup()
+        return
+
+    if args.validate_only:
+        print(f"Validation summary: {scheduler.run_validations()}")
+        scheduler.cleanup()
+        return
     
     # Handle commands
     if args.generate:
@@ -1024,6 +1010,13 @@ def main():
     
     elif args.post_now:
         print("\nPosting immediately...")
+        if args.dry_run:
+            print("[dry-run] Skipping browser setup/login and submit")
+            post_type = input("Post type (discussion/question/resource/experience/news): ").strip().lower() or "discussion"
+            subreddit = input("Subreddit: ").strip()
+            post = scheduler.generate_post_from_template(post_type, subreddit)
+            print(f"[dry-run] Would post to r/{post['subreddit']}: {post['title']}")
+            return
         
         # Setup browser
         if not scheduler.setup_browser():
@@ -1032,7 +1025,7 @@ def main():
         
         if not scheduler.login_with_cookies():
             print("❌ Login failed")
-            scheduler.driver.quit()
+            scheduler.cleanup()
             return
         
         # Generate a post
@@ -1051,7 +1044,7 @@ def main():
             print(f"❌ Post failed: {result}")
         
         if scheduler.driver:
-            scheduler.driver.quit()
+            scheduler.cleanup()
     
     elif args.view:
         print("\nCurrent Schedule:")
@@ -1106,6 +1099,9 @@ def main():
             print(f"  r/{summary['next_post']['subreddit']} - {summary['next_post']['title'][:50]}...")
     
     elif args.start_daemon:
+        if args.dry_run:
+            print("[dry-run] Skipping daemon start")
+            return
         print("\nStarting scheduler daemon...")
         scheduler.start_daemon()
         print("Daemon started. Press Ctrl+C to stop.")
@@ -1124,22 +1120,22 @@ def main():
     
     elif args.process:
         print("\nProcessing due posts...")
-        
-        # Setup browser
-        if not scheduler.setup_browser():
-            print("❌ Failed to setup browser")
-            return
-        
-        if not scheduler.login_with_cookies():
-            print("❌ Login failed")
-            scheduler.driver.quit()
-            return
+        if not args.dry_run:
+            # Setup browser
+            if not scheduler.setup_browser():
+                print("❌ Failed to setup browser")
+                return
+            
+            if not scheduler.login_with_cookies():
+                print("❌ Login failed")
+                scheduler.cleanup()
+                return
         
         success_count = scheduler.process_due_posts()
         print(f"✓ Posted {success_count} posts")
         
         if scheduler.driver:
-            scheduler.driver.quit()
+            scheduler.cleanup()
     
     elif args.cleanup:
         print("\nCleaning up old schedule...")
@@ -1209,7 +1205,7 @@ def main():
             if scheduler.setup_browser() and scheduler.login_with_cookies():
                 success = scheduler.process_due_posts()
                 print(f"✓ Posted {success} posts")
-                scheduler.driver.quit()
+                scheduler.cleanup()
             else:
                 print("❌ Failed to setup/login")
         
@@ -1226,4 +1222,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

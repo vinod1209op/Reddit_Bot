@@ -1,0 +1,208 @@
+{
+  "template_sets": {
+    "research_focused": {
+      "name_templates": [
+        "Microdosing{type}",
+        "Psychedelic{type}",
+        "MCRDSE_{type}",
+        "Microdosing_{type}_Lab",
+        "Psychedelic_{type}_Hub",
+        "{type}Microdosing",
+        "{type}PsychedelicStudies",
+        "Microdose_{type}_Research",
+        "Psychedelic_{type}_Institute",
+        "{type}_Microdosing_Archive",
+        "Microdosing_{type}_Review",
+        "{type}_Neuroplasticity",
+        "{type}_Consciousness"
+      ],
+      "type_variants": [
+        "Research",
+        "Science",
+        "Studies",
+        "Academy",
+        "Institute",
+        "Lab",
+        "Review",
+        "Methods",
+        "Evidence",
+        "Meta",
+        "Clinical",
+        "Neuro",
+        "Cognition",
+        "Policy",
+        "Therapeutics"
+      ],
+      "description_templates": [
+        "A subreddit for {type} discussions about psychedelics and microdosing.",
+        "Explore {type} related to psychedelic research and microdosing.",
+        "Join the {type} community for scientific discourse on psychedelics.",
+        "Curated {type} resources and discussions for microdosing research.",
+        "A place for {type} analysis of microdosing studies and outcomes.",
+        "Evidence-first {type} conversations on microdosing and therapy.",
+        "Community hub for {type} summaries and paper discussions.",
+        "Focused on {type} methods, protocols, and study design.",
+        "A {type} lens on microdosing practice and psychedelic research.",
+        "Research-led {type} conversations on safety and efficacy."
+      ],
+      "sidebar_templates": [
+        "**Welcome to r/{name}!**\n\n## About This Community\nThis is a space for {type_lower} discussions about microdosing and psychedelic research.\n\n## Community Rules\n1. Be respectful and kind\n2. No sourcing or selling of substances\n3. Share experiences, not medical advice\n4. Cite sources when discussing research\n5. Practice harm reduction principles\n\n## Resources\n- [MCRDSE Research Portal](https://mcrdse.com/research)\n- [Microdosing Safety Guide](https://mcrdse.com/safety)\n- [Psychedelic Research Studies](https://mcrdse.com/studies)\n\n## Disclaimer\nThis community does not provide medical advice. Consult healthcare professionals.",
+        "**Welcome to r/{name}!**\n\n## Mission\nA research-first community for {type_lower} discussions about microdosing and psychedelic science.\n\n## Community Rules\n1. Be respectful and kind\n2. No sourcing or selling of substances\n3. Share experiences, not medical advice\n4. Cite sources when discussing research\n5. Practice harm reduction principles\n\n## Posting Tips\n- Use clear, descriptive titles\n- Link sources when sharing studies\n- Ask questions in good faith\n\n## Disclaimer\nThis community does not provide medical advice. Consult healthcare professionals.",
+        "**Welcome to r/{name}!**\n\n## About\nWe focus on {type_lower} conversations about microdosing, study design, and evidence-based practice.\n\n## Community Rules\n1. Be respectful and kind\n2. No sourcing or selling of substances\n3. Share experiences, not medical advice\n4. Cite sources when discussing research\n5. Practice harm reduction principles\n\n## Resources\n- Research summaries\n- Safety guidance\n- Study discussions\n\n## Disclaimer\nThis community does not provide medical advice. Consult healthcare professionals.",
+        "**Welcome to r/{name}!**\n\n## About\nA structured space for {type_lower} discussion, paper reviews, and methodological critique.\n\n## Community Rules\n1. Be respectful and kind\n2. No sourcing or selling of substances\n3. Share experiences, not medical advice\n4. Cite sources when discussing research\n5. Practice harm reduction principles\n\n## How to Contribute\n- Post study links with short summaries\n- Label speculation clearly\n- Use primary sources when possible\n\n## Disclaimer\nThis community does not provide medical advice. Consult healthcare professionals.",
+        "**Welcome to r/{name}!**\n\n## About\nA {type_lower}-oriented hub for microdosing evidence, emerging trials, and replication notes.\n\n## Community Rules\n1. Be respectful and kind\n2. No sourcing or selling of substances\n3. Share experiences, not medical advice\n4. Cite sources when discussing research\n5. Practice harm reduction principles\n\n## Disclaimer\nThis community does not provide medical advice. Consult healthcare professionals.",
+        "**Welcome to r/{name}!**\n\n## About\nA community for {type_lower} perspectives on microdosing outcomes, risks, and protocols.\n\n## Community Rules\n1. Be respectful and kind\n2. No sourcing or selling of substances\n3. Share experiences, not medical advice\n4. Cite sources when discussing research\n5. Practice harm reduction principles\n\n## Disclaimer\nThis community does not provide medical advice. Consult healthcare professionals."
+      ]
+    },
+    "mixed": {
+      "name_templates": [
+        "Psychedelic{type}Hub",
+        "Microdosing{type}Zone",
+        "Psychedelic{type}Community",
+        "Microdosing{type}Forum",
+        "Psychedelic{type}Network",
+        "Microdosing_{type}_Circle",
+        "{type}MicrodosingCommunity",
+        "Psychedelic_{type}_Talk",
+        "Microdose_{type}_Space",
+        "{type}_Microdosing_Corner",
+        "Psychedelic_{type}_Room",
+        "Microdosing_{type}_Club"
+      ],
+      "type_variants": [
+        "Discussion",
+        "Support",
+        "Experiences",
+        "Research",
+        "Therapy",
+        "Insights",
+        "Wellness",
+        "Mindfulness",
+        "Integration",
+        "Guidance",
+        "Community",
+        "Stories",
+        "Growth",
+        "Recovery",
+        "Balance"
+      ],
+      "description_templates": [
+        "A subreddit for {type} discussions about psychedelics and microdosing.",
+        "Explore {type} related to psychedelic research and microdosing.",
+        "Join the {type} community for scientific discourse on psychedelics.",
+        "Share {type} insights and resources for microdosing communities.",
+        "A welcoming space for {type} questions and lived experience.",
+        "Supportive {type} conversations around microdosing practice.",
+        "Community-first {type} threads on mental health and wellness.",
+        "A {type} hub for safe, thoughtful microdosing discussion.",
+        "Explore {type} perspectives on microdosing and integration.",
+        "A friendly {type} space for learning and sharing."
+      ],
+      "sidebar_templates": [
+        "**Welcome to r/{name}!**\n\n## About This Community\nThis is a space for {type_lower} discussions about microdosing and psychedelic-assisted therapy.\n\n## Community Rules\n1. Be respectful and kind\n2. No sourcing or selling of substances\n3. Share experiences, not medical advice\n4. Cite sources when discussing research\n5. Practice harm reduction principles\n\n## Disclaimer\nThis community does not provide medical advice. Consult healthcare professionals.",
+        "**Welcome to r/{name}!**\n\n## About\nA friendly hub for {type_lower} discussions, questions, and community support around microdosing.\n\n## Community Rules\n1. Be respectful and kind\n2. No sourcing or selling of substances\n3. Share experiences, not medical advice\n4. Cite sources when discussing research\n5. Practice harm reduction principles\n\n## Posting Tips\n- Share context in your title\n- Be mindful of sensitive topics\n- Use flairs when available\n\n## Disclaimer\nThis community does not provide medical advice. Consult healthcare professionals.",
+        "**Welcome to r/{name}!**\n\n## About\nA community for {type_lower} discussion and shared experiences around microdosing and mental health.\n\n## Community Rules\n1. Be respectful and kind\n2. No sourcing or selling of substances\n3. Share experiences, not medical advice\n4. Cite sources when discussing research\n5. Practice harm reduction principles\n\n## Disclaimer\nThis community does not provide medical advice. Consult healthcare professionals.",
+        "**Welcome to r/{name}!**\n\n## About\nOpen, supportive {type_lower} conversation about microdosing routines, challenges, and wins.\n\n## Community Rules\n1. Be respectful and kind\n2. No sourcing or selling of substances\n3. Share experiences, not medical advice\n4. Cite sources when discussing research\n5. Practice harm reduction principles\n\n## Disclaimer\nThis community does not provide medical advice. Consult healthcare professionals.",
+        "**Welcome to r/{name}!**\n\n## About\nA practical {type_lower} space for community support, Q&A, and shared learning.\n\n## Community Rules\n1. Be respectful and kind\n2. No sourcing or selling of substances\n3. Share experiences, not medical advice\n4. Cite sources when discussing research\n5. Practice harm reduction principles\n\n## Disclaimer\nThis community does not provide medical advice. Consult healthcare professionals.",
+        "**Welcome to r/{name}!**\n\n## About\nA {type_lower}-friendly place to share resources, experiences, and integration practices.\n\n## Community Rules\n1. Be respectful and kind\n2. No sourcing or selling of substances\n3. Share experiences, not medical advice\n4. Cite sources when discussing research\n5. Practice harm reduction principles\n\n## Disclaimer\nThis community does not provide medical advice. Consult healthcare professionals."
+      ]
+    },
+    "supportive": {
+      "name_templates": [
+        "Microdosing{type}Support",
+        "Psychedelic{type}Support",
+        "Microdosing_{type}_Help",
+        "{type}MicrodosingSupport",
+        "Psychedelic_{type}_Care",
+        "Microdose_{type}_Support",
+        "{type}_Microdosing_Listen"
+      ],
+      "type_variants": [
+        "Support",
+        "Care",
+        "Recovery",
+        "Balance",
+        "Integration",
+        "Wellness",
+        "Mindfulness",
+        "Resilience",
+        "Grounding",
+        "Community"
+      ],
+      "description_templates": [
+        "A supportive space for {type} discussions around microdosing.",
+        "Community-first {type} conversations about microdosing routines.",
+        "A safe place for {type} questions and shared experiences.",
+        "Gentle {type} support for microdosing and integration.",
+        "A peer-focused {type} space for learning and care."
+      ],
+      "sidebar_templates": [
+        "**Welcome to r/{name}!**\n\n## About\nA supportive space for {type_lower} conversations around microdosing and integration.\n\n## Community Rules\n1. Be respectful and kind\n2. No sourcing or selling of substances\n3. Share experiences, not medical advice\n4. Avoid medical claims\n5. Practice harm reduction\n\n## Disclaimer\nThis community does not provide medical advice. Consult healthcare professionals.",
+        "**Welcome to r/{name}!**\n\n## About\nA calm, {type_lower} community for questions, support, and shared learning.\n\n## Community Rules\n1. Be respectful and kind\n2. No sourcing or selling of substances\n3. Share experiences, not medical advice\n4. Avoid medical claims\n5. Practice harm reduction\n\n## Disclaimer\nThis community does not provide medical advice. Consult healthcare professionals."
+      ]
+    },
+    "clinical": {
+      "name_templates": [
+        "Microdosing{type}Clinic",
+        "Psychedelic{type}Clinic",
+        "{type}MicrodosingTrials",
+        "Psychedelic_{type}_Care",
+        "Microdose_{type}_Protocols",
+        "{type}_Microdosing_Trials"
+      ],
+      "type_variants": [
+        "Clinical",
+        "Therapeutics",
+        "Protocols",
+        "Safety",
+        "Outcomes",
+        "Efficacy",
+        "Trials",
+        "Practice"
+      ],
+      "description_templates": [
+        "Clinical {type} discussion around microdosing and therapy.",
+        "A {type} forum for microdosing protocols and outcomes.",
+        "Explore {type} perspectives on microdosing safety and efficacy.",
+        "Clinical {type} threads on microdosing research and trials.",
+        "A {type} space for protocol-driven discussion."
+      ],
+      "sidebar_templates": [
+        "**Welcome to r/{name}!**\n\n## About\nA clinical-leaning {type_lower} space for microdosing protocol discussion.\n\n## Community Rules\n1. Be respectful and kind\n2. No sourcing or selling of substances\n3. Share experiences, not medical advice\n4. Cite sources when possible\n5. Practice harm reduction\n\n## Disclaimer\nThis community does not provide medical advice. Consult healthcare professionals.",
+        "**Welcome to r/{name}!**\n\n## About\nA {type_lower} community focused on safety, protocols, and outcomes.\n\n## Community Rules\n1. Be respectful and kind\n2. No sourcing or selling of substances\n3. Share experiences, not medical advice\n4. Cite sources when possible\n5. Practice harm reduction\n\n## Disclaimer\nThis community does not provide medical advice. Consult healthcare professionals."
+      ]
+    },
+    "community": {
+      "name_templates": [
+        "Microdosing{type}Community",
+        "Psychedelic{type}Community",
+        "Microdosing_{type}_Group",
+        "{type}MicrodosingFriends",
+        "Psychedelic_{type}_Circle",
+        "Microdose_{type}_Circle"
+      ],
+      "type_variants": [
+        "Community",
+        "Friends",
+        "Circle",
+        "Group",
+        "Network",
+        "Meetup",
+        "Forum",
+        "Club",
+        "Space"
+      ],
+      "description_templates": [
+        "A {type} place to connect and discuss microdosing.",
+        "Community {type} threads for support and shared learning.",
+        "A friendly {type} hub for microdosing and wellness.",
+        "Join the {type} community for respectful discussion.",
+        "A {type} space for community-driven microdosing talk."
+      ],
+      "sidebar_templates": [
+        "**Welcome to r/{name}!**\n\n## About\nA community-first {type_lower} space for microdosing discussion.\n\n## Community Rules\n1. Be respectful and kind\n2. No sourcing or selling of substances\n3. Share experiences, not medical advice\n4. Practice harm reduction\n\n## Disclaimer\nThis community does not provide medical advice. Consult healthcare professionals.",
+        "**Welcome to r/{name}!**\n\n## About\nA friendly {type_lower} forum for respectful discussion and support.\n\n## Community Rules\n1. Be respectful and kind\n2. No sourcing or selling of substances\n3. Share experiences, not medical advice\n4. Practice harm reduction\n\n## Disclaimer\nThis community does not provide medical advice. Consult healthcare professionals."
+      ]
+    }
+  }
+}

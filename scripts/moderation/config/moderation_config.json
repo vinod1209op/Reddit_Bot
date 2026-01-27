@@ -1,0 +1,98 @@
+{
+  "moderation": {
+    "auto_approve_trusted_users": true,
+    "remove_spam_keywords": [
+      "buy",
+      "sell",
+      "vendor",
+      "price",
+      "dm me"
+    ],
+    "remove_self_harm_keywords": [
+      "suicide",
+      "kill myself",
+      "end my life"
+    ],
+    "require_flair": true,
+    "min_post_length": 50,
+    "max_posts_per_hour": 3,
+    "max_comments_per_hour": 10
+  },
+  "flairs": {
+    "post_flairs": [
+      {
+        "name": "Research Discussion",
+        "color": "#0DD3BB"
+      },
+      {
+        "name": "Personal Experience",
+        "color": "#FFB000"
+      },
+      {
+        "name": "Scientific Study",
+        "color": "#46D160"
+      },
+      {
+        "name": "Question",
+        "color": "#FFD635"
+      },
+      {
+        "name": "Resource Share",
+        "color": "#0079D3"
+      },
+      {
+        "name": "Community News",
+        "color": "#FF4500"
+      },
+      {
+        "name": "Meta Discussion",
+        "color": "#7E53C1"
+      }
+    ],
+    "user_flairs": [
+      {
+        "name": "Researcher",
+        "color": "#0DD3BB"
+      },
+      {
+        "name": "Therapist",
+        "color": "#FFB000"
+      },
+      {
+        "name": "Educator",
+        "color": "#46D160"
+      },
+      {
+        "name": "Student",
+        "color": "#FFD635"
+      },
+      {
+        "name": "Advocate",
+        "color": "#0079D3"
+      },
+      {
+        "name": "MCRDSE Team",
+        "color": "#FF4500"
+      }
+    ]
+  },
+  "automod_templates": {
+    "basic": "---\n# Basic AutoModerator rules for MCRDSE communities\ntype: submission\nauthor:\n    account_age: \"< 24 hours\"\n    combined_karma: \"< 10\"\naction: filter\naction_reason: \"New account/low karma\"\n\ntype: submission\ntitle+body (includes): [\"buy\", \"sell\", \"vendor\", \"price\", \"dm me\"]\naction: filter\naction_reason: \"Potential sourcing\"\n\ntype: submission\ntitle+body (includes): [\"suicide\", \"kill myself\", \"end my life\"]\naction: report\naction_reason: \"Self-harm concerns\"\n\ntype: comment\nauthor:\n    account_age: \"< 7 days\"\n    comment_karma: \"< 5\"\naction: filter\naction_reason: \"New user comment\"\n---\n",
+    "advanced": "---\n# Advanced AutoModerator rules for MCRDSE communities\n# Spam protection\ntype: any\nauthor:\n    account_age: \"< 24 hours\"\n    combined_karma: \"< 10\"\naction: filter\naction_reason: \"New account/low karma\"\n\n# Sourcing prevention\ntype: any\ntitle+body (includes): [\"buy\", \"sell\", \"vendor\", \"dealer\", \"price\", \"\\$\", \"ship\"]\naction: filter\naction_reason: \"Potential sourcing\"\n\n# Medical advice prevention\ntype: any\ntitle+body (includes): [\"prescribe\", \"diagnose\", \"treatment\", \"cure\", \"you should take\"]\naction: filter\naction_reason: \"Potential medical advice\"\n\n# Self-harm detection\ntype: any\ntitle+body (includes): [\"suicide\", \"kill myself\", \"want to die\", \"end my life\"]\naction: report\naction_reason: \"Self-harm concerns\"\nmodmail: \"Self-harm content detected: {{permalink}}\"\n\n# Welcome new users\ntype: comment\nauthor:\n    comment_karma: \"< 10\"\n    account_age: \"< 7 days\"\nmessage: |\n    Welcome to our community! Please review our guidelines.\n\n# Quality control\ntype: submission\nbody (regex): '^\\s*[\\s\\S]{0,49}\\s*$'\naction: filter\naction_reason: \"Post too short\"\nmessage: |\n    Your post appears to be very short. Please add more content.\n---\n"
+  },
+  "subreddit_rules": [
+    "All posts must be research-focused or evidence-based",
+    "No sourcing or discussion of acquiring substances",
+    "No medical advice - share experiences, not prescriptions",
+    "Be respectful to all community members",
+    "Practice harm reduction in all discussions",
+    "Cite sources when making factual claims",
+    "Use appropriate post flair for your content",
+    "No spam, self-promotion, or low-effort content"
+  ],
+  "scheduled_tasks": {
+    "check_queue_interval_minutes": 60,
+    "daily_report_time": "22:00",
+    "weekly_cleanup_day": "Sunday"
+  }
+}

@@ -7,15 +7,16 @@ import json
 import time
 import logging
 import random
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from microdose_study_bot.reddit_selenium.automation_base import RedditAutomationBase
 
 # Setup logging
 logging.basicConfig(
@@ -28,10 +29,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-class SeleniumModerationManager:
+class SeleniumModerationManager(RedditAutomationBase):
     """Selenium-based moderation manager for MCRDSE subreddits"""
     
-    def __init__(self, account_name="account1", headless=True):
+    def __init__(self, account_name="account1", headless=True, dry_run=False):
         """
         Initialize moderation manager with Selenium
         
@@ -39,18 +40,19 @@ class SeleniumModerationManager:
             account_name: Which Reddit account to use (from config/accounts.json)
             headless: Run browser in background
         """
+        os.environ["SELENIUM_HEADLESS"] = "1" if headless else "0"
         self.account_name = account_name
         self.headless = headless
-        self.driver = None
+        super().__init__(account_name=account_name, dry_run=dry_run)
         self.config = self.load_config()
         self.moderation_stats = {}
         
         # Load account-specific settings
-        self.account_config = self.load_account_config()
+        self.account_config = self.account
         
     def load_config(self) -> Dict:
         """Load moderation configuration"""
-        config_path = Path("config/moderation_config.json")
+        config_path = Path("scripts/moderation/config/moderation_config.json")
         
         if config_path.exists():
             try:
@@ -204,47 +206,30 @@ message: |
             "name": self.account_name,
             "cookies_path": f"data/cookies_{self.account_name}.pkl"
         }
+
+    def verify_moderator_status(self, subreddit_name: str) -> bool:
+        if self.dry_run:
+            logger.info("[dry-run] Skipping moderator verification")
+            return True
+        try:
+            if not self.driver:
+                return False
+            self.driver.get(f"https://old.reddit.com/r/{subreddit_name}/about/moderators")
+            time.sleep(2)
+            page = self.driver.page_source.lower()
+            return self.account_name.lower() in page
+        except Exception as exc:
+            logger.warning(f"Moderator verification failed: {exc}")
+            return False
     
     def setup_browser(self):
         """Setup Selenium browser with anti-detection measures"""
         try:
-            from selenium.webdriver.chrome.options import Options
-            from selenium.webdriver.chrome.service import Service
-            from webdriver_manager.chrome import ChromeDriverManager
-            
-            # Setup Chrome options
-            chrome_options = Options()
-            
-            if self.headless:
-                chrome_options.add_argument("--headless=new")
-            
-            # Anti-detection settings
-            chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-            chrome_options.add_experimental_option('useAutomationExtension', False)
-            
-            # Random user agent
-            user_agents = [
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0"
-            ]
-            chrome_options.add_argument(f'user-agent={random.choice(user_agents)}')
-            
-            # Disable automation flags
-            chrome_options.add_argument('--disable-dev-shm-usage')
-            chrome_options.add_argument('--no-sandbox')
-            
-            # Setup driver
-            service = Service(ChromeDriverManager().install())
-            self.driver = webdriver.Chrome(service=service, options=chrome_options)
-            
-            # Execute anti-detection script
-            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            
-            logger.info("Browser setup complete")
+            if self.driver:
+                return True
+            self._setup_browser()
+            logger.info("Browser setup complete (base)")
             return True
-            
         except Exception as e:
             logger.error(f"Failed to setup browser: {e}")
             return False
@@ -252,46 +237,10 @@ message: |
     def login_with_cookies(self) -> bool:
         """Login to Reddit using saved cookies"""
         try:
-            # Load cookies if they exist
-            cookies_file = Path(self.account_config.get("cookies_path", f"data/cookies_{self.account_name}.pkl"))
-            
-            if cookies_file.exists():
-                logger.info(f"Loading cookies from {cookies_file}")
-                
-                # Navigate to Reddit first
-                self.driver.get("https://old.reddit.com")
-                time.sleep(2)
-                
-                # In a real implementation, you would load and add cookies
-                # For now, we'll use manual login flow
-                pass
-            
-            # Manual login flow
-            logger.info("Please log in manually in the browser window")
-            
-            self.driver.get("https://old.reddit.com/login")
-            time.sleep(3)
-            
-            # Wait for manual login
-            if not self.headless:
-                input("Press Enter after you have logged in...")
-                time.sleep(2)
-            else:
-                # In headless mode, wait a bit longer
-                logger.info("Waiting 30 seconds for manual login in headless mode...")
-                time.sleep(30)
-            
-            # Verify login
-            self.driver.get("https://old.reddit.com")
-            time.sleep(2)
-            
-            if "logout" in self.driver.page_source.lower():
-                logger.info("Login successful")
+            if self.logged_in:
                 return True
-            else:
-                logger.error("Login verification failed")
-                return False
-                
+            result = self._login_with_fallback()
+            return result.success
         except Exception as e:
             logger.error(f"Login failed: {e}")
             return False
@@ -833,6 +782,12 @@ This community is for educational purposes only. Not medical advice.
     
     def setup_complete_moderation(self, subreddit_name: str) -> bool:
         """Complete moderation setup for a subreddit"""
+        if not self.status_tracker.can_perform_action(self.account_name, "moderation", subreddit=subreddit_name):
+            logger.info(f"Moderation limited for {self.account_name}; skipping r/{subreddit_name}")
+            return False
+        if not self.verify_moderator_status(subreddit_name):
+            logger.info(f"No moderator access for r/{subreddit_name}; skipping setup")
+            return False
         logger.info(f"Starting complete moderation setup for r/{subreddit_name}")
         
         steps = [
@@ -847,11 +802,23 @@ This community is for educational purposes only. Not medical advice.
         for step_name, step_function in steps:
             try:
                 logger.info(f"  Starting: {step_name}")
-                if step_function(subreddit_name):
+                result = self.execute_safely(
+                    lambda: step_function(subreddit_name),
+                    max_retries=2,
+                    login_required=True,
+                    action_name="moderation_action",
+                )
+                if result.success and result.result:
                     success_count += 1
                     logger.info(f"  ✓ {step_name} completed")
+                    self.status_tracker.record_moderation_activity(
+                        self.account_name, subreddit_name, step_name, True
+                    )
                 else:
                     logger.warning(f"  ✗ {step_name} failed")
+                    self.status_tracker.record_moderation_activity(
+                        self.account_name, subreddit_name, step_name, False
+                    )
                 
                 # Delay between steps
                 time.sleep(3)
@@ -873,15 +840,27 @@ This community is for educational purposes only. Not medical advice.
         results = {}
         for subreddit in subreddit_names:
             logger.info(f"Processing r/{subreddit}")
+            if not self.verify_moderator_status(subreddit):
+                logger.info(f"No moderator access for r/{subreddit}; skipping")
+                continue
             
-            queue_stats = self.check_moderation_queue(subreddit)
+            queue_result = self.execute_safely(
+                lambda: self.check_moderation_queue(subreddit),
+                max_retries=2,
+                login_required=True,
+                action_name="moderation_action",
+            )
+            queue_stats = queue_result.result if queue_result.success else None
             results[subreddit] = queue_stats
+            self.status_tracker.record_moderation_activity(
+                self.account_name, subreddit, "daily_moderation", bool(queue_result.success)
+            )
             
             # Delay between subreddits
             time.sleep(5)
         
         # Save results
-        daily_file = Path(f"data/moderation_daily_{datetime.now().strftime('%Y%m%d')}.json")
+        daily_file = Path(f"scripts/moderation/history/moderation_daily_{datetime.now().strftime('%Y%m%d')}.json")
         daily_file.parent.mkdir(exist_ok=True, parents=True)
         daily_file.write_text(json.dumps(results, indent=2))
         
@@ -922,7 +901,7 @@ This community is for educational purposes only. Not medical advice.
             time.sleep(5)  # Delay between subreddits
         
         # Save setup results
-        setup_file = Path(f"data/moderation_setup_{datetime.now().strftime('%Y%m%d')}.json")
+        setup_file = Path(f"scripts/moderation/history/moderation_setup_{datetime.now().strftime('%Y%m%d')}.json")
         setup_file.parent.mkdir(exist_ok=True, parents=True)
         setup_file.write_text(json.dumps(results, indent=2))
         
@@ -942,6 +921,8 @@ def main():
     parser.add_argument("--queue", action="store_true", help="Check moderation queue")
     parser.add_argument("--headless", action="store_true", help="Run browser in background")
     parser.add_argument("--interactive", action="store_true", help="Interactive mode")
+    parser.add_argument("--dry-run", action="store_true", help="Simulate actions without executing")
+    parser.add_argument("--validate-only", action="store_true", help="Validate configs/accounts and exit")
     
     args = parser.parse_args()
     
@@ -952,20 +933,35 @@ def main():
     # Initialize manager
     manager = SeleniumModerationManager(
         account_name=args.account,
-        headless=args.headless
+        headless=args.headless,
+        dry_run=args.dry_run,
     )
+    logger.info(f"Validation summary: {manager.run_validations()}")
+    enabled, reason = manager.is_feature_enabled("moderation")
+    if not enabled:
+        print(f"Moderation disabled ({reason}); exiting.")
+        manager.cleanup()
+        return
+
+    if args.validate_only:
+        print(f"Validation summary: {manager.run_validations()}")
+        manager.cleanup()
+        return
     
     # Setup browser and login
-    print("Setting up browser...")
-    if not manager.setup_browser():
-        print("❌ Failed to setup browser")
-        return
-    
-    print("Logging in to Reddit...")
-    if not manager.login_with_cookies():
-        print("❌ Login failed")
-        manager.driver.quit()
-        return
+    if not args.dry_run:
+        print("Setting up browser...")
+        if not manager.setup_browser():
+            print("❌ Failed to setup browser")
+            return
+        
+        print("Logging in to Reddit...")
+        if not manager.login_with_cookies():
+            print("❌ Login failed")
+            manager.cleanup()
+            return
+    else:
+        print("[dry-run] Skipping browser setup/login")
     
     print("✅ Ready")
     
@@ -993,7 +989,13 @@ def main():
     elif args.queue:
         print("\nChecking moderation queue...")
         if args.subreddit:
-            stats = manager.check_moderation_queue(args.subreddit)
+            stats_result = manager.execute_safely(
+                lambda: manager.check_moderation_queue(args.subreddit),
+                max_retries=1,
+                login_required=False,
+                action_name="moderation_action",
+            )
+            stats = stats_result.result if stats_result.success else None
             if stats:
                 print(f"\nQueue stats for r/{args.subreddit}:")
                 print(f"  Total items: {stats.get('total_items', 0)}")
@@ -1043,9 +1045,7 @@ def main():
                 manager.setup_all_moderation()
     
     # Cleanup
-    if manager.driver:
-        manager.driver.quit()
-        print("\nBrowser closed")
+    manager.cleanup()
     
     print("\n" + "="*60)
     print("Moderation management complete!")

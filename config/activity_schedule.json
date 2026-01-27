@@ -8,7 +8,15 @@
       "end": "00:30",
       "timezone": "America/Los_Angeles",
       "intensity": "high",
-      "actions": ["browse", "view_posts", "scroll", "vote", "save", "follow", "check_notifications"]
+      "actions": [
+        "browse",
+        "view_posts",
+        "scroll",
+        "vote",
+        "save",
+        "follow",
+        "check_notifications"
+      ]
     },
     {
       "name": "account2_late_night",
@@ -16,7 +24,15 @@
       "end": "00:30",
       "timezone": "Europe/London",
       "intensity": "high",
-      "actions": ["browse", "view_posts", "scroll", "vote", "save", "follow", "check_notifications"]
+      "actions": [
+        "browse",
+        "view_posts",
+        "scroll",
+        "vote",
+        "save",
+        "follow",
+        "check_notifications"
+      ]
     },
     {
       "name": "account3_late_night",
@@ -24,7 +40,15 @@
       "end": "00:30",
       "timezone": "Europe/Berlin",
       "intensity": "high",
-      "actions": ["browse", "view_posts", "scroll", "vote", "save", "follow", "check_notifications"]
+      "actions": [
+        "browse",
+        "view_posts",
+        "scroll",
+        "vote",
+        "save",
+        "follow",
+        "check_notifications"
+      ]
     }
   ],
   "allow_voting": true,
@@ -32,12 +56,12 @@
   "allow_following": true,
   "allow_notifications_check": true,
   "activity_mix": {
-    "browse_subreddit": 25,
-    "view_posts": 25,
-    "scroll_comments": 20,
-    "vote": 12,
-    "save": 10,
-    "follow": 6,
+    "browse_subreddit": 20,
+    "view_posts": 20,
+    "scroll_comments": 15,
+    "vote": 20,
+    "save": 15,
+    "follow": 8,
     "check_notifications": 2
   },
   "profiles": {
@@ -117,9 +141,9 @@
     "jitter_percentage": 20
   },
   "safety_limits": {
-    "max_votes_per_session": 3,
-    "max_saves_per_session": 2,
-    "max_follows_per_session": 1,
+    "max_votes_per_session": 6,
+    "max_saves_per_session": 4,
+    "max_follows_per_session": 2,
     "min_time_between_sessions_minutes": 30
   },
   "humanization": {
@@ -130,11 +154,52 @@
     "mouse_movement_chance": { "min": 0.4, "max": 0.6 },
     "navigation_error_rate": { "min": 0.12, "max": 0.18 },
     "mouse_wander_frequency": 0.3,
-    "tor_rotation_interval_minutes": 10,
+    "tor_rotation_interval_minutes": 5,
     "tor_rotation_chance_per_action": { "min": 0.05, "max": 0.08 },
     "mouse_wander_duration_seconds": {
       "min": 2,
       "max": 5
     }
+  },
+  "rate_limits": {
+    "create_subreddit": { "per_hour": 1, "per_day": 2, "per_week": 4, "jitter_seconds": 120 },
+    "submit_post": { "per_hour": 2, "per_day": 5, "per_week": 15, "jitter_seconds": 300 },
+    "moderation_action": { "per_hour": 20, "per_day": 100, "per_week": 400, "jitter_seconds": 60 },
+    "vote": { "per_hour": 10, "per_day": 50, "per_week": 200, "jitter_seconds": 30 },
+    "save": { "per_hour": 6, "per_day": 25, "per_week": 100, "jitter_seconds": 30 },
+    "follow": { "per_hour": 3, "per_day": 10, "per_week": 40, "jitter_seconds": 30 }
+  },
+  "subreddit_creation": {
+    "enabled": true,
+    "profile": "conservative",
+    "max_total_subreddits": 3,
+    "cooldown_days": 7,
+    "require_manual_review": true,
+    "approved": true,
+    "allow_retries": false
+  },
+  "post_scheduling": {
+    "enabled": true,
+    "profile": "low_frequency",
+    "max_posts_per_day": 1,
+    "max_posts_per_week": 3,
+    "dry_run": true,
+    "require_manual_review": true,
+    "approved": true,
+    "schedule_window_local": {
+      "start": "09:00",
+      "end": "21:00"
+    }
+  },
+  "moderation": {
+    "enabled": true,
+    "auto_approve_trusted": true,
+    "remove_spam": true,
+    "setup_on_creation": true,
+    "require_manual_review": true,
+    "approved": true,
+    "auto_remove_reported": false,
+    "notify_on_flags": true,
+    "max_actions_per_run": 25
   }
 }
