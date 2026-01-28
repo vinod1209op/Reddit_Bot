@@ -1,5 +1,3 @@
-from microdose_study_bot.core.logging import UnifiedLogger
-logger = UnifiedLogger('DownloadAccountHealthSupabaseDb').get_logger()
 #!/usr/bin/env python3
 """
 Download account health + status events from Supabase Postgres and
@@ -7,6 +5,9 @@ write data/account_status.json for the runner.
 """
 
 from __future__ import annotations
+
+from microdose_study_bot.core.logging import UnifiedLogger
+logger = UnifiedLogger('DownloadAccountHealthSupabaseDb').get_logger()
 
 import json
 import os
