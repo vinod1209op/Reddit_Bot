@@ -404,7 +404,8 @@ class _MetricsHandler(logging.Handler):
 
 class _RedactingFormatter(logging.Formatter):
     def __init__(self, base: logging.Formatter):
-        super().__init__(base._fmt, base.datefmt, base.style)
+        style = getattr(base, "style", "%")
+        super().__init__(base._fmt, base.datefmt, style)
         self._base = base
 
     def format(self, record: logging.LogRecord) -> str:

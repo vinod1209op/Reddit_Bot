@@ -133,8 +133,13 @@ class MCRDSEPostScheduler(RedditAutomationBase):
             }
         }
 
-        # Start with explicit config if provided; otherwise defaults
-        config = file_config if isinstance(file_config, dict) and file_config.get("posting_settings") else default_config
+        # Start with defaults and merge in file config (preserve CTA even if posting_settings missing)
+        config = default_config.copy()
+        if isinstance(file_config, dict):
+            config.update({k: v for k, v in file_config.items() if k not in ("posting_settings", "content_strategy", "subreddit_distribution", "safety_settings", "automation_settings")})
+            for section in ("posting_settings", "content_strategy", "subreddit_distribution", "safety_settings", "automation_settings"):
+                if isinstance(file_config.get(section), dict):
+                    config[section] = {**config.get(section, {}), **file_config.get(section, {})}
         profiles = file_config.get("profiles", {}) if isinstance(file_config, dict) else {}
         profile_name = (self.activity_schedule or {}).get("post_scheduling", {}).get("profile") or "low_frequency"
         profile_config = profiles.get(profile_name, {}) if profiles else {}

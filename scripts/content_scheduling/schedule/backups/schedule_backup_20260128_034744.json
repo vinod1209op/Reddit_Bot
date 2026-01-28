@@ -325,13 +325,13 @@
     "content": "Here is a quick weekly roundup from across the network.\n\n## Related communities\n- r/PsychedelicScience\n- r/MicrodosingStudies\n\nShare the best discussions you\u2019ve seen this week in the comments.",
     "status": "scheduled",
     "created_at": "2026-01-27T18:55:18.364711",
-    "scheduled_for": "2026-01-28T05:37:44.772337",
+    "scheduled_for": "2026-01-27T19:45:18.361819",
     "account": "account1",
-    "attempts": 1,
-    "last_attempt": "2026-01-28T03:47:40.400817",
+    "attempts": 0,
+    "last_attempt": null,
     "posted_at": null,
     "post_url": null,
-    "error": "CAPTCHA detected in headless mode",
+    "error": null,
     "quality_score": 0.6
   },
   {

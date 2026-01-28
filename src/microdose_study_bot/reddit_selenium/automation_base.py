@@ -77,6 +77,9 @@ class RedditAutomationBase:
         if not self.dry_run:
             self._setup_browser()
             self._login_with_fallback()
+        else:
+            self.logged_in = True
+            self.last_login_status = "dry_run"
         self._write_run_log(event="start")
 
     def __enter__(self):

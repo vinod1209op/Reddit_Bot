@@ -46,18 +46,23 @@ def main() -> int:
     reports_acc = reports_sub.add_parser("account", help="Weekly account report")
     reports_comm = reports_sub.add_parser("community", help="Weekly community report")
 
-    args = parser.parse_args()
+    args, unknown = parser.parse_known_args()
+    passthrough = []
+    for item in unknown:
+        if item == "--":
+            continue
+        passthrough.append(item)
 
     if args.command == "scan":
-        return _run_script("scripts/runners/night_scanner.py", args.args)
+        return _run_script("scripts/runners/night_scanner.py", args.args + passthrough)
     if args.command == "humanized-scan":
-        return _run_script("scripts/runners/humanized_night_scanner.py", args.args)
+        return _run_script("scripts/runners/humanized_night_scanner.py", args.args + passthrough)
     if args.command == "moderation":
-        return _run_script("scripts/moderation/manage_moderation.py", args.args)
+        return _run_script("scripts/moderation/manage_moderation.py", args.args + passthrough)
     if args.command == "schedule":
-        return _run_script("scripts/content_scheduling/schedule_posts.py", args.args)
+        return _run_script("scripts/content_scheduling/schedule_posts.py", args.args + passthrough)
     if args.command == "community-manager":
-        return _run_script("scripts/runners/community_manager.py", args.args)
+        return _run_script("scripts/runners/community_manager.py", args.args + passthrough)
     if args.command == "reports":
         if args.report == "account":
             return _run_script("scripts/weekly_account_report.py", [])

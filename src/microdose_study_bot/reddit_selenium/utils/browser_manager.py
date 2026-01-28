@@ -334,13 +334,22 @@ class BrowserManager:
             except Exception as chrome_error:
                 logger.error(f"CHROMEDRIVER_PATH failed: {chrome_error}")
 
-        # Fallback to system ChromeDriver
+        # Try to use webdriver-manager for automatic driver management
         try:
-            driver = webdriver.Chrome(options=options)
-            logger.info("Using system ChromeDriver")
-        except Exception as chrome_error:
-            logger.error(f"System ChromeDriver failed: {chrome_error}")
-            raise
+            from webdriver_manager.chrome import ChromeDriverManager
+            from selenium.webdriver.chrome.service import Service
+
+            service = Service(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=options)
+            logger.info("Regular Chrome browser created with webdriver-manager")
+        except ImportError:
+            # Fallback to system ChromeDriver
+            try:
+                driver = webdriver.Chrome(options=options)
+                logger.info("Using system ChromeDriver")
+            except Exception as chrome_error:
+                logger.error(f"System ChromeDriver failed: {chrome_error}")
+                raise
         
         return driver
     
