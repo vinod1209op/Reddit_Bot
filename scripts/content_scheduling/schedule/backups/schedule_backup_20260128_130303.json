@@ -558,13 +558,13 @@
     "content": "Here is a quick weekly roundup from across the network.\n\n## Related communities\n- r/MCRDSE_Research\n- r/MicrodosingStudies\n\nShare the best discussions you\u2019ve seen this week in the comments.",
     "status": "scheduled",
     "created_at": "2026-01-27T18:55:18.397029",
-    "scheduled_for": "2026-01-28T14:26:03.732246",
+    "scheduled_for": "2026-01-27T20:38:18.392363",
     "account": "account1",
-    "attempts": 1,
-    "last_attempt": "2026-01-28T13:03:03.371286",
+    "attempts": 0,
+    "last_attempt": null,
     "posted_at": null,
     "post_url": null,
-    "error": "Message: invalid session id: session deleted as the browser has closed the connection\nfrom disconnected: not connected to DevTools\n  (Session info: chrome=144.0.7559.97); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#invalidsessionidexception\nStacktrace:\n0   chromedriver                        0x00000001008eb158 chromedriver + 6631768\n1   chromedriver                        0x00000001008e1e0a chromedriver + 6594058\n2   chromedriver                        0x0000000100302ccb chromedriver + 437451\n3   chromedriver                        0x00000001002e93fd chromedriver + 332797\n4   chromedriver                        0x0000000100311901 chromedriver + 497921\n5   chromedriver                        0x0000000100382b1b chromedriver + 961307\n6   chromedriver                        0x00000001003a1d48 chromedriver + 1088840\n7   chromedriver                        0x0000000100346fb7 chromedriver + 716727\n8   chromedriver                        0x0000000100347c81 chromedriver + 720001\n9   chromedriver                        0x00000001008a8101 chromedriver + 6357249\n10  chromedriver                        0x00000001008ac550 chromedriver + 6374736\n11  chromedriver                        0x0000000100883113 chromedriver + 6205715\n12  chromedriver                        0x00000001008acfc5 chromedriver + 6377413\n13  chromedriver                        0x0000000100871ff1 chromedriver + 6135793\n14  chromedriver                        0x00000001008ceb88 chromedriver + 6515592\n15  chromedriver                        0x00000001008ced43 chromedriver + 6516035\n16  chromedriver                        0x00000001008e1a0c chromedriver + 6593036\n17  libsystem_pthread.dylib             0x00007ff81128f4e1 _pthread_start + 125\n18  libsystem_pthread.dylib             0x00007ff81128af6b thread_start + 15\n",
+    "error": null,
     "quality_score": 0.6
   },
   {

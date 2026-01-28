@@ -50,6 +50,8 @@ from microdose_study_bot.core.rate_limiter import RateLimiter
 from microdose_study_bot.core.account_status import AccountStatusTracker
 from scripts.runners.session_scanner import run_session_scan
 
+logger = UnifiedLogger(__name__).get_logger()
+
 SUBREDDIT_COVERAGE_PATH = Path("logs/subreddit_coverage.json")
 SUBREDDIT_COVERAGE_WINDOW_DAYS = 7
 

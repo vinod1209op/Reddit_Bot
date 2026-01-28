@@ -152,8 +152,11 @@ class BrowserManager:
         driver_kwargs = {
             "options": options,
             "suppress_welcome": True,
-            "use_subprocess": False,
+            "use_subprocess": os.getenv("SELENIUM_UC_SUBPROCESS", "0").lower() in ("1", "true", "yes", "y", "on"),
         }
+        port_env = os.getenv("SELENIUM_DRIVER_PORT", "").strip()
+        if port_env.isdigit():
+            driver_kwargs["port"] = int(port_env)
         if chromedriver_path:
             driver_kwargs["driver_executable_path"] = chromedriver_path
         if chrome_bin:
@@ -323,11 +326,13 @@ class BrowserManager:
         else:
             options.add_argument("--start-maximized")
         
+        port_env = os.getenv("SELENIUM_DRIVER_PORT", "").strip()
+        driver_port = int(port_env) if port_env.isdigit() else None
+
         if chromedriver_path:
             try:
                 from selenium.webdriver.chrome.service import Service
-
-                service = Service(executable_path=chromedriver_path)
+                service = Service(executable_path=chromedriver_path, port=driver_port) if driver_port else Service(executable_path=chromedriver_path)
                 driver = webdriver.Chrome(service=service, options=options)
                 logger.info("Regular Chrome browser created with CHROMEDRIVER_PATH")
                 return driver
@@ -338,14 +343,18 @@ class BrowserManager:
         try:
             from webdriver_manager.chrome import ChromeDriverManager
             from selenium.webdriver.chrome.service import Service
-
-            service = Service(ChromeDriverManager().install())
+            service = Service(ChromeDriverManager().install(), port=driver_port) if driver_port else Service(ChromeDriverManager().install())
             driver = webdriver.Chrome(service=service, options=options)
             logger.info("Regular Chrome browser created with webdriver-manager")
         except ImportError:
             # Fallback to system ChromeDriver
             try:
-                driver = webdriver.Chrome(options=options)
+                if driver_port:
+                    from selenium.webdriver.chrome.service import Service
+                    service = Service(port=driver_port)
+                    driver = webdriver.Chrome(service=service, options=options)
+                else:
+                    driver = webdriver.Chrome(options=options)
                 logger.info("Using system ChromeDriver")
             except Exception as chrome_error:
                 logger.error(f"System ChromeDriver failed: {chrome_error}")

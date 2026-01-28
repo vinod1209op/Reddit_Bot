@@ -25,6 +25,10 @@ def _candidate_selectors() -> Sequence[str]:
         "textarea[name='text']",
         "textarea#comment",
         "textarea",
+        "div[data-testid='commenttextarea']",
+        "div[role='textbox'][data-testid='commenttextarea']",
+        "div[contenteditable='true'][data-testid='commenttextarea']",
+        "div[contenteditable='true'][aria-label*='comment']",
         "div[contenteditable='true'][role='textbox']",
     )
 

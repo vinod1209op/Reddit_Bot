@@ -888,20 +888,39 @@ class RedditAutomation:
             if not dry_run and post_key and not can_attempt(idem_path, post_key):
                 return {"success": False, "error": "Idempotency: post already attempted/sent"}
             logger.info(f"Navigating to post for reply: {normalized_url}")
-            
-            self.driver.get(normalized_url)
-            self._delay(0.7, 1.4, "reply_page_load")
 
-            # Try to open comment composer
-            rh.js_open_comment_composer(self.driver)
-            self._delay(0.3, 0.7, "composer_open")
-            if hasattr(rh, "focus_comment_box"):
-                rh.focus_comment_box(self.driver)
-                self._delay(0.2, 0.4, "composer_focus")
+            def _attempt_prefill(url: str) -> tuple[bool, Optional[object]]:
+                self.driver.get(url)
+                self._delay(0.7, 1.4, "reply_page_load")
+                if self.login_manager:
+                    status = self.login_manager.check_account_status()
+                    if status == "captcha":
+                        return False, None
+                target = None
+                for _ in range(5):
+                    rh.js_open_comment_composer(self.driver)
+                    self._delay(0.3, 0.7, "composer_open")
+                    if hasattr(rh, "focus_comment_box"):
+                        rh.focus_comment_box(self.driver)
+                        self._delay(0.2, 0.4, "composer_focus")
+                    target = (
+                        rh.js_find_comment_box(self.driver)
+                        or rh.find_comment_area(self.driver)
+                        or rh.get_composer_element(self.driver)
+                    )
+                    if target:
+                        break
+                    self._delay(0.4, 0.9, "composer_wait")
+                filled_local = False
+                if hasattr(rh, "fill_modern_reddit_comment"):
+                    filled_local = rh.fill_modern_reddit_comment(self.driver, reply_text)
+                return filled_local, target
 
-            filled = False
-            if hasattr(rh, "fill_modern_reddit_comment"):
-                filled = rh.fill_modern_reddit_comment(self.driver, reply_text)
+            filled, target_area = _attempt_prefill(normalized_url)
+            if self.login_manager:
+                status = self.login_manager.check_account_status()
+                if status == "captcha":
+                    return {"success": False, "error": "CAPTCHA detected; cannot prefill until solved"}
 
             def _normalize_text(text: str) -> str:
                 return " ".join((text or "").split())
@@ -934,15 +953,15 @@ return el.innerText || el.textContent || '';
                 if _normalize_text(reply_text) and _normalize_text(reply_text) in _normalize_text(existing):
                     filled = True
 
-            # Find comment box
-            target_area = (
-                rh.js_find_comment_box(self.driver)
-                or rh.find_comment_area(self.driver)
-                or rh.get_composer_element(self.driver)
-            )
-
             if not target_area and not filled:
-                return {"success": False, "error": "Could not find reply textarea"}
+                fallback_url = normalized_url.replace("old.reddit.com", "www.reddit.com")
+                if fallback_url != normalized_url:
+                    logger.info("Retrying reply on www.reddit.com")
+                    filled, target_area = _attempt_prefill(fallback_url)
+            if not target_area and not filled:
+                if hasattr(rh, "dump_comment_debug"):
+                    rh.dump_comment_debug(self.driver)
+                return {"success": False, "error": "Could not find reply textarea (login/captcha?)"}
 
             # Try different methods to fill the comment
             if not filled and hasattr(rh, 'keystroke_fill_simple') and target_area:

@@ -30,6 +30,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from microdose_study_bot.core.config import ConfigManager  # type: ignore
 from microdose_study_bot.core.safety.policies import DEFAULT_REPLY_RULES  # type: ignore
 from microdose_study_bot.core.text_normalization import matched_keywords as _match_keywords  # type: ignore
+from microdose_study_bot.core.logging import UnifiedLogger  # type: ignore
 from microdose_study_bot.core.utils.retry import retry  # type: ignore
 from microdose_study_bot.core.utils.http import (  # type: ignore
     get_with_retry,
@@ -735,6 +736,18 @@ def log_ui(message: str, level: str = "info") -> None:
     log.append(log_entry)
     if len(log) > 80:
         del log[:-80]
+    if os.getenv("STREAMLIT_CONSOLE_LOGS", "1").lower() not in ("0", "false", "no"):
+        logger = st.session_state.get("_ui_logger")
+        if logger is None:
+            logger = UnifiedLogger("streamlit_ui").get_logger()
+            st.session_state["_ui_logger"] = logger
+        level_name = level.lower()
+        if level_name in ("error", "err", "fatal"):
+            logger.error(message)
+        elif level_name in ("warn", "warning"):
+            logger.warning(message)
+        else:
+            logger.info(message)
 
 def _fetch_supabase_count(table: str, filters: dict[str, str]) -> int:
     url, key = _supabase_config()
@@ -1719,8 +1732,10 @@ def main() -> None:
                 posts = _normalize_cached_posts(cached.get("posts", []))
                 cached["posts"] = posts
                 st.session_state[cache_key] = cached
+                log_ui(f"Loaded {len(posts)} cached posts from {data_source}.", level="info")
             else:
                 if data_source == "Database":
+                    log_ui(f"Searching Supabase for r/{subreddit.strip().lower()}...", level="info")
                     st.caption("Loading posts from Supabase...")
                     posts, total = _fetch_supabase_posts_page(
                         subreddit.strip().lower(),
@@ -1732,12 +1747,14 @@ def main() -> None:
                     for post in posts:
                         post["id"] = post.get("post_id", "")
                     posts = _normalize_cached_posts(posts)
+                    log_ui(f"Supabase returned {len(posts)} posts.", level="info")
                 else:
                     bot = ensure_bot(cfg)
                     if not bot:
                         posts = []
                         total = 0
                     else:
+                        log_ui(f"Searching r/{subreddit.strip()}...", level="info")
                         st.caption(f"Searching r/{subreddit}...")
                         fetch_limit = requested
                         posts = bot.search_posts(
@@ -1748,64 +1765,13 @@ def main() -> None:
                         )
                         posts = _normalize_cached_posts(posts)
                         total = len(posts)
+                        log_ui(f"Live scan returned {len(posts)} posts.", level="info")
                 st.session_state[cache_key] = {"ts": time.time(), "posts": posts, "total": total}
             st.session_state["last_posts"] = posts
             st.session_state[f"last_posts_{data_source}"] = posts
         posts = _normalize_cached_posts(st.session_state.get("last_posts", []))
         st.session_state["last_posts"] = posts
 
-    with community_tab:
-        st.subheader("Community Management Metrics")
-        local_status = load_local_account_status()
-        created_subs = load_created_subreddits()
-        post_schedule = load_post_schedule()
-        moderation_records = load_moderation_history(days=7)
-
-        col_a, col_b, col_c = st.columns(3)
-        with col_a:
-            st.metric("Created subreddits", len(created_subs))
-        with col_b:
-            posted = len([p for p in post_schedule if p.get("posted_at")])
-            scheduled = len(post_schedule)
-            st.metric("Posts scheduled", scheduled)
-            st.caption(f"Posted: {posted}")
-        with col_c:
-            total_mod = sum(r.get("total_items", 0) for r in moderation_records)
-            st.metric("Mod actions (7d)", total_mod)
-
-        st.markdown("### Account status (local)")
-        if local_status:
-            status_rows = []
-            for account, info in local_status.items():
-                status_rows.append(
-                    {
-                        "account": account,
-                        "status": info.get("current_status", "unknown"),
-                        "last_updated": info.get("last_updated", ""),
-                        "cooldowns": info.get("cooldowns", {}),
-                    }
-                )
-            st.dataframe(status_rows, width="stretch")
-        else:
-            st.caption("No local account status available.")
-
-        st.markdown("### Created subreddits")
-        if created_subs:
-            st.dataframe(created_subs, width="stretch")
-        else:
-            st.caption("No created subreddits recorded yet.")
-
-        st.markdown("### Post schedule")
-        if post_schedule:
-            st.dataframe(post_schedule, width="stretch")
-        else:
-            st.caption("No scheduled posts yet.")
-
-        st.markdown("### Moderation activity (last 7 days)")
-        if moderation_records:
-            st.dataframe(moderation_records, width="stretch")
-        else:
-            st.caption("No moderation history records yet.")
         if posts:
             filtered_posts = []
             seen = set()
@@ -1948,6 +1914,19 @@ def main() -> None:
                                 with col_btn2:
                                     submitted_inline = st.form_submit_button("Prefill / Submit")
 
+                        status = st.session_state.get(status_key)
+                        if status:
+                            level, message = status
+                            level = (level or "").lower()
+                            if level == "success":
+                                st.success(message)
+                            elif level in ("warn", "warning"):
+                                st.warning(message)
+                            elif level == "error":
+                                st.error(message)
+                            else:
+                                st.info(message)
+
                         if submitted_inline:
                             bot = ensure_bot(cfg)
                             if not bot:
@@ -1986,10 +1965,13 @@ def main() -> None:
                                     if auto_submit:
                                         if submitted_flag:
                                             st.session_state[status_key] = ("success", "Auto-submit attempted. Check the thread to confirm it posted.")
+                                            log_ui("Auto-submit attempted; verify in browser.", level="info")
                                         else:
                                             st.session_state[status_key] = ("warning", "Filled the comment box but could not confirm submit. Please verify in the browser.")
+                                            log_ui("Prefill attempted but submit not confirmed.", level="warn")
                                     else:
                                         st.session_state[status_key] = ("success", "Prefill attempted. Review the browser window and submit manually.")
+                                        log_ui("Prefill attempted; check browser window.", level="info")
                                     if submitted_flag:
                                         post_state["submitted"].add(post_key)
                                         post_state["submitted_details"].append(
@@ -2012,6 +1994,7 @@ def main() -> None:
                                         guard.pop(post_key, None)
                                         st.session_state["auto_submit_guard"] = guard
                                     st.session_state[status_key] = ("error", f"Failed to prefill: {result.get('error', 'unknown error')}")
+                                    log_ui(f"Prefill failed: {result.get('error', 'unknown error')}", level="error")
                                     st.session_state["error_count"] += 1
                                     st.session_state["last_action"] = f"prefill_failed {post_key}"
                             st.rerun()
@@ -2150,6 +2133,58 @@ def main() -> None:
                     st.caption("No ignored posts yet.")
         # Prefill reply UI is now inline under each post above
 
+    with community_tab:
+        st.subheader("Community Management Metrics")
+        local_status = load_local_account_status()
+        created_subs = load_created_subreddits()
+        post_schedule = load_post_schedule()
+        moderation_records = load_moderation_history(days=7)
+
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            st.metric("Created subreddits", len(created_subs))
+        with col_b:
+            posted = len([p for p in post_schedule if p.get("posted_at")])
+            scheduled = len(post_schedule)
+            st.metric("Posts scheduled", scheduled)
+            st.caption(f"Posted: {posted}")
+        with col_c:
+            total_mod = sum(r.get("total_items", 0) for r in moderation_records)
+            st.metric("Mod actions (7d)", total_mod)
+
+        st.markdown("### Account status (local)")
+        if local_status:
+            status_rows = []
+            for account, info in local_status.items():
+                status_rows.append(
+                    {
+                        "account": account,
+                        "status": info.get("current_status", "unknown"),
+                        "last_updated": info.get("last_updated", ""),
+                        "cooldowns": info.get("cooldowns", {}),
+                    }
+                )
+            st.dataframe(status_rows, width="stretch")
+        else:
+            st.caption("No local account status available.")
+
+        st.markdown("### Created subreddits")
+        if created_subs:
+            st.dataframe(created_subs, width="stretch")
+        else:
+            st.caption("No created subreddits recorded yet.")
+
+        st.markdown("### Post schedule")
+        if post_schedule:
+            st.dataframe(post_schedule, width="stretch")
+        else:
+            st.caption("No scheduled posts yet.")
+
+        st.markdown("### Moderation activity (last 7 days)")
+        if moderation_records:
+            st.dataframe(moderation_records, width="stretch")
+        else:
+            st.caption("No moderation history records yet.")
     with accounts_tab:
         st.subheader("Account health")
         if not account_status:
