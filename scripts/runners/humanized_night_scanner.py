@@ -337,7 +337,7 @@ class HumanizedNightScanner:
                 return
             
             # Set custom fingerprint from account config
-            self.set_custom_fingerlogger.info()
+            self.set_custom_fingerprint()
             
             # Create LoginManager
             self.login_manager = LoginManager()
@@ -553,7 +553,7 @@ class HumanizedNightScanner:
         
         return success, status
     
-    def set_custom_fingerlogger.info(self):
+    def set_custom_fingerprint(self):
         """Set custom browser fingerprint from account config"""
         try:
             # Get fingerprint settings from account config
@@ -575,7 +575,7 @@ class HumanizedNightScanner:
             
             # Apply additional randomization
             if self.browser_manager:
-                self.browser_manager.randomize_fingerlogger.info(self.driver)
+                self.browser_manager.randomize_fingerprint(self.driver)
                 
         except Exception as e:
             self.logger.warning(f"Could not set custom fingerprint: {e}")
