@@ -10,10 +10,10 @@ import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Dict
+from microdose_study_bot.core.logging import UnifiedLogger
 import requests
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = UnifiedLogger("CommunityGrowth").get_logger()
 
 class CommunityGrowthManager:
     """Manages growth strategies for MCRDSE communities"""
@@ -605,13 +605,13 @@ if __name__ == "__main__":
     # Test individual strategy
     test_result = growth_manager.execute_growth_strategy("Content Consistency", "MCRDSE_Research")
     
-    print("\n" + "="*60)
-    print("GROWTH STRATEGY TEST")
-    print("="*60)
-    print(f"Strategy: {test_result.get('strategy', 'Unknown')}")
-    print(f"Subreddit: r/{test_result.get('subreddit', 'Unknown')}")
-    print(f"Posts Scheduled: {test_result.get('posts_scheduled', 0)}")
-    print("="*60)
+    logger.info("\n" + "="*60)
+    logger.info("GROWTH STRATEGY TEST")
+    logger.info("="*60)
+    logger.info(f"Strategy: {test_result.get('strategy', 'Unknown')}")
+    logger.info(f"Subreddit: r/{test_result.get('subreddit', 'Unknown')}")
+    logger.info(f"Posts Scheduled: {test_result.get('posts_scheduled', 0)}")
+    logger.info("="*60)
     
     # Uncomment to run full campaign
     # growth_manager.run_comprehensive_growth(duration_weeks=2)

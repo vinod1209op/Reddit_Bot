@@ -3,10 +3,20 @@ Purpose: engagement actions for Selenium sessions.
 """
 
 # Imports
+import os
 import random
 import time
+from pathlib import Path
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
+from microdose_study_bot.core.storage.idempotency_store import (
+    IDEMPOTENCY_DEFAULT_PATH,
+    build_post_key,
+    can_attempt,
+    mark_attempt,
+    mark_failure,
+    mark_success,
+)
 
 # Public API
 class EngagementActions:
@@ -357,6 +367,11 @@ class EngagementActions:
             return {"success": False, "error": "Commenting not allowed"}
         
         try:
+            idem_path = Path(os.getenv("IDEMPOTENCY_PATH", IDEMPOTENCY_DEFAULT_PATH))
+            post_key = build_post_key({"url": post_url})
+            if not dry_run and post_key and not can_attempt(idem_path, post_key):
+                return {"success": False, "error": "Idempotency: post already attempted/sent"}
+
             # Navigate to post
             self.driver.get(post_url)
             
@@ -412,7 +427,18 @@ class EngagementActions:
             
             # Try to submit (implementation depends on Reddit's UI)
             # This is a placeholder - actual submission logic would be more complex
-            return {"success": True, "dry_run": False, "message": "Comment submitted"}
+            mark_attempt(idem_path, post_key, {"url": post_url})
+            result = {"success": True, "dry_run": False, "message": "Comment submitted"}
+            if post_key:
+                mark_success(idem_path, post_key, {"url": post_url})
+            return result
             
         except Exception as e:
+            try:
+                idem_path = Path(os.getenv("IDEMPOTENCY_PATH", IDEMPOTENCY_DEFAULT_PATH))
+                post_key = build_post_key({"url": post_url})
+                if post_key:
+                    mark_failure(idem_path, post_key, error=str(e))
+            except Exception:
+                pass
             return {"success": False, "error": str(e)}

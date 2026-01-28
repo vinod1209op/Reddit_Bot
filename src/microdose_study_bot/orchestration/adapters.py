@@ -15,6 +15,14 @@ project_root = Path(__file__).resolve().parents[2]
 
 from microdose_study_bot.core.safety.checker import SafetyChecker
 from microdose_study_bot.core.reddit_client import make_reddit_client
+from microdose_study_bot.core.storage.idempotency_store import (
+    IDEMPOTENCY_DEFAULT_PATH,
+    build_post_key,
+    can_attempt,
+    mark_attempt,
+    mark_failure,
+    mark_success,
+)
 
 # Helpers
 def _structured_error(message: str, code: str = "error", extra: Dict[str, Any] = None) -> Dict[str, Any]:
@@ -345,6 +353,11 @@ class RedditBotAdapter:
         try:
             if not self.praw_client:
                 return _structured_error("PRAW client not initialized", code="client_uninitialized")
+
+            idem_path = Path(os.getenv("IDEMPOTENCY_PATH", IDEMPOTENCY_DEFAULT_PATH))
+            post_key = build_post_key(post)
+            if post_key and not can_attempt(idem_path, post_key):
+                return _structured_error("Idempotency: post already attempted/sent", code="idempotent_skip")
             
             # Check if we should actually post
             if not self.config.bot_settings.get("enable_posting", False):
@@ -374,19 +387,27 @@ class RedditBotAdapter:
                     return _structured_error("Could not get submission object", code="missing_submission")
             
             # Post the reply
+            mark_attempt(idem_path, post_key, {"subreddit": post.get("subreddit"), "title": post.get("title")})
             comment = submission.reply(reply_text)
             if self.rate_limiter:
                 self.rate_limiter.record_action("comment")
             if self.safety_checker:
                 self.safety_checker.record_action("comment", target=post.get("title") or post.get("body", ""))
+            if post_key:
+                mark_success(idem_path, post_key, {"comment_id": comment.id})
             
             return {
-                "success": True, 
+                "success": True,
                 "comment_id": comment.id,
                 "permalink": f"https://reddit.com{comment.permalink}"
             }
             
         except Exception as e:
+            try:
+                if 'post_key' in locals() and post_key:
+                    mark_failure(Path(os.getenv("IDEMPOTENCY_PATH", IDEMPOTENCY_DEFAULT_PATH)), post_key, error=str(e))
+            except Exception:
+                pass
             return {"success": False, "error": str(e)}
     
     def reply_selenium(self, post: Dict[str, Any], reply_text: str) -> Dict[str, Any]:
@@ -394,6 +415,11 @@ class RedditBotAdapter:
         try:
             if not self.selenium_bot:
                 return _structured_error("Selenium bot not initialized", code="client_uninitialized")
+
+            idem_path = Path(os.getenv("IDEMPOTENCY_PATH", IDEMPOTENCY_DEFAULT_PATH))
+            post_key = build_post_key(post)
+            if post_key and not can_attempt(idem_path, post_key):
+                return _structured_error("Idempotency: post already attempted/sent", code="idempotent_skip")
             
             # Check if we should actually post
             if not self.config.bot_settings.get("enable_posting", False):
@@ -429,12 +455,29 @@ class RedditBotAdapter:
                         post_url = f"https://old.reddit.com/r/{subreddit}/comments/{post_id}/"
                 if not post_url:
                     return _structured_error("No post URL available for Selenium reply", code="missing_post_url")
-                return self.selenium_bot.reply_to_post(post_url, reply_text, dry_run=False)
+                mark_attempt(idem_path, post_key, {"subreddit": post.get("subreddit"), "title": post.get("title")})
+                result = self.selenium_bot.reply_to_post(post_url, reply_text, dry_run=False)
+                if result.get("success") or result.get("submitted"):
+                    mark_success(idem_path, post_key, {"comment_id": result.get("comment_id", "")})
+                else:
+                    mark_failure(idem_path, post_key, error=str(result.get("error", "")))
+                return result
             
             # Fallback: Manual Selenium reply
-            return self._selenium_manual_reply(post, reply_text)
+            mark_attempt(idem_path, post_key, {"subreddit": post.get("subreddit"), "title": post.get("title")})
+            result = self._selenium_manual_reply(post, reply_text)
+            if result.get("success"):
+                mark_success(idem_path, post_key, {"comment_id": result.get("comment_id", "")})
+            else:
+                mark_failure(idem_path, post_key, error=str(result.get("error", "")))
+            return result
             
         except Exception as e:
+            try:
+                if 'post_key' in locals() and post_key:
+                    mark_failure(Path(os.getenv("IDEMPOTENCY_PATH", IDEMPOTENCY_DEFAULT_PATH)), post_key, error=str(e))
+            except Exception:
+                pass
             return {"success": False, "error": str(e)}
     
     def _selenium_manual_reply(self, post: Dict[str, Any], reply_text: str) -> Dict[str, Any]:

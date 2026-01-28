@@ -1,3 +1,5 @@
+from microdose_study_bot.core.logging import UnifiedLogger
+logger = UnifiedLogger('CaptureCookies').get_logger()
 #!/usr/bin/env python3
 """
 Manual login helper to capture Reddit cookies into a .pkl file.
@@ -92,13 +94,13 @@ def main() -> None:
             save_accounts(accounts_path, accounts)
         if not accounts:
             raise RuntimeError("No accounts found. Provide --name to create a new entry.")
-        print("No --name provided; capturing cookies for all accounts in config/accounts.json.")
+        logger.info("No --name provided; capturing cookies for all accounts in config/accounts.json.")
         target_names = [acc.get("name", "") for acc in accounts if acc.get("name")]
     else:
         target_names = [args.name]
 
     if args.headless:
-        print("Warning: headless mode makes manual login difficult.")
+        logger.info("Warning: headless mode makes manual login difficult.")
 
     for name in target_names:
         if not name:
@@ -117,18 +119,18 @@ def main() -> None:
         if not driver:
             raise RuntimeError("Failed to create browser driver.")
 
-        print(f"Opening {args.url} for {name}...")
+        logger.info(f"Opening {args.url} for {name}...")
         driver.get(args.url)
-        print(f"Please log in as {name} in the browser window.")
+        logger.info(f"Please log in as {name} in the browser window.")
         input("Press Enter once you are logged in and the page is fully loaded...")
 
         saved = login_manager.save_login_cookies(str(output_path))
         if saved:
             account["cookies_path"] = str(output_path)
             save_accounts(accounts_path, accounts)
-            print(f"Cookies saved to {output_path} and linked in {accounts_path}")
+            logger.info(f"Cookies saved to {output_path} and linked in {accounts_path}")
         else:
-            print("Failed to save cookies.")
+            logger.info("Failed to save cookies.")
 
         try:
             driver.quit()

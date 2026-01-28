@@ -8,6 +8,9 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,7 +24,35 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install -r requirements-dev.txt
 
-      - name: Run unit tests
+      - name: Run tests
         run: |
-          python -m unittest discover -v tests
+          pytest -q
+
+      - name: Lint (ruff)
+        run: |
+          ruff check .
+
+      - name: Type check (mypy)
+        run: |
+          mypy --ignore-missing-imports src
+
+      - name: Security scan (bandit)
+        run: |
+          bandit -r src -x tests
+
+      - name: Dependency audit (pip-audit)
+        run: |
+          pip-audit -r requirements.txt
+
+      - name: Smoke test CLI
+        run: |
+          python apps/cli/microdose_bot.py --help
+
+      - name: Smoke test Streamlit
+        run: |
+          python -m streamlit run apps/streamlit/app.py --server.headless true --server.port 8501 &
+          sleep 5
+          curl -fsS http://localhost:8501/_stcore/health
+          pkill -f "streamlit run apps/streamlit/app.py"

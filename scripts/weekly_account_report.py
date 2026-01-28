@@ -1,3 +1,5 @@
+from microdose_study_bot.core.logging import UnifiedLogger
+logger = UnifiedLogger('WeeklyAccountReport').get_logger()
 #!/usr/bin/env python3
 """
 Weekly account health report generator.
@@ -14,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
+from microdose_study_bot.core.utils.http import get_with_retry
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -38,7 +41,7 @@ def _download_latest_status() -> bool:
         return False
     url = f"{base_url.rstrip('/')}/storage/v1/object/{bucket}/{status_path.lstrip('/')}"
     try:
-        resp = requests.get(url, headers={"Authorization": f"Bearer {key}", "apikey": key}, timeout=30)
+        resp = get_with_retry(url, headers={"Authorization": f"Bearer {key}", "apikey": key}, timeout=30)
         if resp.status_code != 200:
             return False
         DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -108,7 +111,7 @@ def main() -> int:
     status_data = _load_status()
     summary = _summarize(status_data)
     _write_reports(summary)
-    print(f"Wrote {REPORT_JSON} and {REPORT_MD}")
+    logger.info(f"Wrote {REPORT_JSON} and {REPORT_MD}")
     return 0
 
 

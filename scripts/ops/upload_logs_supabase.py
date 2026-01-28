@@ -1,3 +1,5 @@
+from microdose_study_bot.core.logging import UnifiedLogger
+logger = UnifiedLogger('UploadLogsSupabase').get_logger()
 #!/usr/bin/env python3
 """
 Upload scan logs to Supabase Storage.
@@ -18,6 +20,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 import requests
+from microdose_study_bot.core.utils.http import post_with_retry
 
 from microdose_study_bot.core.utils.retry import retry
 
@@ -37,7 +40,7 @@ def _upload_file(url: str, key: str, bucket: str, object_path: str, file_path: P
     }
     def _do_request():
         with file_path.open("rb") as handle:
-            resp = requests.post(endpoint, headers=headers, data=handle, timeout=30)
+            resp = post_with_retry(endpoint, headers=headers, data=handle, timeout=30)
         if resp.status_code >= 300:
             raise RuntimeError(f"{resp.status_code}: {resp.text}")
         return resp
@@ -60,7 +63,7 @@ def main() -> None:
     files: List[Tuple[str, Path]] = [
         (f"{prefix}/night_queue.json", root / "logs" / "night_queue.json"),
         (f"{prefix}/night_scan_summary.csv", root / "logs" / "night_scan_summary.csv"),
-        (f"{prefix}/seen_post_ids.json", root / "logs" / "seen_post_ids.json"),
+        (f"{prefix}/seen_posts.json", root / "data" / "seen_posts.json"),
         (f"{prefix}/account_status.json", root / "data" / "account_status.json"),
     ]
     if include_log:
@@ -73,7 +76,7 @@ def main() -> None:
         _upload_file(supabase_url, supabase_key, bucket, object_path, file_path)
         uploaded += 1
 
-    print(f"Uploaded {uploaded} file(s) to Supabase bucket '{bucket}' under '{prefix}/'.")
+    logger.info(f"Uploaded {uploaded} file(s) to Supabase bucket '{bucket}' under '{prefix}/'.")
 
 
 # Entry point

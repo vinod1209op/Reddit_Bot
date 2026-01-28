@@ -1,3 +1,5 @@
+from microdose_study_bot.core.logging import UnifiedLogger
+logger = UnifiedLogger('NightScanner').get_logger()
 #!/usr/bin/env python3
 """
 Purpose: Time-windowed scanning.
@@ -37,6 +39,7 @@ from microdose_study_bot.core.safety.policies import enforce_readonly_env
 from microdose_study_bot.core.reddit_client import fetch_posts, make_reddit_client
 from microdose_study_bot.core.text_normalization import matched_keywords, normalize_post
 from microdose_study_bot.core.utils.console_tee import enable_console_tee
+from microdose_study_bot.core.storage.state_cleanup import cleanup_state
 from microdose_study_bot.core.storage.scan_store import (
     add_scanned_post,
     add_to_queue,
@@ -126,10 +129,10 @@ def load_schedule(path: Path) -> Dict[str, Any]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:
-        print(f"Could not read schedule file {path}: {exc}")
+        logger.info(f"Could not read schedule file {path}: {exc}")
         return {}
     if not isinstance(data, dict):
-        print(f"Schedule file {path} should contain a JSON object.")
+        logger.info(f"Schedule file {path} should contain a JSON object.")
         return {}
     return data
 
@@ -163,10 +166,10 @@ def load_accounts(path: Path, names_filter: Optional[Set[str]] = None) -> List[D
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:
-        print(f"Could not read accounts file {path}: {exc}")
+        logger.info(f"Could not read accounts file {path}: {exc}")
         return []
     if not isinstance(data, list):
-        print(f"Accounts file {path} should contain a JSON list.")
+        logger.info(f"Accounts file {path} should contain a JSON list.")
         return []
     accounts = []
     for entry in data:
@@ -204,6 +207,7 @@ def scan_posts(
 # Public API
 def main() -> None:
     enforce_readonly_env()
+    cleanup_state()
     enable_console_tee(os.getenv("CONSOLE_LOG_PATH", "logs/selenium_automation.log"))
     parser = argparse.ArgumentParser(description="Time-windowed read-only scanner.")
     parser.add_argument(
@@ -295,7 +299,7 @@ def main() -> None:
     active_window = next((w for w in windows if in_window(now_t, w[0], w[1])), None)
 
     if not active_window:
-        print(f"Outside scan windows ({args.windows}) for {args.timezone}. Exiting.")
+        logger.info(f"Outside scan windows ({args.windows}) for {args.timezone}. Exiting.")
         return
 
     # Enforce read-only behavior.
@@ -330,13 +334,13 @@ def main() -> None:
         else:
             mode = "mock"
 
-    print(f"Active window {active_window[2]} ({args.timezone}). Mode: {mode}.")
+    logger.info(f"Active window {active_window[2]} ({args.timezone}). Mode: {mode}.")
 
     if mode == "api":
         try:
             reddit = make_reddit_client(env_fallback=True)
         except Exception as exc:
-            print(f"API client unavailable ({exc}); falling back to mock.")
+            logger.info(f"API client unavailable ({exc}); falling back to mock.")
             mode = "mock"
             reddit = None
     else:
@@ -349,7 +353,7 @@ def main() -> None:
         if args.accounts_path:
             accounts = load_accounts(Path(args.accounts_path), account_names or None)
             if not accounts:
-                print(f"No accounts loaded from {args.accounts_path}. Exiting.")
+                logger.info(f"No accounts loaded from {args.accounts_path}. Exiting.")
                 return
 
         def run_selenium_scan(
@@ -374,24 +378,24 @@ def main() -> None:
             bot = RedditAutomation(config=config)
             shard_label = f"sort={sort}, time={time_range or 'none'}, page_offset={page_offset}"
             subreddit_set = ",".join(account_subreddits)
-            print(f"Account {account or 'default'}: {shard_label}")
+            logger.info(f"Account {account or 'default'}: {shard_label}")
             if not bot.setup():
-                print(f"Browser setup failed for account {account or 'default'}; skipping.")
+                logger.info(f"Browser setup failed for account {account or 'default'}; skipping.")
                 return
             if not bot.login(use_cookies_only=True):
-                print(f"Cookie login failed for account {account or 'default'}; skipping.")
+                logger.info(f"Cookie login failed for account {account or 'default'}; skipping.")
                 bot.close()
                 return
-            print(f"Logged in with cookies for account {account or 'default'}")
+            logger.info(f"Logged in with cookies for account {account or 'default'}")
 
             if tor_enabled:
                 time_mod.sleep(15)
 
             try:
-                print(f"Subreddits for {account or 'default'}: {', '.join(account_subreddits)}")
+                logger.info(f"Subreddits for {account or 'default'}: {', '.join(account_subreddits)}")
                 for subreddit in account_subreddits:
                     jitter_sleep(args.jitter_min, args.jitter_max)
-                    print(f"[{account or 'default'}] Scanning r/{subreddit} ({shard_label})")
+                    logger.info(f"[{account or 'default'}] Scanning r/{subreddit} ({shard_label})")
                     posts = bot.search_posts(
                         subreddit=subreddit,
                         limit=args.limit,
@@ -514,7 +518,7 @@ def main() -> None:
                         scan_page_offset=page_offset,
                         subreddit_set=subreddit_set,
                     )
-                    print(
+                    logger.info(
                         f"[{account or 'default'}] r/{subreddit}: scanned {scanned_count}, matched {matched_count}"
                     )
                     save_seen(seen_path, seen)
@@ -528,17 +532,17 @@ def main() -> None:
                 if account.get("night_scanner_enabled", True)
             ]
             if not enabled_accounts:
-                print("No accounts enabled for night scanner. Exiting.")
+                logger.info("No accounts enabled for night scanner. Exiting.")
                 return
             total_accounts = len(enabled_accounts)
             for idx, account in enumerate(enabled_accounts):
                 account_name = account.get("name", "")
                 cookie_path = account.get("cookies_path", "")
                 if not cookie_path:
-                    print(f"Skipping account {account_name or '(unnamed)'}: missing cookies_path.")
+                    logger.info(f"Skipping account {account_name or '(unnamed)'}: missing cookies_path.")
                     continue
                 if not Path(cookie_path).exists():
-                    print(f"Skipping account {account_name or '(unnamed)'}: cookie file not found at {cookie_path}.")
+                    logger.info(f"Skipping account {account_name or '(unnamed)'}: cookie file not found at {cookie_path}.")
                     continue
                 account_subreddits = account.get("subreddits") or subreddits
                 default_sort, default_time, default_offset = compute_scan_shard(idx, total_accounts)
@@ -569,7 +573,7 @@ def main() -> None:
                 subreddits,
             )
 
-        print(f"Scan complete. Logged queue to {queue_path} and {run_queue_path}.")
+        logger.info(f"Scan complete. Logged queue to {queue_path} and {run_queue_path}.")
         return
 
     if mode == "mock":
@@ -610,7 +614,7 @@ def main() -> None:
                 matched_count,
             )
             save_seen(seen_path, seen)
-        print(f"Mock scan complete. Logged queue to {queue_path} and {run_queue_path}.")
+        logger.info(f"Mock scan complete. Logged queue to {queue_path} and {run_queue_path}.")
         return
 
     # API mode
@@ -665,7 +669,7 @@ def main() -> None:
         )
         save_seen(seen_path, seen)
 
-    print(f"Scan complete. Logged queue to {queue_path} and {run_queue_path}.")
+    logger.info(f"Scan complete. Logged queue to {queue_path} and {run_queue_path}.")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 .PHONY: test run-ui run-cli scan-night scan-humanized validate
 
 test:
-	python3 -m unittest discover -v -s tests
+	pytest -q
 
 run-ui:
 	streamlit run apps/streamlit/app.py

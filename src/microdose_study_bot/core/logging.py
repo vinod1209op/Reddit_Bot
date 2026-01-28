@@ -10,6 +10,7 @@ import json
 import os
 import threading
 import time
+import re
 from datetime import datetime
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
@@ -17,6 +18,46 @@ from contextlib import contextmanager
 from typing import Optional, Dict, Any, Union
 import traceback
 
+from microdose_study_bot.core.metrics import get_metrics
+
+_REDACTED = "[redacted]"
+
+_TOKEN_PATTERNS = [
+    re.compile(r"\bsk-[A-Za-z0-9]{16,}\b"),
+    re.compile(r"\bsk-or-[A-Za-z0-9]{16,}\b"),
+    re.compile(r"\bAIza[0-9A-Za-z\-_]{16,}\b"),
+    re.compile(r"\bghp_[A-Za-z0-9]{20,}\b"),
+    re.compile(r"\bgho_[A-Za-z0-9]{20,}\b"),
+    re.compile(r"\beyJ[a-zA-Z0-9_\-]+=*\.[a-zA-Z0-9_\-]+=*\.[a-zA-Z0-9_\-]+=*\b"),
+]
+
+_URL_PATTERN = re.compile(r"https?://[^\s]+", re.IGNORECASE)
+_USERNAME_PATTERN = re.compile(r"(?:^|[\s/])(?:u/|/u/)([A-Za-z0-9_-]{3,20})", re.IGNORECASE)
+
+
+def _redact_text(text: str) -> str:
+    if not text:
+        return text
+    redacted = text
+    for pattern in _TOKEN_PATTERNS:
+        redacted = pattern.sub(_REDACTED, redacted)
+    if os.getenv("REDACT_URLS", "1").lower() not in ("0", "false", "no"):
+        redacted = _URL_PATTERN.sub(_REDACTED, redacted)
+    if os.getenv("REDACT_USERNAMES", "1").lower() not in ("0", "false", "no"):
+        redacted = _USERNAME_PATTERN.sub(lambda m: m.group(0).replace(m.group(1), _REDACTED), redacted)
+    return redacted
+
+
+def _redact_obj(value):
+    if isinstance(value, str):
+        return _redact_text(value)
+    if isinstance(value, dict):
+        return {k: _redact_obj(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact_obj(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_redact_obj(v) for v in value)
+    return value
 # Public API
 class UnifiedLogger:
     """Logger that works for both API and Selenium with structured logging"""
@@ -24,6 +65,8 @@ class UnifiedLogger:
     # Class-level tracker to avoid duplicate handlers
     _initialized_loggers = set()
     _lock = threading.Lock()
+    _sentry_initialized = False
+    _metrics_thread_started = False
     
     def __init__(self, name: str = "reddit_bot", log_level: Optional[str] = None):
         self.name = name
@@ -42,8 +85,9 @@ class UnifiedLogger:
             if name not in UnifiedLogger._initialized_loggers:
                 self.logger.setLevel(level)
                 
-                # Create logs directory relative to project root
-                project_root = Path(__file__).resolve().parents[2]
+                # Create logs directory relative to repo root
+                path_parts = Path(__file__).resolve().parents
+                project_root = path_parts[3] if len(path_parts) > 3 else path_parts[2]
                 logs_dir = project_root / "logs"
                 logs_dir.mkdir(exist_ok=True)
                 
@@ -73,6 +117,10 @@ class UnifiedLogger:
                 simple_formatter = logging.Formatter(
                     '%(asctime)s - %(levelname)s - %(message)s'
                 )
+
+                if os.getenv("LOG_REDACTION", "1").lower() not in ("0", "false", "no"):
+                    detailed_formatter = _RedactingFormatter(detailed_formatter)
+                    simple_formatter = _RedactingFormatter(simple_formatter)
                 
                 file_handler.setFormatter(detailed_formatter)
                 console_handler.setFormatter(simple_formatter)
@@ -81,16 +129,27 @@ class UnifiedLogger:
                 self.logger.addHandler(console_handler)
                 self.logger.propagate = False
                 
-                # Optional JSON logging
-                if os.getenv('ENABLE_JSON_LOGGING', '0').lower() in ('1', 'true', 'yes'):
+                # Structured JSON logging (enabled by default)
+                if os.getenv('ENABLE_JSON_LOGGING', '1').lower() not in ('0', 'false', 'no'):
                     self._enable_json_logging(logs_dir, timestamp, level)
+
+                # Metrics handler + snapshots
+                if os.getenv("METRICS_ENABLED", "1").lower() not in ("0", "false", "no"):
+                    self.logger.addHandler(_MetricsHandler())
+                    self._start_metrics_thread(logs_dir)
+
+                # Optional Sentry integration
+                self._maybe_init_sentry()
+
+                # Configure root logger for modules that use logging.getLogger
+                self._ensure_root_logger(logs_dir, timestamp, level)
                 
                 UnifiedLogger._initialized_loggers.add(name)
                 self.logger.info(f"Logger initialized. Log file: {log_file}")
             else:
                 self.logger.debug(f"Reusing existing logger: {name}")
     
-    def _enable_json_logging(self, logs_dir: Path, timestamp: str, level: int):
+    def _enable_json_logging(self, logs_dir: Path, timestamp: str, level: int, target_logger: Optional[logging.Logger] = None):
         """Enable JSON-structured logging to a separate file"""
         json_log_file = logs_dir / f"bot_json_{timestamp}.log"
         json_handler = RotatingFileHandler(
@@ -100,6 +159,8 @@ class UnifiedLogger:
             encoding='utf-8'
         )
         json_handler.setLevel(level)
+        if os.getenv("LOG_REDACTION", "1").lower() not in ("0", "false", "no"):
+            json_handler.setFormatter(_RedactingJsonFormatter())
         
         class JsonFormatter(logging.Formatter):
             def format(self, record):
@@ -115,16 +176,20 @@ class UnifiedLogger:
                 
                 # Add extra fields if present
                 if hasattr(record, 'action'):
-                    log_obj["action"] = record.action
+                    log_obj["action"] = _redact_obj(record.action)
                 if hasattr(record, 'details'):
-                    log_obj["details"] = record.details
+                    log_obj["details"] = _redact_obj(record.details)
                 if hasattr(record, 'account'):
-                    log_obj["account"] = record.account
+                    log_obj["account"] = _redact_obj(record.account)
+                if hasattr(record, "action_type"):
+                    log_obj["action_type"] = _redact_obj(record.action_type)
+                if hasattr(record, "metric_snapshot"):
+                    log_obj["metric_snapshot"] = _redact_obj(record.metric_snapshot)
                 
                 return json.dumps(log_obj)
-        
-        json_handler.setFormatter(JsonFormatter())
-        self.logger.addHandler(json_handler)
+        if not isinstance(json_handler.formatter, _RedactingJsonFormatter):
+            json_handler.setFormatter(JsonFormatter())
+        (target_logger or self.logger).addHandler(json_handler)
     
     def get_logger(self) -> logging.Logger:
         """Get the underlying logger instance"""
@@ -148,14 +213,17 @@ class UnifiedLogger:
             extra['account'] = account
         
         self.logger.log(log_level, f"ACTIVITY: {action}", extra=extra)
+        get_metrics().record(f"activity.{action}", success=log_level < logging.ERROR)
     
     def log_security_event(self, event_type: str, details: Dict[str, Any]):
         """Log security-related events"""
         self.logger.warning(f"SECURITY: {event_type} - {json.dumps(details)}")
+        get_metrics().record("security_event", success=False)
     
     def log_performance(self, operation: str, duration: float):
         """Log performance metrics"""
         self.logger.info(f"PERFORMANCE: {operation} took {duration:.2f}s")
+        get_metrics().record(f"performance.{operation}", success=True)
     
     def log_error_with_context(self, error: Exception, context: Dict[str, Any], level: str = "ERROR"):
         """Log errors with additional context"""
@@ -174,6 +242,7 @@ class UnifiedLogger:
             f"ERROR: {type(error).__name__}: {str(error)}",
             extra={'details': error_details}
         )
+        get_metrics().record_error("exception")
     
     @contextmanager
     def time_operation(self, operation_name: str):
@@ -209,9 +278,165 @@ class UnifiedLogger:
             level="INFO",
             account=account
         )
+        get_metrics().record(f"action.{action_type}", success=True)
+        if str(action_type).lower() in ("post", "comment", "reply", "submit", "post_attempt"):
+            get_metrics().record_post_attempt(success=True)
+
+    def log_metrics_snapshot(self):
+        """Emit a metrics snapshot into the JSON log."""
+        snapshot = get_metrics().snapshot()
+        self.logger.info(
+            "METRICS_SNAPSHOT",
+            extra={"metric_snapshot": snapshot, "_metrics_internal": True},
+        )
+
+    def _start_metrics_thread(self, logs_dir: Path) -> None:
+        if UnifiedLogger._metrics_thread_started:
+            return
+        interval = int(os.getenv("METRICS_SNAPSHOT_INTERVAL_SEC", "60"))
+        if interval <= 0:
+            return
+        metrics_path = logs_dir / "metrics.jsonl"
+
+        def _loop():
+            while True:
+                time.sleep(interval)
+                try:
+                    get_metrics().write_snapshot(metrics_path)
+                except Exception:
+                    # Best-effort; avoid hard failures on metrics writes
+                    pass
+
+        t = threading.Thread(target=_loop, daemon=True, name="metrics-snapshotter")
+        t.start()
+        UnifiedLogger._metrics_thread_started = True
+
+    def _maybe_init_sentry(self) -> None:
+        if UnifiedLogger._sentry_initialized:
+            return
+        dsn = os.getenv("SENTRY_DSN", "").strip()
+        if not dsn:
+            return
+        try:
+            import sentry_sdk
+            from sentry_sdk.integrations.logging import LoggingIntegration
+        except Exception:
+            return
+
+        sentry_logging = LoggingIntegration(
+            level=logging.INFO,
+            event_level=logging.ERROR,
+        )
+        sentry_sdk.init(
+            dsn=dsn,
+            environment=os.getenv("SENTRY_ENVIRONMENT", "production"),
+            release=os.getenv("SENTRY_RELEASE"),
+            traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.0")),
+            integrations=[sentry_logging],
+        )
+        UnifiedLogger._sentry_initialized = True
+
+    def _ensure_root_logger(self, logs_dir: Path, timestamp: str, level: int) -> None:
+        if os.getenv("ENABLE_ROOT_LOGGER", "1").lower() in ("0", "false", "no"):
+            return
+        root_logger = logging.getLogger()
+        if root_logger.handlers:
+            return
+
+        log_file = logs_dir / f"bot_{timestamp}.log"
+        file_handler = RotatingFileHandler(
+            log_file,
+            maxBytes=10*1024*1024,
+            backupCount=5,
+            encoding="utf-8"
+        )
+        file_handler.setLevel(level)
+
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(
+            getattr(logging, os.getenv("CONSOLE_LOG_LEVEL", "INFO").upper(), logging.INFO)
+        )
+
+        detailed_formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s"
+        )
+        simple_formatter = logging.Formatter(
+            "%(asctime)s - %(levelname)s - %(message)s"
+        )
+
+        file_handler.setFormatter(detailed_formatter)
+        console_handler.setFormatter(simple_formatter)
+
+        root_logger.setLevel(level)
+        root_logger.addHandler(file_handler)
+        root_logger.addHandler(console_handler)
+
+        if os.getenv('ENABLE_JSON_LOGGING', '1').lower() not in ('0', 'false', 'no'):
+            self._enable_json_logging(logs_dir, timestamp, level, target_logger=root_logger)
+        if os.getenv("METRICS_ENABLED", "1").lower() not in ("0", "false", "no"):
+            root_logger.addHandler(_MetricsHandler())
 
 
 # Convenience function for backward compatibility
 def setup_logger(name: str = "reddit_bot", log_level: Optional[str] = None) -> logging.Logger:
     """Backward compatibility function - returns a logger instance"""
     return UnifiedLogger(name=name, log_level=log_level).get_logger()
+
+
+class _MetricsHandler(logging.Handler):
+    """Update counters and rates for every log record."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if getattr(record, "_metrics_internal", False):
+            return
+        metrics = get_metrics()
+        level_name = record.levelname.lower()
+        metrics.record(f"log.{level_name}", success=record.levelno < logging.ERROR)
+        if record.levelno >= logging.ERROR:
+            metrics.record_error("log.error")
+        action_type = getattr(record, "action_type", None) or getattr(record, "action", None)
+        if action_type:
+            action_str = str(action_type).lower()
+            metrics.record(f"action.{action_str}", success=record.levelno < logging.ERROR)
+            if action_str in ("post", "comment", "reply", "submit", "post_attempt"):
+                metrics.record_post_attempt(success=record.levelno < logging.ERROR)
+
+
+class _RedactingFormatter(logging.Formatter):
+    def __init__(self, base: logging.Formatter):
+        super().__init__(base._fmt, base.datefmt, base.style)
+        self._base = base
+
+    def format(self, record: logging.LogRecord) -> str:
+        original_msg = record.getMessage()
+        redacted_msg = _redact_text(original_msg)
+        record.msg = redacted_msg
+        record.args = ()
+        formatted = self._base.format(record)
+        record.msg = original_msg
+        record.args = ()
+        return formatted
+
+
+class _RedactingJsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        log_obj = {
+            "timestamp": datetime.fromtimestamp(record.created).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": _redact_text(record.getMessage()),
+            "module": record.module,
+            "function": record.funcName,
+            "line": record.lineno,
+        }
+        if hasattr(record, "action"):
+            log_obj["action"] = _redact_obj(record.action)
+        if hasattr(record, "details"):
+            log_obj["details"] = _redact_obj(record.details)
+        if hasattr(record, "account"):
+            log_obj["account"] = _redact_obj(record.account)
+        if hasattr(record, "action_type"):
+            log_obj["action_type"] = _redact_obj(record.action_type)
+        if hasattr(record, "metric_snapshot"):
+            log_obj["metric_snapshot"] = _redact_obj(record.metric_snapshot)
+        return json.dumps(log_obj)

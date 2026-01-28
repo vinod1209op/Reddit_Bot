@@ -11,9 +11,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import requests
 from typing import List, Dict, Optional
+from microdose_study_bot.core.logging import UnifiedLogger
+from microdose_study_bot.core.utils.http import post_with_retry
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = UnifiedLogger("PostGenerator").get_logger()
 
 class PostGenerator:
     """Generates human-like Reddit posts for MCRDSE communities"""
@@ -165,7 +166,7 @@ class PostGenerator:
                 }
             }
             
-            response = requests.post(API_URL, headers=headers, json=payload)
+            response = post_with_retry(API_URL, headers=headers, json=payload)
             
             if response.status_code == 200:
                 result = response.json()
@@ -363,8 +364,8 @@ if __name__ == "__main__":
     
     # Preview
     for i, post in enumerate(posts):
-        print(f"\n{'='*50}")
-        print(f"Post {i+1}: {post['title']}")
-        print(f"Subreddit: r/{post['subreddit']}")
-        print(f"Type: {post['type']}")
-        print(f"Content preview: {post['content'][:200]}...")
+        logger.info(f"\n{'='*50}")
+        logger.info(f"Post {i+1}: {post['title']}")
+        logger.info(f"Subreddit: r/{post['subreddit']}")
+        logger.info(f"Type: {post['type']}")
+        logger.info(f"Content preview: {post['content'][:200]}...")

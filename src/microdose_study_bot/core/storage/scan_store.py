@@ -37,7 +37,7 @@ SUMMARY_HEADER = [
 ]
 
 QUEUE_DEFAULT_PATH = "logs/night_queue.json"
-SEEN_DEFAULT_PATH = "logs/seen_post_ids.json"
+SEEN_DEFAULT_PATH = "data/seen_posts.json"
 SCANNED_DEFAULT_PATH = "logs/scanned_posts.json"
 
 # Helpers

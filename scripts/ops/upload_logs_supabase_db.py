@@ -1,3 +1,5 @@
+from microdose_study_bot.core.logging import UnifiedLogger
+logger = UnifiedLogger('UploadLogsSupabaseDb').get_logger()
 #!/usr/bin/env python3
 """
 Upload scan logs into Supabase Postgres (scan_runs + scan_events).
@@ -21,8 +23,8 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import requests
+from microdose_study_bot.core.utils.http import post_with_retry
 
-from microdose_study_bot.core.utils.retry import retry
 
 
 # Helpers
@@ -40,13 +42,9 @@ def _post_records(base_url: str, key: str, table: str, records: List[Dict[str, A
         "Content-Type": "application/json",
         "Prefer": "resolution=merge-duplicates,return=minimal",
     }
-    def _do_request():
-        resp = requests.post(url, headers=headers, json=records, timeout=30)
-        if resp.status_code >= 300:
-            raise RuntimeError(f"{resp.status_code}: {resp.text}")
-        return resp
-
-    retry(_do_request, attempts=3, base_delay=1.0)
+    resp = post_with_retry(url, headers=headers, json=records, timeout=30)
+    if resp.status_code >= 300:
+        raise RuntimeError(f"{resp.status_code}: {resp.text}")
 
 
 def _load_queue(path: Path) -> List[Dict[str, Any]]:
@@ -178,7 +176,7 @@ def main() -> None:
 
     _post_records(base_url, supabase_key, "scan_posts", scan_posts, "post_key")
 
-    print(
+    logger.info(
         f"Uploaded {len(scan_events)} scan_events, {len(scan_runs)} scan_runs, "
         f"{len(scan_posts)} scan_posts."
     )

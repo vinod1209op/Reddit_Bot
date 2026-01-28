@@ -19,7 +19,9 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from microdose_study_bot.core.account_status import AccountStatusTracker
+from microdose_study_bot.core.logging import UnifiedLogger
 from microdose_study_bot.core.config import ConfigManager
+from microdose_study_bot.core.storage.state_cleanup import cleanup_state
 from scripts.subreddit_creation.create_subreddits import SubredditCreator
 from scripts.moderation.manage_moderation import SeleniumModerationManager
 from scripts.content_scheduling.schedule_posts import MCRDSEPostScheduler
@@ -35,12 +37,7 @@ LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 ACTIVITY_LOG = Path("data/community_activity_log.jsonl")
 ACTIVITY_LOG.parent.mkdir(parents=True, exist_ok=True)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.FileHandler(LOG_PATH), logging.StreamHandler()],
-)
-logger = logging.getLogger("CommunityManager")
+logger = UnifiedLogger("CommunityManager").get_logger()
 
 
 def _resolve_timezone(activity_schedule: Dict, account: Dict) -> Optional[str]:
@@ -344,6 +341,7 @@ def run_for_account(
 
 
 def main() -> None:
+    cleanup_state()
     parser = argparse.ArgumentParser(description="Unified community manager runner")
     parser.add_argument("--account", help="Account name to run (default: all)")
     parser.add_argument("--dry-run", action="store_true", help="Simulate actions without executing")

@@ -1,3 +1,5 @@
+from microdose_study_bot.core.logging import UnifiedLogger
+logger = UnifiedLogger('TorControl').get_logger()
 #!/usr/bin/env python3
 """
 Control Tor via the ControlPort to request a new circuit (NEWNYM).
@@ -35,7 +37,7 @@ def main() -> None:
     if not password:
         raise SystemExit("Hashed password required (the 16:... string from tor --hash-password).")
     request_newnym(port, password)
-    print(f"Rotated Tor circuit via ControlPort {port}.")
+    logger.info(f"Rotated Tor circuit via ControlPort {port}.")
 
 
 if __name__ == "__main__":

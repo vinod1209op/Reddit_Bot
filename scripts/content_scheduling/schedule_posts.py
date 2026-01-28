@@ -23,17 +23,18 @@ except Exception:  # pragma: no cover
     schedule = None
 import threading
 from microdose_study_bot.reddit_selenium.automation_base import RedditAutomationBase
-
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('logs/post_scheduler.log'),
-        logging.StreamHandler()
-    ]
+from microdose_study_bot.core.logging import UnifiedLogger
+from microdose_study_bot.core.storage.state_cleanup import cleanup_state
+from microdose_study_bot.core.storage.idempotency_store import (
+    IDEMPOTENCY_DEFAULT_PATH,
+    build_post_key,
+    can_attempt,
+    mark_attempt,
+    mark_failure,
+    mark_success,
 )
-logger = logging.getLogger(__name__)
+
+logger = UnifiedLogger("PostScheduler").get_logger()
 
 class MCRDSEPostScheduler(RedditAutomationBase):
     """Schedule and post content to MCRDSE subreddits using Selenium"""
@@ -579,7 +580,14 @@ class MCRDSEPostScheduler(RedditAutomationBase):
                 logger.info(f"Rate limited for posting; wait {wait_seconds}s")
                 return False, "rate_limited"
             
+            idem_path = Path(os.getenv("IDEMPOTENCY_PATH", IDEMPOTENCY_DEFAULT_PATH))
+            post_key = build_post_key(post_data)
+            if post_key and not can_attempt(idem_path, post_key):
+                logger.info("Idempotency skip: post already attempted/sent")
+                return False, "idempotent_skip"
+
             logger.info(f"Submitting post to r/{subreddit}: {title[:50]}...")
+            mark_attempt(idem_path, post_key, {"subreddit": subreddit, "title": title})
             
             # Navigate to submit page
             submit_url = f"https://old.reddit.com/r/{subreddit}/submit"
@@ -645,6 +653,8 @@ class MCRDSEPostScheduler(RedditAutomationBase):
                     self.account_name, subreddit, post_data.get("type", "unknown"), True,
                     daily_limit=self.config["posting_settings"]["max_posts_per_day"]
                 )
+                if post_key:
+                    mark_success(idem_path, post_key, {"post_url": post_url})
                 return True, post_url
             else:
                 # Check for errors
@@ -668,6 +678,8 @@ class MCRDSEPostScheduler(RedditAutomationBase):
                             self.status_tracker.update_account_status(
                                 self.account_name, "rate_limited", {"reason": error}
                             )
+                        if post_key:
+                            mark_failure(idem_path, post_key, error=error)
                         return False, error
                 
                 logger.error("Post failed for unknown reason")
@@ -675,6 +687,8 @@ class MCRDSEPostScheduler(RedditAutomationBase):
                     self.account_name, subreddit, post_data.get("type", "unknown"), False,
                     daily_limit=self.config["posting_settings"]["max_posts_per_day"]
                 )
+                if post_key:
+                    mark_failure(idem_path, post_key, error="unknown")
                 return False, "Unknown error"
             
         except Exception as e:
@@ -683,6 +697,13 @@ class MCRDSEPostScheduler(RedditAutomationBase):
                 self.account_name, post_data.get("subreddit", "unknown"), post_data.get("type", "unknown"), False,
                 daily_limit=self.config["posting_settings"]["max_posts_per_day"]
             )
+            try:
+                idem_path = Path(os.getenv("IDEMPOTENCY_PATH", IDEMPOTENCY_DEFAULT_PATH))
+                post_key = build_post_key(post_data)
+                if post_key:
+                    mark_failure(idem_path, post_key, error=str(e))
+            except Exception:
+                pass
             return False, str(e)
     
     def schedule_post(self, post_data: Dict):
@@ -1155,6 +1176,7 @@ class MCRDSEPostScheduler(RedditAutomationBase):
 def main():
     """Command-line interface"""
     import argparse
+    cleanup_state()
     
     parser = argparse.ArgumentParser(description="MCRDSE Post Scheduler - Selenium Version")
     parser.add_argument("--account", default="account1", help="Reddit account to use")
@@ -1177,9 +1199,9 @@ def main():
     
     args = parser.parse_args()
     
-    print("\n" + "="*60)
-    print("MCRDSE Post Scheduler")
-    print("="*60)
+    logger.info("\n" + "="*60)
+    logger.info("MCRDSE Post Scheduler")
+    logger.info("="*60)
     
     # Initialize scheduler
     scheduler = MCRDSEPostScheduler(
@@ -1190,28 +1212,28 @@ def main():
     logger.info(f"Validation summary: {scheduler.run_validations()}")
     enabled, reason = scheduler.is_feature_enabled("post_scheduling")
     if not enabled:
-        print(f"Post scheduling disabled ({reason}); exiting.")
+        logger.info(f"Post scheduling disabled ({reason}); exiting.")
         scheduler.cleanup()
         return
 
     if args.validate_only:
-        print(f"Validation summary: {scheduler.run_validations()}")
+        logger.info(f"Validation summary: {scheduler.run_validations()}")
         scheduler.cleanup()
         return
     
     # Handle commands
     if args.generate:
-        print(f"\nGenerating {args.generate} posts...")
+        logger.info(f"\nGenerating {args.generate} posts...")
         posts = scheduler.generate_scheduled_posts(args.generate, args.days)
-        print(f"✓ Generated {len(posts)} posts")
+        logger.info(f"✓ Generated {len(posts)} posts")
         
         # Show what was generated
         for i, post in enumerate(posts, 1):
             scheduled_time = datetime.fromisoformat(post["scheduled_for"])
-            print(f"  {i}. r/{post['subreddit']} - {post['type']} - {scheduled_time.strftime('%Y-%m-%d %H:%M')}")
+            logger.info(f"  {i}. r/{post['subreddit']} - {post['type']} - {scheduled_time.strftime('%Y-%m-%d %H:%M')}")
     
     elif args.schedule:
-        print("\nInteractive post scheduling")
+        logger.info("\nInteractive post scheduling")
         
         # Get post details
         post_type = input("Post type (discussion/question/resource/experience/news): ").strip().lower()
@@ -1226,37 +1248,37 @@ def main():
         post = scheduler.generate_post_from_template(post_type, subreddit)
         
         # Show preview
-        print(f"\nPost preview:")
-        print(f"Title: {post['title']}")
-        print(f"Type: {post['type']}")
-        print(f"Subreddit: r/{post['subreddit']}")
-        print(f"Scheduled for: {post['scheduled_for']}")
-        print(f"\nContent preview:\n{post['content'][:200]}...")
+        logger.info(f"\nPost preview:")
+        logger.info(f"Title: {post['title']}")
+        logger.info(f"Type: {post['type']}")
+        logger.info(f"Subreddit: r/{post['subreddit']}")
+        logger.info(f"Scheduled for: {post['scheduled_for']}")
+        logger.info(f"\nContent preview:\n{post['content'][:200]}...")
         
         confirm = input("\nSchedule this post? (yes/no): ").strip().lower()
         if confirm == "yes":
             scheduler.schedule_post(post)
-            print("✓ Post scheduled")
+            logger.info("✓ Post scheduled")
         else:
-            print("Post cancelled")
+            logger.info("Post cancelled")
     
     elif args.post_now:
-        print("\nPosting immediately...")
+        logger.info("\nPosting immediately...")
         if args.dry_run:
-            print("[dry-run] Skipping browser setup/login and submit")
+            logger.info("[dry-run] Skipping browser setup/login and submit")
             post_type = input("Post type (discussion/question/resource/experience/news): ").strip().lower() or "discussion"
             subreddit = input("Subreddit: ").strip()
             post = scheduler.generate_post_from_template(post_type, subreddit)
-            print(f"[dry-run] Would post to r/{post['subreddit']}: {post['title']}")
+            logger.info(f"[dry-run] Would post to r/{post['subreddit']}: {post['title']}")
             return
         
         # Setup browser
         if not scheduler.setup_browser():
-            print("❌ Failed to setup browser")
+            logger.info("❌ Failed to setup browser")
             return
         
         if not scheduler.login_with_cookies():
-            print("❌ Login failed")
+            logger.info("❌ Login failed")
             scheduler.cleanup()
             return
         
@@ -1271,19 +1293,19 @@ def main():
         success, result = scheduler.submit_post(post)
         
         if success:
-            print(f"✓ Post successful: {result}")
+            logger.info(f"✓ Post successful: {result}")
         else:
-            print(f"❌ Post failed: {result}")
+            logger.info(f"❌ Post failed: {result}")
         
         if scheduler.driver:
             scheduler.cleanup()
     
     elif args.view:
-        print("\nCurrent Schedule:")
+        logger.info("\nCurrent Schedule:")
         posts = scheduler.view_schedule(days_ahead=args.days)
         
         if not posts:
-            print("No posts scheduled")
+            logger.info("No posts scheduled")
         else:
             for i, post in enumerate(posts, 1):
                 try:
@@ -1300,98 +1322,98 @@ def main():
                     "processing": "🔄"
                 }.get(status, "?")
                 
-                print(f"{status_icon} {i}. r/{post.get('subreddit', '?')} - {post.get('type', '?')}")
-                print(f"   Title: {post.get('title', '?')[:60]}...")
-                print(f"   Time: {time_str} | Status: {status}")
+                logger.info(f"{status_icon} {i}. r/{post.get('subreddit', '?')} - {post.get('type', '?')}")
+                logger.info(f"   Title: {post.get('title', '?')[:60]}...")
+                logger.info(f"   Time: {time_str} | Status: {status}")
                 
                 if post.get("error"):
-                    print(f"   Error: {post['error'][:80]}...")
-                print()
+                    logger.info(f"   Error: {post['error'][:80]}...")
+                logger.info()
     
     elif args.summary:
-        print("\nSchedule Summary:")
+        logger.info("\nSchedule Summary:")
         summary = scheduler.get_schedule_summary()
         
-        print(f"Total posts: {summary['total']}")
-        print(f"\nBy status:")
+        logger.info(f"Total posts: {summary['total']}")
+        logger.info(f"\nBy status:")
         for status, count in summary['by_status'].items():
-            print(f"  {status}: {count}")
+            logger.info(f"  {status}: {count}")
         
-        print(f"\nBy subreddit:")
+        logger.info(f"\nBy subreddit:")
         for subreddit, count in summary['by_subreddit'].items():
-            print(f"  r/{subreddit}: {count}")
+            logger.info(f"  r/{subreddit}: {count}")
         
-        print(f"\nBy type:")
+        logger.info(f"\nBy type:")
         for post_type, count in summary['by_type'].items():
-            print(f"  {post_type}: {count}")
+            logger.info(f"  {post_type}: {count}")
         
         if summary['next_post']:
             next_time = datetime.fromisoformat(summary['next_post']['scheduled_for'])
-            print(f"\nNext post: {next_time.strftime('%Y-%m-%d %H:%M')}")
-            print(f"  r/{summary['next_post']['subreddit']} - {summary['next_post']['title'][:50]}...")
+            logger.info(f"\nNext post: {next_time.strftime('%Y-%m-%d %H:%M')}")
+            logger.info(f"  r/{summary['next_post']['subreddit']} - {summary['next_post']['title'][:50]}...")
     
     elif args.start_daemon:
         if args.dry_run:
-            print("[dry-run] Skipping daemon start")
+            logger.info("[dry-run] Skipping daemon start")
             return
-        print("\nStarting scheduler daemon...")
+        logger.info("\nStarting scheduler daemon...")
         scheduler.start_daemon()
-        print("Daemon started. Press Ctrl+C to stop.")
+        logger.info("Daemon started. Press Ctrl+C to stop.")
         
         try:
             while scheduler.is_running:
                 time.sleep(1)
         except KeyboardInterrupt:
-            print("\nStopping daemon...")
+            logger.info("\nStopping daemon...")
             scheduler.stop_daemon()
     
     elif args.stop_daemon:
-        print("\nStopping scheduler daemon...")
+        logger.info("\nStopping scheduler daemon...")
         scheduler.stop_daemon()
-        print("Daemon stopped")
+        logger.info("Daemon stopped")
     
     elif args.process:
-        print("\nProcessing due posts...")
+        logger.info("\nProcessing due posts...")
         if not args.dry_run:
             # Setup browser
             if not scheduler.setup_browser():
-                print("❌ Failed to setup browser")
+                logger.info("❌ Failed to setup browser")
                 return
             
             if not scheduler.login_with_cookies():
-                print("❌ Login failed")
+                logger.info("❌ Login failed")
                 scheduler.cleanup()
                 return
         
         success_count = scheduler.process_due_posts()
-        print(f"✓ Posted {success_count} posts")
+        logger.info(f"✓ Posted {success_count} posts")
         
         if scheduler.driver:
             scheduler.cleanup()
     
     elif args.cleanup:
-        print("\nCleaning up old schedule...")
+        logger.info("\nCleaning up old schedule...")
         removed = scheduler.cleanup_old_schedule()
-        print(f"✓ Removed {removed} old posts")
+        logger.info(f"✓ Removed {removed} old posts")
     
     elif args.seed_network:
-        print("\nSeeding network content...")
+        logger.info("\nSeeding network content...")
         seeded = scheduler.seed_network_content(count_per_subreddit=args.seed_count, days=args.seed_days)
-        print(f"✓ Seeded {len(seeded)} subreddits")
+        logger.info(f"✓ Seeded {len(seeded)} subreddits")
         for sub, count in list(seeded.items())[:10]:
-            print(f"  r/{sub}: {count} posts")
+            logger.info(f"  r/{sub}: {count} posts")
 
     else:
         # Interactive mode
-        print("\nInteractive Mode")
-        print("1. Generate and schedule posts")
-        print("2. View schedule")
-        print("3. View summary")
-        print("4. Post immediately")
-        print("5. Start scheduler daemon")
-        print("6. Process due posts now")
-        print("7. Cleanup old schedule")
-        print("8. Exit")
+        logger.info("\nInteractive Mode")
+        logger.info("1. Generate and schedule posts")
+        logger.info("2. View schedule")
+        logger.info("3. View summary")
+        logger.info("4. Post immediately")
+        logger.info("5. Start scheduler daemon")
+        logger.info("6. Process due posts now")
+        logger.info("7. Cleanup old schedule")
+        logger.info("8. Exit")
         
         choice = input("\nSelect option (1-8): ").strip()
         
@@ -1402,28 +1424,28 @@ def main():
             days = int(days) if days.isdigit() else 7
             
             posts = scheduler.generate_scheduled_posts(count, days)
-            print(f"\n✓ Generated {len(posts)} posts")
+            logger.info(f"\n✓ Generated {len(posts)} posts")
         
         elif choice == "2":
             posts = scheduler.view_schedule()
             if posts:
                 for i, post in enumerate(posts[:10], 1):  # Show first 10
                     time_str = datetime.fromisoformat(post["scheduled_for"]).strftime("%m/%d %H:%M")
-                    print(f"{i}. [{post['type']}] r/{post['subreddit']}: {post['title'][:40]}... ({time_str})")
+                    logger.info(f"{i}. [{post['type']}] r/{post['subreddit']}: {post['title'][:40]}... ({time_str})")
                 if len(posts) > 10:
-                    print(f"... and {len(posts) - 10} more")
+                    logger.info(f"... and {len(posts) - 10} more")
             else:
-                print("No posts scheduled")
+                logger.info("No posts scheduled")
         
         elif choice == "3":
             summary = scheduler.get_schedule_summary()
-            print(f"\nTotal: {summary['total']}")
-            print("Status breakdown:")
+            logger.info(f"\nTotal: {summary['total']}")
+            logger.info("Status breakdown:")
             for status, count in summary['by_status'].items():
-                print(f"  {status}: {count}")
+                logger.info(f"  {status}: {count}")
         
         elif choice == "4":
-            print("\nThis will post immediately (bypass schedule).")
+            logger.info("\nThis will post immediately (bypass schedule).")
             confirm = input("Continue? (yes/no): ").strip().lower()
             if confirm == "yes":
                 # Re-run with post-now flag
@@ -1434,30 +1456,30 @@ def main():
                 main()
         
         elif choice == "5":
-            print("\nStarting daemon in background...")
+            logger.info("\nStarting daemon in background...")
             scheduler.start_daemon()
             input("\nDaemon started. Press Enter to return to menu (daemon continues)...")
         
         elif choice == "6":
-            print("\nProcessing due posts...")
+            logger.info("\nProcessing due posts...")
             # Setup browser temporarily
             if scheduler.setup_browser() and scheduler.login_with_cookies():
                 success = scheduler.process_due_posts()
-                print(f"✓ Posted {success} posts")
+                logger.info(f"✓ Posted {success} posts")
                 scheduler.cleanup()
             else:
-                print("❌ Failed to setup/login")
+                logger.info("❌ Failed to setup/login")
         
         elif choice == "7":
             removed = scheduler.cleanup_old_schedule()
-            print(f"✓ Removed {removed} old posts")
+            logger.info(f"✓ Removed {removed} old posts")
         
         else:
-            print("Exiting")
+            logger.info("Exiting")
     
-    print("\n" + "="*60)
-    print("Post scheduler complete!")
-    print("="*60)
+    logger.info("\n" + "="*60)
+    logger.info("Post scheduler complete!")
+    logger.info("="*60)
 
 if __name__ == "__main__":
     main()

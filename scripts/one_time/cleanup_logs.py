@@ -10,8 +10,10 @@ import argparse
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
+from microdose_study_bot.core.logging import UnifiedLogger
 
 
+logger = UnifiedLogger('CleanupLogs').get_logger()
 def list_log_files(log_dir: Path):
     for path in log_dir.glob("**/*"):
         if path.is_file():
@@ -28,7 +30,7 @@ def main():
 
     log_dir = Path(args.log_dir)
     if not log_dir.exists():
-        print(f"No log directory at {log_dir}")
+        logger.info(f"No log directory at {log_dir}")
         return
 
     cutoff = datetime.now() - timedelta(days=args.keep_days)
@@ -53,12 +55,12 @@ def main():
                 path.unlink()
                 removed.append(path)
             except Exception as e:
-                print(f"Could not remove {path}: {e}")
+                logger.info(f"Could not remove {path}: {e}")
 
-    print(f"Kept {len(kept)} files, removed {len(removed)} files.")
+    logger.info(f"Kept {len(kept)} files, removed {len(removed)} files.")
     if removed:
         for p in removed:
-            print(f"Removed: {p}")
+            logger.info(f"Removed: {p}")
 
 
 if __name__ == "__main__":

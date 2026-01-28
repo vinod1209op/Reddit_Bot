@@ -8,10 +8,7 @@ import subprocess
 import time
 from typing import Dict, Optional
 
-try:
-    import requests
-except Exception:  # pragma: no cover - optional dependency
-    requests = None  # type: ignore
+from microdose_study_bot.core.utils.http import get_with_retry
 
 
 # Public API
@@ -54,10 +51,8 @@ class VPNManager:
 
     def verify_connection(self) -> Optional[dict]:
         """Return IP metadata if available."""
-        if requests is None:
-            return None
         try:
-            response = requests.get("https://ipinfo.io/json", timeout=5)
+            response = get_with_retry("https://ipinfo.io/json", timeout=5)
             return response.json()
         except Exception:
             return None

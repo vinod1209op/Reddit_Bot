@@ -18,6 +18,10 @@ on:
         required: false
         default: "true"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   community_manager:
     runs-on: ubuntu-latest
@@ -117,6 +121,8 @@ jobs:
           PYTHONUNBUFFERED: "1"
           PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
           SELENIUM_HEADLESS: "1"
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_ENVIRONMENT: "production"
         run: |
           set -euxo pipefail
           EVENT_NAME="${{ github.event_name }}"

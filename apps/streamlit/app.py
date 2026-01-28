@@ -31,7 +31,19 @@ from microdose_study_bot.core.config import ConfigManager  # type: ignore
 from microdose_study_bot.core.safety.policies import DEFAULT_REPLY_RULES  # type: ignore
 from microdose_study_bot.core.text_normalization import matched_keywords as _match_keywords  # type: ignore
 from microdose_study_bot.core.utils.retry import retry  # type: ignore
+from microdose_study_bot.core.utils.http import (  # type: ignore
+    get_with_retry,
+    post_with_retry,
+    put_with_retry,
+    patch_with_retry,
+)
 from microdose_study_bot.reddit_selenium.main import RedditAutomation  # type: ignore
+from microdose_study_bot.core.storage.idempotency_store import (  # type: ignore
+    IDEMPOTENCY_DEFAULT_PATH,
+    build_post_key,
+    can_attempt,
+    mark_success,
+)
 
 # Constants
 POLICY_NOTE = (
@@ -201,7 +213,7 @@ def _fetch_account_health_from_supabase() -> dict:
     }
 
     def _do_request():
-        resp = requests.get(
+        resp = get_with_retry(
             url,
             headers=headers,
             params={"select": "account_name,current_status,last_success_at,last_failure_at,last_status_change_at,updated_at"},
@@ -245,7 +257,7 @@ def _fetch_account_status_events_from_supabase(limit: int = 200) -> dict:
     }
 
     try:
-        resp = requests.get(
+        resp = get_with_retry(
             url,
             headers=headers,
             params={
@@ -287,7 +299,7 @@ def _download_supabase_cookie_from_path(dest_path: Path, cookie_path: str) -> bo
     url = f"{base_url.rstrip('/')}/storage/v1/object/{bucket}/{cookie_path.lstrip('/')}"
     headers = {"Authorization": f"Bearer {service_key}", "apikey": service_key}
     def _do_request():
-        resp = requests.get(url, headers=headers, timeout=30)
+        resp = get_with_retry(url, headers=headers, timeout=30)
         if resp.status_code >= 300:
             raise RuntimeError(f"{resp.status_code}: {resp.text}")
         return resp
@@ -333,10 +345,10 @@ def _upload_supabase_cookie(src_path: Path) -> bool:
     }
     def _do_request():
         with src_path.open("rb") as handle:
-            resp = requests.post(url, headers=headers, data=handle, timeout=30)
+            resp = post_with_retry(url, headers=headers, data=handle, timeout=30)
         if resp.status_code == 409:
             with src_path.open("rb") as handle:
-                resp = requests.put(url, headers=headers, data=handle, timeout=30)
+                resp = put_with_retry(url, headers=headers, data=handle, timeout=30)
         if resp.status_code >= 300:
             raise RuntimeError(f"{resp.status_code}: {resp.text}")
         return resp
@@ -383,7 +395,7 @@ def _fetch_supabase_posts_page(
     headers = _supabase_headers(key)
     headers["Prefer"] = "count=exact"
     def _do_request():
-        resp = requests.get(base, headers=headers, params=params, timeout=20)
+        resp = get_with_retry(base, headers=headers, params=params, timeout=20)
         if resp.status_code >= 300:
             raise RuntimeError(f"{resp.status_code}: {resp.text}")
         return resp
@@ -424,7 +436,7 @@ def _mark_supabase_used(post_key: str, action: str) -> bool:
         "used_action": action,
     }
     def _do_request():
-        resp = requests.patch(
+        resp = patch_with_retry(
             base,
             headers=_supabase_headers(key),
             params={"post_key": f"eq.{post_key}"},
@@ -668,13 +680,13 @@ def reset_account_status(account_name: str) -> bool:
     }
     try:
         now = datetime.now(timezone.utc).isoformat()
-        requests.post(
+        post_with_retry(
             f"{base_url.rstrip('/')}/rest/v1/accounts?on_conflict=account_name",
             headers=headers,
             data=json.dumps({"account_name": account_name, "status": "unknown"}),
             timeout=30,
         )
-        requests.post(
+        post_with_retry(
             f"{base_url.rstrip('/')}/rest/v1/account_health?on_conflict=account_name",
             headers=headers,
             data=json.dumps(
@@ -687,7 +699,7 @@ def reset_account_status(account_name: str) -> bool:
             ),
             timeout=30,
         )
-        requests.post(
+        post_with_retry(
             f"{base_url.rstrip('/')}/rest/v1/account_status_events",
             headers={**headers, "Prefer": "return=minimal"},
             data=json.dumps(
@@ -734,7 +746,7 @@ def _fetch_supabase_count(table: str, filters: dict[str, str]) -> int:
     headers = _supabase_headers(key)
     headers["Prefer"] = "count=exact"
     try:
-        resp = requests.get(base, headers=headers, params=params, timeout=15)
+        resp = get_with_retry(base, headers=headers, params=params, timeout=15)
         if resp.status_code >= 300:
             return 0
         content_range = resp.headers.get("Content-Range", "")
@@ -752,7 +764,7 @@ def _fetch_supabase_last_run() -> str:
     params = {"select": "timestamp_utc", "order": "timestamp_utc.desc", "limit": "1"}
     headers = _supabase_headers(key)
     try:
-        resp = requests.get(base, headers=headers, params=params, timeout=15)
+        resp = get_with_retry(base, headers=headers, params=params, timeout=15)
         if resp.status_code >= 300:
             return "No runs yet"
         rows = resp.json() if isinstance(resp.json(), list) else []
@@ -778,7 +790,7 @@ def _fetch_supabase_rows(table: str, params: dict[str, str], limit: int = 1000) 
     params = dict(params)
     params.setdefault("limit", str(limit))
     try:
-        resp = requests.get(base, headers=headers, params=params, timeout=20)
+        resp = get_with_retry(base, headers=headers, params=params, timeout=20)
         if resp.status_code >= 300:
             return []
         rows = resp.json()
@@ -1951,6 +1963,11 @@ def main() -> None:
                                 if auto_submit and auto_submit_limit > 0 and st.session_state["auto_submit_count"] >= auto_submit_limit:
                                     auto_submit = False
                                     st.session_state[status_key] = ("warning", "Auto-submit limit reached; prefilling only.")
+                                idem_path = Path(os.getenv("IDEMPOTENCY_PATH", IDEMPOTENCY_DEFAULT_PATH))
+                                post_key_idem = build_post_key(post)
+                                if auto_submit and post_key_idem and not can_attempt(idem_path, post_key_idem):
+                                    auto_submit = False
+                                    st.session_state[status_key] = ("warning", "Idempotency: post already attempted; prefilling only.")
                                 if auto_submit:
                                     guard_window = float(os.getenv("AUTO_SUBMIT_GUARD_SECONDS", "20") or 20)
                                     reply_hash = hashlib.sha256(reply_text.encode("utf-8")).hexdigest()
@@ -1983,6 +2000,8 @@ def main() -> None:
                                                 "subreddit": post.get("subreddit", ""),
                                             }
                                         )
+                                        if post_key_idem:
+                                            mark_success(idem_path, post_key_idem, {"comment_id": result.get("comment_id", "")})
                                     save_post_state(post_state)
                                     if auto_submit:
                                         st.session_state["auto_submit_count"] += 1

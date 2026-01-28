@@ -4,16 +4,25 @@ Conversation Starter for MCRDSE Reddit Strategy
 Posts engaging content in target subreddits to drive traffic
 """
 import json
+import os
 import random
 import time
 import logging
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict
+from microdose_study_bot.core.logging import UnifiedLogger
+from microdose_study_bot.core.storage.idempotency_store import (
+    IDEMPOTENCY_DEFAULT_PATH,
+    build_post_key,
+    can_attempt,
+    mark_attempt,
+    mark_failure,
+    mark_success,
+)
 import praw  # Reddit API wrapper - free
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = UnifiedLogger("ConversationStarter").get_logger()
 
 class ConversationStarter:
     """Starts and manages conversations in target subreddits"""
@@ -235,6 +244,12 @@ class ConversationStarter:
             if not self.reddit:
                 logger.error("Reddit API not initialized")
                 return False
+
+            idem_path = Path(os.getenv("IDEMPOTENCY_PATH", IDEMPOTENCY_DEFAULT_PATH))
+            post_key = build_post_key(post_data)
+            if post_key and not can_attempt(idem_path, post_key):
+                logger.warning("Idempotency skip: post already attempted/sent")
+                return False
             
             subreddit = self.reddit.subreddit(post_data["subreddit"])
             
@@ -244,6 +259,7 @@ class ConversationStarter:
                 return False
             
             # Submit post
+            mark_attempt(idem_path, post_key, {"subreddit": post_data.get("subreddit"), "title": post_data.get("title")})
             submission = subreddit.submit(
                 title=post_data["title"],
                 selftext=post_data["content"]
@@ -251,6 +267,8 @@ class ConversationStarter:
             
             logger.info(f"Posted: {submission.title} to r/{post_data['subreddit']}")
             logger.info(f"URL: https://reddit.com{submission.permalink}")
+            if post_key:
+                mark_success(idem_path, post_key, {"submission_id": submission.id})
             
             # Log engagement
             self.log_engagement(post_data, submission.id)
@@ -263,6 +281,13 @@ class ConversationStarter:
             
         except Exception as e:
             logger.error(f"Failed to post: {e}")
+            try:
+                idem_path = Path(os.getenv("IDEMPOTENCY_PATH", IDEMPOTENCY_DEFAULT_PATH))
+                post_key = build_post_key(post_data)
+                if post_key:
+                    mark_failure(idem_path, post_key, error=str(e))
+            except Exception:
+                pass
             return False
     
     def _check_recent_posts(self, subreddit: str) -> bool:
@@ -420,17 +445,17 @@ if __name__ == "__main__":
     test_subreddit = "microdosing"
     post_data = starter.generate_post_content(test_subreddit)
     
-    print("="*60)
-    print("TEST POST GENERATED")
-    print("="*60)
-    print(f"Title: {post_data['title']}")
-    print(f"Subreddit: r/{post_data['subreddit']}")
-    print(f"Category: {post_data['category']}")
-    print(f"Topic: {post_data['topic']}")
-    print("\nContent Preview:")
-    print("-"*40)
-    print(post_data['content'][:300] + "...")
-    print("="*60)
+    logger.info("="*60)
+    logger.info("TEST POST GENERATED")
+    logger.info("="*60)
+    logger.info(f"Title: {post_data['title']}")
+    logger.info(f"Subreddit: r/{post_data['subreddit']}")
+    logger.info(f"Category: {post_data['category']}")
+    logger.info(f"Topic: {post_data['topic']}")
+    logger.info("\nContent Preview:")
+    logger.info("-"*40)
+    logger.info(post_data['content'][:300] + "...")
+    logger.info("="*60)
     
     # Uncomment to actually post
     # starter.post_to_reddit(post_data)

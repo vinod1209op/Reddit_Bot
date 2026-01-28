@@ -1,0 +1,7 @@
+# Dev/test tooling
+pytest>=8.0.0
+ruff>=0.4.0
+mypy>=1.10.0
+bandit>=1.7.0
+pip-audit>=2.7.0
+pre-commit>=3.7.1

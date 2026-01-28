@@ -1,3 +1,5 @@
+from microdose_study_bot.core.logging import UnifiedLogger
+logger = UnifiedLogger('WeeklyCommunityReport').get_logger()
 #!/usr/bin/env python3
 """
 Generate a weekly community management report.
@@ -132,8 +134,8 @@ def main() -> None:
         )
     )
 
-    print(f"Saved {report_md}")
-    print(f"Saved {report_json}")
+    logger.info(f"Saved {report_md}")
+    logger.info(f"Saved {report_json}")
 
 
 if __name__ == "__main__":

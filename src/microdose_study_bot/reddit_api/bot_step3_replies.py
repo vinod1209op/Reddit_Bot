@@ -24,6 +24,15 @@ from microdose_study_bot.core.safety.policies import DEFAULT_REPLY_RULES
 from microdose_study_bot.core.text_normalization import normalize_post, matched_keywords
 from microdose_study_bot.core.reddit_client import fetch_posts
 from microdose_study_bot.core.storage.csv_log_writer import append_log
+from microdose_study_bot.core.metrics import get_metrics
+from microdose_study_bot.core.storage.idempotency_store import (
+    IDEMPOTENCY_DEFAULT_PATH,
+    build_post_key,
+    can_attempt,
+    mark_attempt,
+    mark_failure,
+    mark_success,
+)
 
 try:
     from openai import OpenAI  # Optional; used only if USE_LLM=1 and OPENAI_API_KEY is set.
@@ -284,27 +293,43 @@ def main() -> None:
                     print("Approval cap reached for this run; not posting further replies.")
                     approved = False
                 else:
-                    allowed, reason = safety_checker.can_perform_action("comment", target=info["title"])
-                    if not allowed:
-                        error = f"Rate/safety blocked: {reason}"
+                    idem_path = Path(os.getenv("IDEMPOTENCY_PATH", IDEMPOTENCY_DEFAULT_PATH))
+                    post_key = build_post_key(info)
+                    if post_key and not can_attempt(idem_path, post_key):
+                        error = "Idempotency: post already attempted/sent"
                         print(error)
                         approved = False
                     else:
-                        approved_count += 1
-                        if ENABLE_POSTING and (not forced_mock) and hasattr(raw_post, "reply"):
-                            try:
-                                reply = raw_post.reply(reply_text)
-                                comment_id = getattr(reply, "id", "") or ""
-                                posted = True
-                                print("Reply posted.")
-                                safety_checker.record_action("comment", target=info["title"])
-                                time.sleep(POST_DELAY_SECONDS)  # be gentle with rate/volume
-                            except Exception as exc:
-                                error = f"Failed to post: {exc}"
-                                print(error, file=sys.stderr)
+                        mark_attempt(idem_path, post_key, {"subreddit": info.get("subreddit"), "title": info.get("title")})
+                    if approved:
+                        allowed, reason = safety_checker.can_perform_action("comment", target=info["title"])
+                        if not allowed:
+                            error = f"Rate/safety blocked: {reason}"
+                            print(error)
+                            approved = False
                         else:
-                            print("Posting is disabled (dry-run). Set ENABLE_POSTING=1 to allow replies.")
-                            safety_checker.record_action("comment", target=info["title"], success=True)
+                            approved_count += 1
+                            if ENABLE_POSTING and (not forced_mock) and hasattr(raw_post, "reply"):
+                                try:
+                                    reply = raw_post.reply(reply_text)
+                                    comment_id = getattr(reply, "id", "") or ""
+                                    posted = True
+                                    print("Reply posted.")
+                                    safety_checker.record_action("comment", target=info["title"])
+                                    time.sleep(POST_DELAY_SECONDS)  # be gentle with rate/volume
+                                except Exception as exc:
+                                    error = f"Failed to post: {exc}"
+                                    print(error, file=sys.stderr)
+                                finally:
+                                    if post_key:
+                                        if posted:
+                                            mark_success(idem_path, post_key, {"comment_id": comment_id})
+                                        else:
+                                            mark_failure(idem_path, post_key, error=error)
+                            else:
+                                print("Posting is disabled (dry-run). Set ENABLE_POSTING=1 to allow replies.")
+                                safety_checker.record_action("comment", target=info["title"], success=True)
+                            get_metrics().record_post_attempt(success=posted)
 
             log_row = {
                 "run_id": RUN_ID,

@@ -18,6 +18,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 import praw
 import prawcore
 from dotenv import load_dotenv
+from microdose_study_bot.core.utils.retry import retry
 
 
 LOG_PATH = Path("bot_logs.csv")
@@ -78,8 +79,12 @@ def append_metrics(row: Dict[str, str]) -> None:
 def fetch_metrics(reddit: praw.Reddit, comment_id: str) -> Dict[str, int]:
     """Fetch score and reply count for a comment, handling API errors gracefully."""
     try:
-        comment = reddit.comment(id=comment_id)
-        comment.refresh()  # Refresh to ensure latest score/replies
+        def _fetch():
+            comment = reddit.comment(id=comment_id)
+            comment.refresh()  # Refresh to ensure latest score/replies
+            return comment
+
+        comment = retry(_fetch, attempts=3, base_delay=1.0)
         # Shallow count of replies; replace_more could be expensive, so skip it by default.
         replies_count = len(comment.replies)
         return {"score": comment.score, "replies_count": replies_count, "error": ""}

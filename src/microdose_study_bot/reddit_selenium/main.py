@@ -14,6 +14,14 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Sequence, Tuple
 from urllib.parse import urljoin, urlparse, urlunparse
 
+from microdose_study_bot.core.storage.idempotency_store import (
+    IDEMPOTENCY_DEFAULT_PATH,
+    build_post_key,
+    can_attempt,
+    mark_attempt,
+    mark_failure,
+    mark_success,
+)
 
 # Selenium selectors/wait helpers
 from selenium.webdriver.common.by import By
@@ -875,6 +883,10 @@ class RedditAutomation:
                 return {"success": False, "error": "reply_helpers module not found"}
             
             normalized_url = self._normalize_post_url(post_url)
+            idem_path = Path(os.getenv("IDEMPOTENCY_PATH", IDEMPOTENCY_DEFAULT_PATH))
+            post_key = build_post_key({"url": normalized_url})
+            if not dry_run and post_key and not can_attempt(idem_path, post_key):
+                return {"success": False, "error": "Idempotency: post already attempted/sent"}
             logger.info(f"Navigating to post for reply: {normalized_url}")
             
             self.driver.get(normalized_url)
@@ -966,6 +978,7 @@ return el.innerText || el.textContent || '';
                 return {"success": True, "dry_run": True}
             
             # Try to submit
+            mark_attempt(idem_path, post_key, {"url": normalized_url})
             submitted = False
             if hasattr(rh, 'js_submit_comment'):
                 submitted = rh.js_submit_comment(self.driver)
@@ -974,9 +987,19 @@ return el.innerText || el.textContent || '';
                 submitted = rh.submit_via_buttons(self.driver)
             
             self._log_event("reply_submit", dry_run=False, submitted=submitted)
+            if post_key:
+                if submitted:
+                    mark_success(idem_path, post_key, {"url": normalized_url})
+                else:
+                    mark_failure(idem_path, post_key, error="submit_failed")
             return {"success": True, "dry_run": False, "submitted": submitted}
             
         except Exception as e:
+            try:
+                if 'post_key' in locals() and post_key:
+                    mark_failure(Path(os.getenv("IDEMPOTENCY_PATH", IDEMPOTENCY_DEFAULT_PATH)), post_key, error=str(e))
+            except Exception:
+                pass
             self._log_event("reply_error", error=str(e))
             return {"success": False, "error": str(e)}
     

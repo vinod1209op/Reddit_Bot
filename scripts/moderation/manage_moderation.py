@@ -17,17 +17,10 @@ from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from microdose_study_bot.reddit_selenium.automation_base import RedditAutomationBase
+from microdose_study_bot.core.logging import UnifiedLogger
 
 # Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('logs/moderation_manager.log'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
+logger = UnifiedLogger("ModerationManager").get_logger()
 
 class SeleniumModerationManager(RedditAutomationBase):
     """Selenium-based moderation manager for MCRDSE subreddits"""
@@ -1055,9 +1048,9 @@ def main():
     
     args = parser.parse_args()
     
-    print("\n" + "="*60)
-    print("MCRDSE Selenium Moderation Manager")
-    print("="*60)
+    logger.info("\n" + "="*60)
+    logger.info("MCRDSE Selenium Moderation Manager")
+    logger.info("="*60)
     
     # Initialize manager
     manager = SeleniumModerationManager(
@@ -1068,55 +1061,55 @@ def main():
     logger.info(f"Validation summary: {manager.run_validations()}")
     enabled, reason = manager.is_feature_enabled("moderation")
     if not enabled:
-        print(f"Moderation disabled ({reason}); exiting.")
+        logger.info(f"Moderation disabled ({reason}); exiting.")
         manager.cleanup()
         return
 
     if args.validate_only:
-        print(f"Validation summary: {manager.run_validations()}")
+        logger.info(f"Validation summary: {manager.run_validations()}")
         manager.cleanup()
         return
     
     # Setup browser and login
     if not args.dry_run:
-        print("Setting up browser...")
+        logger.info("Setting up browser...")
         if not manager.setup_browser():
-            print("❌ Failed to setup browser")
+            logger.info("❌ Failed to setup browser")
             return
         
-        print("Logging in to Reddit...")
+        logger.info("Logging in to Reddit...")
         if not manager.login_with_cookies():
-            print("❌ Login failed")
+            logger.info("❌ Login failed")
             manager.cleanup()
             return
     else:
-        print("[dry-run] Skipping browser setup/login")
+        logger.info("[dry-run] Skipping browser setup/login")
     
-    print("✅ Ready")
+    logger.info("✅ Ready")
     
     # Determine action
     if args.setup:
         if args.subreddit:
-            print(f"\nSetting up moderation for r/{args.subreddit}...")
+            logger.info(f"\nSetting up moderation for r/{args.subreddit}...")
             success = manager.setup_complete_moderation(args.subreddit)
-            print(f"✅ Setup {'complete' if success else 'partially complete'}")
+            logger.info(f"✅ Setup {'complete' if success else 'partially complete'}")
         elif args.all:
-            print("\nSetting up moderation for all subreddits...")
+            logger.info("\nSetting up moderation for all subreddits...")
             manager.setup_all_moderation()
         else:
-            print("Please specify --subreddit or --all")
+            logger.info("Please specify --subreddit or --all")
     
     elif args.daily:
-        print("\nRunning daily moderation tasks...")
+        logger.info("\nRunning daily moderation tasks...")
         if args.subreddit:
             manager.run_daily_moderation([args.subreddit])
         elif args.all:
             manager.run_daily_moderation()
         else:
-            print("Please specify --subreddit or --all")
+            logger.info("Please specify --subreddit or --all")
     
     elif args.queue:
-        print("\nChecking moderation queue...")
+        logger.info("\nChecking moderation queue...")
         if args.subreddit:
             stats_result = manager.execute_safely(
                 lambda: manager.check_moderation_queue(args.subreddit),
@@ -1126,22 +1119,22 @@ def main():
             )
             stats = stats_result.result if stats_result.success else None
             if stats:
-                print(f"\nQueue stats for r/{args.subreddit}:")
-                print(f"  Total items: {stats.get('total_items', 0)}")
-                print(f"  Approved: {stats.get('approved', 0)}")
-                print(f"  Removed: {stats.get('removed', 0)}")
-                print(f"  Ignored: {stats.get('ignored', 0)}")
+                logger.info(f"\nQueue stats for r/{args.subreddit}:")
+                logger.info(f"  Total items: {stats.get('total_items', 0)}")
+                logger.info(f"  Approved: {stats.get('approved', 0)}")
+                logger.info(f"  Removed: {stats.get('removed', 0)}")
+                logger.info(f"  Ignored: {stats.get('ignored', 0)}")
         else:
-            print("Please specify --subreddit")
+            logger.info("Please specify --subreddit")
     
     elif args.interactive or not any([args.setup, args.daily, args.queue]):
         # Interactive mode
-        print("\nInteractive Mode")
-        print("1. Setup moderation for a subreddit")
-        print("2. Run daily moderation tasks")
-        print("3. Check moderation queue")
-        print("4. Setup all subreddits")
-        print("5. Exit")
+        logger.info("\nInteractive Mode")
+        logger.info("1. Setup moderation for a subreddit")
+        logger.info("2. Run daily moderation tasks")
+        logger.info("3. Check moderation queue")
+        logger.info("4. Setup all subreddits")
+        logger.info("5. Exit")
         
         choice = input("\nSelect option (1-5): ")
         
@@ -1149,7 +1142,7 @@ def main():
             subreddit = input("Enter subreddit name: ").strip()
             if subreddit:
                 success = manager.setup_complete_moderation(subreddit)
-                print(f"Setup {'complete' if success else 'partially complete'}")
+                logger.info(f"Setup {'complete' if success else 'partially complete'}")
         
         elif choice == "2":
             subreddit = input("Enter subreddit name (or press Enter for all): ").strip()
@@ -1163,10 +1156,10 @@ def main():
             if subreddit:
                 stats = manager.check_moderation_queue(subreddit)
                 if stats:
-                    print(f"\nQueue stats:")
-                    print(f"  Total: {stats.get('total_items', 0)}")
-                    print(f"  Approved: {stats.get('approved', 0)}")
-                    print(f"  Removed: {stats.get('removed', 0)}")
+                    logger.info(f"\nQueue stats:")
+                    logger.info(f"  Total: {stats.get('total_items', 0)}")
+                    logger.info(f"  Approved: {stats.get('approved', 0)}")
+                    logger.info(f"  Removed: {stats.get('removed', 0)}")
         
         elif choice == "4":
             confirm = input("Setup moderation for ALL MCRDSE subreddits? (yes/no): ")
@@ -1176,9 +1169,9 @@ def main():
     # Cleanup
     manager.cleanup()
     
-    print("\n" + "="*60)
-    print("Moderation management complete!")
-    print("="*60)
+    logger.info("\n" + "="*60)
+    logger.info("Moderation management complete!")
+    logger.info("="*60)
 
 if __name__ == "__main__":
     main()

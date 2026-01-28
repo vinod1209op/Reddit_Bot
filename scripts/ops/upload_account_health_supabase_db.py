@@ -1,3 +1,5 @@
+from microdose_study_bot.core.logging import UnifiedLogger
+logger = UnifiedLogger('UploadAccountHealthSupabaseDb').get_logger()
 #!/usr/bin/env python3
 """
 Upsert account health + status events into Supabase Postgres.
@@ -13,6 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import requests
+from microdose_study_bot.core.utils.http import get_with_retry, post_with_retry
 
 
 def _env(name: str) -> str:
@@ -52,7 +55,7 @@ def _post_json(url: str, key: str, payload: Any, on_conflict: str | None = None)
         "Content-Type": "application/json",
         "Prefer": "resolution=merge-duplicates",
     }
-    resp = requests.post(endpoint, headers=headers, data=json.dumps(payload), timeout=30)
+    resp = post_with_retry(endpoint, headers=headers, data=json.dumps(payload), timeout=30)
     if resp.status_code >= 300:
         raise RuntimeError(f"{resp.status_code}: {resp.text}")
 
@@ -64,7 +67,7 @@ def _fetch_accounts(base_url: str, key: str) -> List[str]:
         "apikey": key,
         "Accept": "application/json",
     }
-    resp = requests.get(url, headers=headers, params={"select": "account_name"}, timeout=30)
+    resp = get_with_retry(url, headers=headers, params={"select": "account_name"}, timeout=30)
     if resp.status_code >= 300:
         raise RuntimeError(f"{resp.status_code}: {resp.text}")
     rows = resp.json() if resp.content else []
@@ -79,12 +82,12 @@ def main() -> None:
 
     status_file = Path(__file__).resolve().parents[2] / "data" / "account_status.json"
     if not status_file.exists():
-        print("No account_status.json found; skipping.")
+        logger.info("No account_status.json found; skipping.")
         return
 
     data: Dict[str, Any] = json.loads(status_file.read_text(encoding="utf-8"))
     if not data:
-        print("account_status.json empty; skipping.")
+        logger.info("account_status.json empty; skipping.")
         return
 
     rest = f"{base_url.rstrip('/')}/rest/v1"
@@ -162,7 +165,7 @@ def main() -> None:
     status_out = Path(__file__).resolve().parents[2] / "data" / "account_status.json"
     status_out.write_text(json.dumps(merged_snapshot, indent=2))
 
-    print(
+    logger.info(
         f"Upserted {len(accounts_payload)} accounts, "
         f"{len(health_payload)} health rows, "
         f"{len(events_payload)} events."

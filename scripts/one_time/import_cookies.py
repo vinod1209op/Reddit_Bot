@@ -1,3 +1,5 @@
+from microdose_study_bot.core.logging import UnifiedLogger
+logger = UnifiedLogger('ImportCookies').get_logger()
 #!/usr/bin/env python3
 """
 Import a JSON cookie export and save as Selenium cookie file, updating accounts.json.
@@ -102,8 +104,8 @@ def main() -> None:
     account["cookies_path"] = str(output_path)
     save_accounts(accounts_path, accounts)
 
-    print(f"Imported {len(cookies)} cookies -> {output_path}")
-    print(f"Updated {accounts_path} for {args.name}")
+    logger.info(f"Imported {len(cookies)} cookies -> {output_path}")
+    logger.info(f"Updated {accounts_path} for {args.name}")
 
 
 if __name__ == "__main__":

@@ -14,13 +14,9 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from microdose_study_bot.core.config import ConfigManager
 from microdose_study_bot.reddit_selenium.automation_base import RedditAutomationBase
+from microdose_study_bot.core.logging import UnifiedLogger
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+logger = UnifiedLogger("SubredditCreator").get_logger()
 
 class SubredditCreator(RedditAutomationBase):
     """Creates and configures new subreddits for MCRDSE"""
@@ -719,17 +715,17 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    print("\n" + "="*60)
-    print("MCRDSE Subreddit Creation Tool")
-    print("="*60)
+    logger.info("\n" + "="*60)
+    logger.info("MCRDSE Subreddit Creation Tool")
+    logger.info("="*60)
     
     if args.test:
-        print("TEST MODE: No subreddits will actually be created")
+        logger.info("TEST MODE: No subreddits will actually be created")
     
-    print(f"Account: {args.account}")
-    print(f"Max to create: {args.max}")
-    print(f"Headless mode: {args.headless}")
-    print("="*60 + "\n")
+    logger.info(f"Account: {args.account}")
+    logger.info(f"Max to create: {args.max}")
+    logger.info(f"Headless mode: {args.headless}")
+    logger.info("="*60 + "\n")
     
     # Create creator instance
     creator = SubredditCreator(
@@ -740,17 +736,17 @@ if __name__ == "__main__":
 
     if args.validate_only:
         validation = creator.run_validations()
-        print(f"Validation summary: {validation}")
+        logger.info(f"Validation summary: {validation}")
         creator.cleanup()
         sys.exit(0)
     
     # Show what subreddits would be created
-    print("Subreddit names that would be created:")
+    logger.info("Subreddit names that would be created:")
     for i, name in enumerate(creator.subreddit_names[:args.max], 1):
-        print(f"  {i}. r/{name}")
+        logger.info(f"  {i}. r/{name}")
     
     if not args.test:
         creator.run(max_subreddits=args.max, headless=args.headless)
     else:
-        print("\nTest mode complete. No subreddits were created.")
-        print("To actually create subreddits, run without --test flag.")
+        logger.info("\nTest mode complete. No subreddits were created.")
+        logger.info("To actually create subreddits, run without --test flag.")

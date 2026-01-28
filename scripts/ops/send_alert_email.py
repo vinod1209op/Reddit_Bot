@@ -1,3 +1,5 @@
+from microdose_study_bot.core.logging import UnifiedLogger
+logger = UnifiedLogger('SendAlertEmail').get_logger()
 #!/usr/bin/env python3
 """
 Send a simple alert email via SMTP.
@@ -34,7 +36,7 @@ def main() -> int:
         server.login(smtp_user, smtp_pass)
         server.send_message(msg)
 
-    print("Alert email sent.")
+    logger.info("Alert email sent.")
     return 0
 
 

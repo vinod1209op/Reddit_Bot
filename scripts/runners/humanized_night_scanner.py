@@ -32,6 +32,8 @@ from microdose_study_bot.reddit_selenium.login import LoginManager
 from microdose_study_bot.reddit_selenium.utils.browser_manager import BrowserManager
 from microdose_study_bot.core.config import ConfigManager
 from microdose_study_bot.core.safety.policies import enforce_readonly_env
+from microdose_study_bot.core.utils.http import get_with_retry
+from microdose_study_bot.core.storage.state_cleanup import cleanup_state
 from microdose_study_bot.core.storage.scan_store import (
     build_run_paths,
     build_run_scanned_path,
@@ -335,7 +337,7 @@ class HumanizedNightScanner:
                 return
             
             # Set custom fingerprint from account config
-            self.set_custom_fingerprint()
+            self.set_custom_fingerlogger.info()
             
             # Create LoginManager
             self.login_manager = LoginManager()
@@ -357,9 +359,7 @@ class HumanizedNightScanner:
         account_name = self.account.get("name", "unknown")
         proxy_url = f"socks5h://127.0.0.1:{tor_port}"
         try:
-            import requests
-
-            response = requests.get(
+            response = get_with_retry(
                 "https://check.torproject.org/api/ip",
                 proxies={"http": proxy_url, "https": proxy_url},
                 timeout=10,
@@ -553,7 +553,7 @@ class HumanizedNightScanner:
         
         return success, status
     
-    def set_custom_fingerprint(self):
+    def set_custom_fingerlogger.info(self):
         """Set custom browser fingerprint from account config"""
         try:
             # Get fingerprint settings from account config
@@ -575,7 +575,7 @@ class HumanizedNightScanner:
             
             # Apply additional randomization
             if self.browser_manager:
-                self.browser_manager.randomize_fingerprint(self.driver)
+                self.browser_manager.randomize_fingerlogger.info(self.driver)
                 
         except Exception as e:
             self.logger.warning(f"Could not set custom fingerprint: {e}")
@@ -1356,17 +1356,18 @@ def check_time_window(activity_config: Optional[Dict[str, Any]] = None) -> bool:
         config = activity_config or ConfigManager().load_json('config/activity_schedule.json') or {}
         return get_active_window(config) is not None
     except Exception as e:
-        print(f"Error checking time window: {e}")
+        logger.info(f"Error checking time window: {e}")
         return False
 
 
 # Public API
 if __name__ == "__main__":
     enforce_readonly_env()
+    cleanup_state()
     enable_console_tee(os.getenv("CONSOLE_LOG_PATH", "logs/selenium_automation.log"))
-    print("=" * 60)
-    print("Humanized Night Scanner")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("Humanized Night Scanner")
+    logger.info("=" * 60)
 
     parser = argparse.ArgumentParser(description="Humanized night scanner")
     parser.add_argument(
@@ -1409,7 +1410,7 @@ if __name__ == "__main__":
         active_window = get_active_window(activity_config)
 
     if active_window:
-        print("✓ In scheduled time window. Starting scanner...")
+        logger.info("✓ In scheduled time window. Starting scanner...")
         
         try:
             orchestrator = MultiAccountOrchestrator(
@@ -1418,17 +1419,17 @@ if __name__ == "__main__":
             )
             
             if orchestrator.accounts:
-                print(f"Found {len(orchestrator.accounts)} accounts")
+                logger.info(f"Found {len(orchestrator.accounts)} accounts")
                 orchestrator.run_rotation()
-                print("✓ Rotation complete")
+                logger.info("✓ Rotation complete")
             else:
-                print("✗ No accounts configured")
+                logger.info("✗ No accounts configured")
                 
         except Exception as e:
-            print(f"✗ Error running orchestrator: {e}")
+            logger.info(f"✗ Error running orchestrator: {e}")
             import traceback
             traceback.print_exc()
     else:
-        print("✗ Not in scheduled time window. Exiting.")
+        logger.info("✗ Not in scheduled time window. Exiting.")
     
-    print("=" * 60)
+    logger.info("=" * 60)

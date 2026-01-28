@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Purpose: Unified CLI for API and Selenium workflows.
+Purpose: Legacy CLI for API and Selenium workflows (deprecated).
 Constraints: Posting requires explicit approval; default is dry-run.
 """
 
@@ -13,6 +13,8 @@ import traceback
 import signal
 from pathlib import Path
 from typing import Optional, Tuple, Any
+
+from apps.cli.cli import main as unified_main
 
 # Constants
 project_root = Path(__file__).resolve().parents[1]
@@ -55,7 +57,7 @@ def run_selenium_mode(config):
     except ImportError:
         selenium_package_available = False
         print("Error: Selenium package is not installed.")
-        print("Install with: pip install selenium webdriver-manager undetected-chromedriver")
+        print("Install with: pip install selenium undetected-chromedriver")
         return
     
     bot = None
@@ -221,7 +223,7 @@ def run_selenium_mode(config):
         print("\nTroubleshooting:")
         print("1. Check if src/microdose_study_bot/reddit_selenium/main.py exists")
         print("2. Check if src/microdose_study_bot/reddit_selenium/__init__.py exists")
-        print("3. Run: pip install selenium webdriver-manager undetected-chromedriver")
+        print("3. Run: pip install selenium undetected-chromedriver")
     except KeyboardInterrupt:
         print("\n\nBot stopped by user.")
     except Exception as e:
@@ -488,4 +490,7 @@ def main() -> None:
         traceback.print_exc()
 
 if __name__ == "__main__":
+    # Prefer unified subcommand CLI when arguments are provided.
+    if len(sys.argv) > 1:
+        raise SystemExit(unified_main())
     main()

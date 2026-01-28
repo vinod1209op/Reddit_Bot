@@ -10,6 +10,19 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 import logging
 
+from pydantic import ValidationError
+from microdose_study_bot.core.config_models import (
+    ApiCreds,
+    SeleniumSettings,
+    BotSettings,
+    AutomationSettings,
+    SafetySettings,
+    ActivitySchedule,
+    SubredditCreation,
+    PostScheduling,
+    RateLimits,
+)
+
 # Public API
 class ConfigManager:
     """Unified configuration for both API and Selenium methods"""
@@ -76,38 +89,38 @@ class ConfigManager:
             print("⚠️  No .env file found")
         
         # API credentials
-        self.api_creds = {
-            "client_id": os.getenv("REDDIT_CLIENT_ID", ""),
-            "client_secret": os.getenv("REDDIT_CLIENT_SECRET", ""),
-            "username": os.getenv("REDDIT_USERNAME", ""),
-            "password": os.getenv("REDDIT_PASSWORD", ""),
-            "user_agent": os.getenv("REDDIT_USER_AGENT", "bot:reddit-automation:v1.0"),
-        }
+        self.api_creds = ApiCreds(
+            client_id=os.getenv("REDDIT_CLIENT_ID", ""),
+            client_secret=os.getenv("REDDIT_CLIENT_SECRET", ""),
+            username=os.getenv("REDDIT_USERNAME", ""),
+            password=os.getenv("REDDIT_PASSWORD", ""),
+            user_agent=os.getenv("REDDIT_USER_AGENT", "bot:reddit-automation:v1.0"),
+        ).model_dump()
         
         # Selenium settings
-        self.selenium_settings = {
-            "headless": os.getenv("SELENIUM_HEADLESS", "False").lower() in ("true", "1"),
-            "wait_time": int(os.getenv("SELENIUM_WAIT_TIME", "10")),
-            "browser": os.getenv("BROWSER_TYPE", "chrome"),
-            "chrome_binary": os.getenv("CHROME_BIN", ""),
-            "chromedriver_path": os.getenv("CHROMEDRIVER_PATH", ""),
-            "chromedriver_version": os.getenv("CHROMEDRIVER_VERSION", ""),
-            "cookie_file": os.getenv("COOKIE_PATH", "data/cookies_account1.pkl"),
-            "use_undetected": os.getenv("SELENIUM_USE_UNDETECTED", "1").lower() in ("true", "1", "yes", "y", "on"),
-            "stealth_mode": os.getenv("SELENIUM_STEALTH", "1").lower() in ("true", "1", "yes", "y", "on"),
-            "randomize_fingerprint": os.getenv("SELENIUM_RANDOMIZE_FINGERPRINT", "1").lower() in ("true", "1", "yes", "y", "on"),
-        }
+        self.selenium_settings = SeleniumSettings(
+            headless=os.getenv("SELENIUM_HEADLESS", "False").lower() in ("true", "1"),
+            wait_time=int(os.getenv("SELENIUM_WAIT_TIME", "10")),
+            browser=os.getenv("BROWSER_TYPE", "chrome"),
+            chrome_binary=os.getenv("CHROME_BIN", ""),
+            chromedriver_path=os.getenv("CHROMEDRIVER_PATH", ""),
+            chromedriver_version=os.getenv("CHROMEDRIVER_VERSION", ""),
+            cookie_file=os.getenv("COOKIE_PATH", "data/cookies_account1.pkl"),
+            use_undetected=os.getenv("SELENIUM_USE_UNDETECTED", "1").lower() in ("true", "1", "yes", "y", "on"),
+            stealth_mode=os.getenv("SELENIUM_STEALTH", "1").lower() in ("true", "1", "yes", "y", "on"),
+            randomize_fingerprint=os.getenv("SELENIUM_RANDOMIZE_FINGERPRINT", "1").lower() in ("true", "1", "yes", "y", "on"),
+        ).model_dump()
         
         # Bot settings
-        self.bot_settings = {
-            "mode": os.getenv("BOT_MODE", "selenium"),  # "selenium" or "api"
-            "enable_posting": os.getenv("ENABLE_POSTING", "0") in ("1", "true"),
-            "mock_mode": os.getenv("MOCK_MODE", "0") in ("1", "true"),
-            "use_llm": os.getenv("USE_LLM", "0") in ("1", "true"),
-            "log_level": os.getenv("LOG_LEVEL", "INFO"),
-            "human_approval": os.getenv("HUMAN_APPROVAL_MODE", "all"),
-            "auto_submit_limit": int(os.getenv("SELENIUM_AUTO_SUBMIT_LIMIT", "0") or 0),
-        }
+        self.bot_settings = BotSettings(
+            mode=os.getenv("BOT_MODE", "selenium"),
+            enable_posting=os.getenv("ENABLE_POSTING", "0") in ("1", "true"),
+            mock_mode=os.getenv("MOCK_MODE", "0") in ("1", "true"),
+            use_llm=os.getenv("USE_LLM", "0") in ("1", "true"),
+            log_level=os.getenv("LOG_LEVEL", "INFO"),
+            human_approval=os.getenv("HUMAN_APPROVAL_MODE", "all"),
+            auto_submit_limit=int(os.getenv("SELENIUM_AUTO_SUBMIT_LIMIT", "0") or 0),
+        ).model_dump()
 
         self.google_creds = {
             "google_email": os.getenv("GOOGLE_EMAIL", ""),
@@ -127,16 +140,20 @@ class ConfigManager:
             try:
                 with open(settings_file, 'r') as f:
                     settings = json.load(f)
-                    self.automation_settings = settings.get("automation", {})
-                    self.safety_settings = settings.get("safety", {})
+                    self.automation_settings = AutomationSettings(
+                        **(settings.get("automation", {}) or {})
+                    ).model_dump()
+                    self.safety_settings = SafetySettings(
+                        **(settings.get("safety", {}) or {})
+                    ).model_dump()
             except Exception as e:
                 print(f"Error reading settings.json: {e}")
                 self.automation_settings = {}
                 self.safety_settings = {}
         else:
             print(f"⚠️  No settings.json found, using defaults")
-            self.automation_settings = {}
-            self.safety_settings = {}
+            self.automation_settings = AutomationSettings().model_dump()
+            self.safety_settings = SafetySettings().model_dump()
         
         return self
     
@@ -147,13 +164,14 @@ class ConfigManager:
         if limits_file.exists():
             try:
                 with open(limits_file, 'r') as f:
-                    self.rate_limits = json.load(f)
+                    raw = json.load(f)
+                    self.rate_limits = RateLimits(**(raw or {})).model_dump()
             except Exception as e:
                 print(f"Error reading rate_limits.json: {e}")
-                self.rate_limits = self.default_rate_limits
+                self.rate_limits = RateLimits(**self.default_rate_limits).model_dump()
         else:
             print(f"⚠️  No rate_limits.json found, using defaults")
-            self.rate_limits = self.default_rate_limits
+            self.rate_limits = RateLimits(**self.default_rate_limits).model_dump()
         
         return self
     
@@ -162,8 +180,7 @@ class ConfigManager:
         filepath = self.config_dir / filename
         
         if not filepath.exists():
-            print(f"⚠️  Creating default {filename}")
-            self.save_json(filepath, default)
+            print(f"⚠️  Missing {filename}; using defaults")
             return default
         
         try:
@@ -225,186 +242,36 @@ class ConfigManager:
 
     def load_activity_schedule(self):
         """Load activity schedule configuration"""
-        default = {
-            "timezone": "America/Los_Angeles",
-            "login_method": "cookies_then_google",
-            "time_windows": [],
-            "activity_mix": {},
-            "profiles": {},
-            "randomization": {},
-            "safety_limits": {},
-            "humanization": {},
-            "subreddit_creation": {
-                "enabled": False,
-                "profile": "conservative",
-                "max_total_subreddits": 3,
-                "cooldown_days": 7,
-                "require_manual_review": True,
-                "allow_retries": False,
-            },
-            "post_scheduling": {
-                "enabled": False,
-                "profile": "low_frequency",
-                "max_posts_per_day": 1,
-                "max_posts_per_week": 3,
-                "dry_run": True,
-                "schedule_window_local": {"start": "09:00", "end": "21:00"},
-            },
-            "moderation": {
-                "enabled": False,
-                "auto_approve_trusted": True,
-                "remove_spam": True,
-                "setup_on_creation": True,
-                "auto_remove_reported": False,
-                "notify_on_flags": True,
-                "max_actions_per_run": 25,
-            },
-        }
-        self.activity_schedule = self.load_json('config/activity_schedule.json', default=default) or {}
-        if not self.activity_schedule:
-            print("⚠️  No activity_schedule.json found or file is empty")
+        default = ActivitySchedule().model_dump()
+        raw = self.load_json('config/activity_schedule.json', default=default) or default
+        try:
+            self.activity_schedule = ActivitySchedule(**raw).model_dump()
+        except ValidationError as exc:
+            print(f"Invalid activity_schedule.json: {exc}")
             self.activity_schedule = default
-            self._write_default_json(self.config_dir / "activity_schedule.json", default)
         return self.activity_schedule
 
     def load_subreddit_creation(self):
         """Load subreddit creation configuration"""
-        default = {
-            "default_profile": "conservative",
-            "profiles": {
-                "conservative": {
-                    "max_subreddits_per_day": 1,
-                    "max_subreddits_per_week": 2,
-                    "min_days_between_creations": 7,
-                    "template_set": "research_focused",
-                    "delay_min_minutes": 1440,
-                    "delay_max_minutes": 10080,
-                    "safety_check_requirements": {
-                        "account_min_age_days": 90,
-                        "account_min_karma": 500,
-                        "verify_email": True,
-                    },
-                },
-                "moderate": {
-                    "max_subreddits_per_day": 2,
-                    "max_subreddits_per_week": 4,
-                    "min_days_between_creations": 3,
-                    "template_set": "mixed",
-                    "delay_min_minutes": 720,
-                    "delay_max_minutes": 4320,
-                },
-            },
-            "template_sets": {
-                "research_focused": {
-                    "name_templates": ["Microdosing{type}", "Psychedelic{type}", "MCRDSE_{type}"],
-                    "type_variants": ["Research", "Science", "Studies", "Academy", "Institute"],
-                    "description_templates": [
-                        "A subreddit for {type} discussions about psychedelics and microdosing.",
-                        "Explore {type} related to psychedelic research and microdosing.",
-                        "Join the {type} community for scientific discourse on psychedelics.",
-                    ],
-                    "sidebar_templates": [
-                        "**Welcome to r/{name}!**\n\n## About This Community\nThis is a space for {type_lower} discussions about microdosing and psychedelic research.\n\n## Community Rules\n1. Be respectful and kind\n2. No sourcing or selling of substances\n3. Share experiences, not medical advice\n4. Cite sources when discussing research\n5. Practice harm reduction principles\n\n## Disclaimer\nThis community does not provide medical advice. Consult healthcare professionals."
-                    ],
-                },
-                "mixed": {
-                    "name_templates": [
-                        "Psychedelic{type}Hub",
-                        "Microdosing{type}Zone",
-                        "Psychedelic{type}Community",
-                        "Microdosing{type}Forum",
-                    ],
-                    "type_variants": ["Discussion", "Support", "Experiences", "Research", "Therapy"],
-                    "description_templates": [
-                        "A subreddit for {type} discussions about psychedelics and microdosing.",
-                        "Explore {type} related to psychedelic research and microdosing.",
-                        "Join the {type} community for scientific discourse on psychedelics.",
-                    ],
-                    "sidebar_templates": [
-                        "**Welcome to r/{name}!**\n\n## About This Community\nThis is a space for {type_lower} discussions about microdosing and psychedelic-assisted therapy.\n\n## Community Rules\n1. Be respectful and kind\n2. No sourcing or selling of substances\n3. Share experiences, not medical advice\n4. Cite sources when discussing research\n5. Practice harm reduction principles\n\n## Disclaimer\nThis community does not provide medical advice. Consult healthcare professionals."
-                    ],
-                },
-            },
-        }
-        self.subreddit_creation = self.load_json('config/subreddit_creation.json', default=default) or {}
-        if not self.subreddit_creation:
-            print("⚠️  No subreddit_creation.json found or file is empty")
+        default = SubredditCreation().model_dump()
+        raw = self.load_json('config/subreddit_creation.json', default=default) or default
+        try:
+            self.subreddit_creation = SubredditCreation(**raw).model_dump()
+        except ValidationError as exc:
+            print(f"Invalid subreddit_creation.json: {exc}")
             self.subreddit_creation = default
-            self._write_default_json(self.config_dir / "subreddit_creation.json", default)
         return self.subreddit_creation
 
     def load_post_scheduling(self):
         """Load post scheduling configuration"""
-        default = {
-            "posting_settings": {
-                "max_posts_per_day": 5,
-                "min_time_between_posts_minutes": 60,
-                "optimal_posting_times": [
-                    {"time": "09:00", "weight": 10},
-                    {"time": "12:00", "weight": 8},
-                    {"time": "15:00", "weight": 6},
-                    {"time": "18:00", "weight": 7},
-                    {"time": "21:00", "weight": 9},
-                ],
-                "avoid_posting_times": ["02:00-05:00", "13:00-14:00"],
-            },
-            "content_strategy": {
-                "daily_themes": {
-                    "Monday": "Research Review",
-                    "Tuesday": "Toolkit & Resources",
-                    "Wednesday": "Community Support",
-                    "Thursday": "Science & Studies",
-                    "Friday": "Future & Innovation",
-                    "Saturday": "Personal Experiences",
-                    "Sunday": "Weekly Reflection",
-                },
-                "content_mix": {
-                    "discussion": 30,
-                    "question": 25,
-                    "resource": 20,
-                    "experience": 15,
-                    "news": 10,
-                },
-                "min_post_length": 100,
-                "max_post_length": 5000,
-            },
-            "subreddit_distribution": {
-                "primary_focus": ["MCRDSE_Research", "MicrodosingScience"],
-                "secondary_focus": ["PsychedelicTherapy", "PlantMedicineCommunity"],
-                "crosspost_to": ["microdosing", "psychonaut", "nootropics"],
-                "crosspost_delay_minutes": 30,
-            },
-            "safety_settings": {
-                "randomize_post_times": True,
-                "jitter_minutes": 15,
-                "use_human_typing": True,
-                "add_typos_chance": 0.05,
-                "random_delays_between_actions": True,
-                "verify_post_success": True,
-                "retry_failed_posts": True,
-                "max_retries": 3,
-            },
-            "automation_settings": {
-                "check_schedule_interval_minutes": 5,
-                "cleanup_old_schedule_days": 30,
-                "backup_schedule_days": 7,
-                "daemon_sleep_seconds": 30,
-            },
-        }
-        self.post_scheduling = self.load_json('config/post_scheduling.json', default=default) or {}
-        if not self.post_scheduling:
-            print("⚠️  No post_scheduling.json found or file is empty")
-            self.post_scheduling = default
-            self._write_default_json(self.config_dir / "post_scheduling.json", default)
-        return self.post_scheduling
-
-    def _write_default_json(self, filepath: Path, data: Any) -> None:
+        default = PostScheduling().model_dump()
+        raw = self.load_json('config/post_scheduling.json', default=default) or default
         try:
-            filepath.parent.mkdir(parents=True, exist_ok=True)
-            with filepath.open("w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
-        except Exception as exc:
-            print(f"✗ Failed to save default config {filepath}: {exc}")
+            self.post_scheduling = PostScheduling(**raw).model_dump()
+        except ValidationError as exc:
+            print(f"Invalid post_scheduling.json: {exc}")
+            self.post_scheduling = default
+        return self.post_scheduling
 
     def load_accounts_config(self):
         """Load multi-account configuration"""
@@ -426,7 +293,7 @@ class ConfigManager:
         return []
     
     def save_json(self, filepath: Path, data: Any):
-        """Save data to JSON file"""
+        """Save data to JSON file (explicit action only)."""
         try:
             with open(filepath, 'w') as f:
                 json.dump(data, f, indent=2)

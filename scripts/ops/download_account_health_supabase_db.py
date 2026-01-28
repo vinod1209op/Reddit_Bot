@@ -1,3 +1,5 @@
+from microdose_study_bot.core.logging import UnifiedLogger
+logger = UnifiedLogger('DownloadAccountHealthSupabaseDb').get_logger()
 #!/usr/bin/env python3
 """
 Download account health + status events from Supabase Postgres and
@@ -13,6 +15,7 @@ from pathlib import Path
 from typing import Dict, List
 
 import requests
+from microdose_study_bot.core.utils.http import get_with_retry
 
 
 def _env(name: str) -> str:
@@ -25,7 +28,7 @@ def _fetch_rows(url: str, key: str, params: Dict[str, str]) -> List[dict]:
         "apikey": key,
         "Accept": "application/json",
     }
-    resp = requests.get(url, headers=headers, params=params, timeout=30)
+    resp = get_with_retry(url, headers=headers, params=params, timeout=30)
     if resp.status_code >= 300:
         raise RuntimeError(f"{resp.status_code}: {resp.text}")
     return resp.json() if resp.content else []
@@ -75,13 +78,13 @@ def main() -> None:
         }
 
     if not status_data:
-        print("No account health rows found.")
+        logger.info("No account health rows found.")
         return
 
     out_path = Path(__file__).resolve().parents[2] / "data" / "account_status.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(status_data, indent=2))
-    print(f"Wrote {out_path}")
+    logger.info(f"Wrote {out_path}")
 
 
 if __name__ == "__main__":

@@ -2,10 +2,10 @@
 set -euo pipefail
 
 python3 scripts/ops/validate_configs.py
-python3 -m unittest discover -v -s tests/unit
+pytest -q tests/unit
 
 set +e
-python3 -m unittest discover -v -s tests/integration
+pytest -q tests/integration
 code=$?
 set -e
 
