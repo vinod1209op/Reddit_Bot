@@ -1,5 +1,3 @@
-from microdose_study_bot.core.logging import UnifiedLogger
-logger = UnifiedLogger('UploadAccountHealthSupabaseDb').get_logger()
 #!/usr/bin/env python3
 """
 Upsert account health + status events into Supabase Postgres.
@@ -7,6 +5,9 @@ Uses data/account_status.json as source.
 """
 
 from __future__ import annotations
+
+from microdose_study_bot.core.logging import UnifiedLogger
+logger = UnifiedLogger('UploadAccountHealthSupabaseDb').get_logger()
 
 import json
 import os
