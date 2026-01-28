@@ -1,1 +1,14 @@
-[]
+[
+  {
+    "timestamp": "2026-01-27T05:21:47.595805",
+    "account": "account1",
+    "subreddit": "Psychedelic_Clinical_Hub",
+    "profile": "conservative"
+  },
+  {
+    "timestamp": "2026-01-27T05:22:59.639877",
+    "account": "account1",
+    "subreddit": "Psychedelic_Meta_Hub",
+    "profile": "conservative"
+  }
+]

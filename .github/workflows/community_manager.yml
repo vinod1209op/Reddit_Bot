@@ -1,0 +1,137 @@
+name: Community Manager
+
+on:
+  schedule:
+    - cron: "30 6 * * *" # daily
+  workflow_dispatch:
+    inputs:
+      account:
+        description: "Account name to run (account1/account2/account3)"
+        required: false
+        default: "account1"
+      dry_run:
+        description: "Run in dry-run mode"
+        required: false
+        default: "true"
+      respect_windows:
+        description: "Respect activity schedule time windows"
+        required: false
+        default: "true"
+
+jobs:
+  community_manager:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - account: account1
+          - account: account2
+          - account: account3
+    steps:
+      - name: Gate run by schedule/account
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_ACCOUNT: ${{ github.event.inputs.account }}
+          MATRIX_ACCOUNT: ${{ matrix.account }}
+        run: |
+          should_run=false
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ -z "$DISPATCH_ACCOUNT" ] || [ "$DISPATCH_ACCOUNT" = "$MATRIX_ACCOUNT" ]; then
+              should_run=true
+            fi
+          elif [ "$EVENT_NAME" = "schedule" ]; then
+            should_run=true
+          fi
+          echo "should_run=$should_run" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        if: steps.gate.outputs.should_run == 'true'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+        if: steps.gate.outputs.should_run == 'true'
+
+      - name: Install Chrome and ChromeDriver
+        if: steps.gate.outputs.should_run == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget unzip
+
+          wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+          sudo dpkg -i google-chrome-stable_current_amd64.deb || sudo apt-get -fy install
+
+          CHROME_VERSION="$(google-chrome --version | awk '{print $3}')"
+          wget -q "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip"
+          unzip -q chromedriver-linux64.zip
+          sudo mv chromedriver-linux64/chromedriver /usr/local/bin/chromedriver
+          sudo chmod +x /usr/local/bin/chromedriver
+
+          echo "CHROME_BIN=$(command -v google-chrome)" >> $GITHUB_ENV
+          echo "CHROMEDRIVER_PATH=/usr/local/bin/chromedriver" >> $GITHUB_ENV
+
+      - name: Install Python dependencies
+        if: steps.gate.outputs.should_run == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Restore cookie files
+        if: steps.gate.outputs.should_run == 'true'
+        env:
+          COOKIES_BUNDLE_BASE64: ${{ secrets.COOKIES_BUNDLE_BASE64 }}
+          REDDIT_COOKIES_BASE64: ${{ secrets.REDDIT_COOKIES_BASE64 }}
+        run: |
+          mkdir -p data
+          if [ -n "$COOKIES_BUNDLE_BASE64" ]; then
+            echo "$COOKIES_BUNDLE_BASE64" | base64 -d > /tmp/cookies_bundle.zip
+            unzip -q -o /tmp/cookies_bundle.zip -d .
+          elif [ -n "$REDDIT_COOKIES_BASE64" ]; then
+            echo "$REDDIT_COOKIES_BASE64" | base64 -d > data/gha_cookies.pkl
+          else
+            echo "Missing COOKIES_BUNDLE_BASE64 and REDDIT_COOKIES_BASE64 secrets" >&2
+            exit 1
+          fi
+
+      - name: Create minimal env file
+        if: steps.gate.outputs.should_run == 'true'
+        run: |
+          mkdir -p config
+          if [ ! -f config/credentials.env ]; then
+            {
+              echo "BOT_MODE=selenium"
+              echo "ENABLE_POSTING=0"
+              echo "USE_LLM=0"
+            } > config/credentials.env
+          fi
+
+      - name: Run community manager
+        if: steps.gate.outputs.should_run == 'true'
+        env:
+          PYTHONUNBUFFERED: "1"
+          PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
+          SELENIUM_HEADLESS: "1"
+        run: |
+          set -euxo pipefail
+          EVENT_NAME="${{ github.event_name }}"
+          DRY_RUN_FLAG=""
+          RESPECT_WINDOWS_FLAG=""
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            DRY_RUN_FLAG="--dry-run"
+          elif [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run"
+          fi
+          if [ "${{ github.event.inputs.respect_windows }}" = "true" ]; then
+            RESPECT_WINDOWS_FLAG="--respect-windows"
+          fi
+          python scripts/runners/community_manager.py \
+            --account ${{ matrix.account }} \
+            --headless \
+            $DRY_RUN_FLAG \
+            $RESPECT_WINDOWS_FLAG 2>&1 | tee logs/ci_community_manager.log

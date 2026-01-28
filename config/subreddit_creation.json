@@ -229,4 +229,11 @@
       ]
     }
   }
+  ,
+  "post_creation": {
+    "configure_settings": true,
+    "setup_automod": true,
+    "welcome_post": true,
+    "add_to_scan_list": false
+  }
 }

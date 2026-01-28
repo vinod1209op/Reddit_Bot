@@ -490,6 +490,69 @@ def load_account_status() -> dict:
     return _fetch_account_health_from_supabase()
 
 
+def load_local_account_status() -> dict:
+    path = PROJECT_ROOT / "data" / "account_status.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return {}
+
+
+def load_created_subreddits() -> list:
+    paths = [
+        PROJECT_ROOT / "scripts" / "subreddit_creation" / "history" / "created_subreddits.json",
+        PROJECT_ROOT / "data" / "created_subreddits.json",
+    ]
+    entries = []
+    for path in paths:
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text())
+        except Exception:
+            continue
+        if isinstance(data, dict):
+            entries.extend(data.get("subreddits", []))
+        elif isinstance(data, list):
+            entries.extend(data)
+    return entries
+
+
+def load_post_schedule() -> list:
+    path = PROJECT_ROOT / "data" / "post_schedule.json"
+    if not path.exists():
+        return []
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return []
+
+
+def load_moderation_history(days: int = 7) -> list:
+    history_dir = PROJECT_ROOT / "scripts" / "moderation" / "history"
+    if not history_dir.exists():
+        return []
+    cutoff = datetime.now() - timedelta(days=days)
+    records = []
+    for path in sorted(history_dir.glob("moderation_daily_*.json")):
+        try:
+            data = json.loads(path.read_text())
+        except Exception:
+            continue
+        for stats in data.values():
+            ts = stats.get("timestamp")
+            try:
+                dt = datetime.fromisoformat(ts)
+            except Exception:
+                dt = None
+            if dt and dt < cutoff:
+                continue
+            records.append(stats)
+    return records
+
+
 def get_account_health_report() -> dict:
     """Generate a health report from account status data."""
     status_data = load_account_status()
@@ -1596,8 +1659,8 @@ def main() -> None:
             else:
                 st.caption("No activity yet.")
 
-    tabs = st.tabs(["Workspace", "Account Health"])
-    workspace_tab, accounts_tab = tabs
+    tabs = st.tabs(["Workspace", "Account Health", "Community"])
+    workspace_tab, accounts_tab, community_tab = tabs
 
     if st.session_state.get("last_data_source") != data_source:
         prev_source = st.session_state.get("last_data_source")
@@ -1678,6 +1741,59 @@ def main() -> None:
             st.session_state[f"last_posts_{data_source}"] = posts
         posts = _normalize_cached_posts(st.session_state.get("last_posts", []))
         st.session_state["last_posts"] = posts
+
+    with community_tab:
+        st.subheader("Community Management Metrics")
+        local_status = load_local_account_status()
+        created_subs = load_created_subreddits()
+        post_schedule = load_post_schedule()
+        moderation_records = load_moderation_history(days=7)
+
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            st.metric("Created subreddits", len(created_subs))
+        with col_b:
+            posted = len([p for p in post_schedule if p.get("posted_at")])
+            scheduled = len(post_schedule)
+            st.metric("Posts scheduled", scheduled)
+            st.caption(f"Posted: {posted}")
+        with col_c:
+            total_mod = sum(r.get("total_items", 0) for r in moderation_records)
+            st.metric("Mod actions (7d)", total_mod)
+
+        st.markdown("### Account status (local)")
+        if local_status:
+            status_rows = []
+            for account, info in local_status.items():
+                status_rows.append(
+                    {
+                        "account": account,
+                        "status": info.get("current_status", "unknown"),
+                        "last_updated": info.get("last_updated", ""),
+                        "cooldowns": info.get("cooldowns", {}),
+                    }
+                )
+            st.dataframe(status_rows, use_container_width=True)
+        else:
+            st.caption("No local account status available.")
+
+        st.markdown("### Created subreddits")
+        if created_subs:
+            st.dataframe(created_subs, use_container_width=True)
+        else:
+            st.caption("No created subreddits recorded yet.")
+
+        st.markdown("### Post schedule")
+        if post_schedule:
+            st.dataframe(post_schedule, use_container_width=True)
+        else:
+            st.caption("No scheduled posts yet.")
+
+        st.markdown("### Moderation activity (last 7 days)")
+        if moderation_records:
+            st.dataframe(moderation_records, use_container_width=True)
+        else:
+            st.caption("No moderation history records yet.")
         if posts:
             filtered_posts = []
             seen = set()

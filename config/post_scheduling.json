@@ -1,4 +1,6 @@
 {
+  "cta_url": "https://quiz.mcrdsemovement.com/mcrdse-funnel",
+  "cta_text": "Take the MCRDSE Movement Quiz",
   "profiles": {
     "low_frequency": {
       "max_posts_per_day": 2,

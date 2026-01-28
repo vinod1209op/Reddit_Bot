@@ -1,0 +1,37 @@
+{
+  "current_phase": 2,
+  "phases": {
+    "1": {
+      "name": "dry_run_only",
+      "duration_days": 7,
+      "force_dry_run": true,
+      "allowed_accounts": ["account1", "account2", "account3"],
+      "max_subreddits_per_run": 1,
+      "posting_queue_target": 3
+    },
+    "2": {
+      "name": "single_account_conservative",
+      "duration_days": 7,
+      "force_dry_run": false,
+      "allowed_accounts": ["account_test"],
+      "max_subreddits_per_run": 1,
+      "posting_queue_target": 1
+    },
+    "3": {
+      "name": "multiple_accounts_conservative",
+      "duration_days": 14,
+      "force_dry_run": false,
+      "allowed_accounts": ["account1", "account2"],
+      "max_subreddits_per_run": 1,
+      "posting_queue_target": 2
+    },
+    "4": {
+      "name": "adaptive_ramp",
+      "duration_days": 0,
+      "force_dry_run": false,
+      "allowed_accounts": ["account1", "account2", "account3"],
+      "max_subreddits_per_run": 2,
+      "posting_queue_target": 5
+    }
+  }
+}

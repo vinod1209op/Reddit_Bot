@@ -31,17 +31,25 @@ jobs:
         run: |
           python scripts/weekly_account_report.py
 
+      - name: Generate weekly community report
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
+        run: |
+          python scripts/weekly_community_report.py
+
       - name: Prepare email body
         run: |
-          if [ -f logs/weekly_account_report.md ]; then
-            {
-              echo "EMAIL_BODY<<'EOF'"
+          {
+            echo "EMAIL_BODY<<'EOF'"
+            if [ -f logs/weekly_account_report.md ]; then
               cat logs/weekly_account_report.md
-              echo "EOF"
-            } >> "$GITHUB_ENV"
-          else
-            echo "EMAIL_BODY=Weekly report generated. Check Supabase logs for details." >> "$GITHUB_ENV"
-          fi
+              echo ""
+            fi
+            if [ -f logs/weekly_community_report.md ]; then
+              cat logs/weekly_community_report.md
+            fi
+            echo "EOF"
+          } >> "$GITHUB_ENV"
 
       - name: Upload report to Supabase
         env:

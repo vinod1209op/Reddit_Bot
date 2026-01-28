@@ -51,6 +51,11 @@
       ]
     }
   ],
+  "community_windows": {
+    "subreddit_creation": ["09:00-11:00"],
+    "post_scheduling": ["10:00-20:00"],
+    "moderation": ["08:00-22:00"]
+  },
   "allow_voting": true,
   "allow_saving": true,
   "allow_following": true,
@@ -181,9 +186,9 @@
   "post_scheduling": {
     "enabled": true,
     "profile": "low_frequency",
-    "max_posts_per_day": 1,
-    "max_posts_per_week": 3,
-    "dry_run": true,
+    "max_posts_per_day": 3,
+    "max_posts_per_week": 10,
+    "dry_run": false,
     "require_manual_review": true,
     "approved": true,
     "schedule_window_local": {

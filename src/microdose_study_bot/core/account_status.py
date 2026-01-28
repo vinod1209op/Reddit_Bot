@@ -168,7 +168,13 @@ class AccountStatusTracker:
 
         return False
 
-    def record_subreddit_creation(self, account_name: str, subreddit_name: str, success: bool) -> None:
+    def record_subreddit_creation(
+        self,
+        account_name: str,
+        subreddit_name: str,
+        success: bool,
+        cooldown_days: int = 7,
+    ) -> None:
         """Track subreddit creation attempts and apply cooldowns."""
         entry = self.status_data.setdefault(
             account_name,
@@ -202,10 +208,10 @@ class AccountStatusTracker:
                 "subreddit_created",
                 {"subreddit": subreddit_name},
             )
-            # Default cooldown 7 days
+            # Default cooldown
             cooldowns = entry.setdefault("cooldowns", {})
             cooldowns["creation"] = (
-                datetime.now() + timedelta(days=7)
+                datetime.now() + timedelta(days=int(cooldown_days))
             ).isoformat()
         else:
             self.update_account_status(

@@ -17,7 +17,10 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
-import schedule
+try:
+    import schedule  # optional; used only for future cron helpers
+except Exception:  # pragma: no cover
+    schedule = None
 import threading
 from microdose_study_bot.reddit_selenium.automation_base import RedditAutomationBase
 
@@ -49,6 +52,7 @@ class MCRDSEPostScheduler(RedditAutomationBase):
         super().__init__(account_name=account_name, dry_run=dry_run)
         self.config = self.load_config()
         self.schedule_file = Path("scripts/content_scheduling/schedule/post_schedule.json")
+        self.legacy_schedule_file = Path("data/post_schedule.json")
         self.post_templates = self.load_templates()
         self.is_running = False
         self.scheduler_thread = None
@@ -57,9 +61,10 @@ class MCRDSEPostScheduler(RedditAutomationBase):
         """Load scheduler configuration"""
         config_path = Path("config/post_scheduling.json")
         
+        file_config = {}
         if config_path.exists():
             try:
-                return json.loads(config_path.read_text())
+                file_config = json.loads(config_path.read_text())
             except json.JSONDecodeError:
                 logger.warning("Config file corrupted, using defaults")
         
@@ -67,7 +72,9 @@ class MCRDSEPostScheduler(RedditAutomationBase):
         default_config = {
             "posting_settings": {
                 "max_posts_per_day": 5,
+                "max_posts_per_week": 15,
                 "min_time_between_posts_minutes": 60,
+                "time_windows": ["09:00-12:00", "18:00-21:00"],
                 "optimal_posting_times": [
                     {"time": "09:00", "weight": 10},
                     {"time": "12:00", "weight": 8},
@@ -124,13 +131,46 @@ class MCRDSEPostScheduler(RedditAutomationBase):
                 "send_alerts_on_failure": False
             }
         }
-        
-        # Save default config
-        config_path.parent.mkdir(exist_ok=True, parents=True)
-        config_path.write_text(json.dumps(default_config, indent=2))
-        logger.info(f"Created default config at {config_path}")
-        
-        return default_config
+
+        # Start with explicit config if provided; otherwise defaults
+        config = file_config if isinstance(file_config, dict) and file_config.get("posting_settings") else default_config
+        profiles = file_config.get("profiles", {}) if isinstance(file_config, dict) else {}
+        profile_name = (self.activity_schedule or {}).get("post_scheduling", {}).get("profile") or "low_frequency"
+        profile_config = profiles.get(profile_name, {}) if profiles else {}
+
+        if profile_config:
+            config["posting_settings"]["max_posts_per_day"] = profile_config.get(
+                "max_posts_per_day", config["posting_settings"]["max_posts_per_day"]
+            )
+            if "max_posts_per_week" in profile_config:
+                config["posting_settings"]["max_posts_per_week"] = profile_config["max_posts_per_week"]
+            if "time_windows" in profile_config:
+                config["posting_settings"]["time_windows"] = profile_config["time_windows"]
+            if "content_mix" in profile_config:
+                config["content_strategy"]["content_mix"] = profile_config["content_mix"]
+
+        # Merge in feature-level overrides from activity_schedule.json
+        post_feature = (self.activity_schedule or {}).get("post_scheduling", {})
+        if isinstance(post_feature, dict):
+            if "max_posts_per_day" in post_feature:
+                config["posting_settings"]["max_posts_per_day"] = post_feature["max_posts_per_day"]
+            if "max_posts_per_week" in post_feature:
+                config["posting_settings"]["max_posts_per_week"] = post_feature["max_posts_per_week"]
+            window = post_feature.get("schedule_window_local")
+            if isinstance(window, dict) and window.get("start") and window.get("end"):
+                config["posting_settings"]["time_windows"] = [f"{window['start']}-{window['end']}"]
+
+        # Save default config if missing
+        if not config_path.exists():
+            config_path.parent.mkdir(exist_ok=True, parents=True)
+            config_path.write_text(json.dumps(file_config or {"profiles": {"low_frequency": {
+                "max_posts_per_day": 2,
+                "content_mix": config["content_strategy"]["content_mix"],
+                "time_windows": config["posting_settings"]["time_windows"]
+            }}}, indent=2))
+            logger.info(f"Created default config at {config_path}")
+
+        return config
     
     def load_templates(self) -> Dict:
         """Load post templates"""
@@ -287,17 +327,35 @@ class MCRDSEPostScheduler(RedditAutomationBase):
         logger.info(f"Created default templates at {templates_path}")
         
         return default_templates
+
+    def load_network_config(self) -> Dict:
+        path = Path("config/subreddit_network.json")
+        if not path.exists():
+            return {}
+        try:
+            return json.loads(path.read_text())
+        except Exception:
+            return {}
     
     def load_schedule(self) -> List[Dict]:
         """Load scheduled posts from file"""
+        schedule_data = []
         if self.schedule_file.exists():
             try:
                 with open(self.schedule_file, 'r') as f:
-                    return json.load(f)
+                    schedule_data = json.load(f)
             except json.JSONDecodeError:
                 logger.error("Schedule file corrupted, starting with empty schedule")
-                return []
-        return []
+
+        # Fall back to legacy schedule if needed
+        if not schedule_data and self.legacy_schedule_file.exists():
+            try:
+                with open(self.legacy_schedule_file, 'r') as f:
+                    schedule_data = json.load(f)
+            except json.JSONDecodeError:
+                logger.error("Legacy schedule file corrupted, starting with empty schedule")
+
+        return schedule_data or []
     
     def save_schedule(self, schedule_data: List[Dict]):
         """Save schedule to file"""
@@ -314,6 +372,11 @@ class MCRDSEPostScheduler(RedditAutomationBase):
         
         # Save new schedule
         with open(self.schedule_file, 'w') as f:
+            json.dump(schedule_data, f, indent=2, default=str)
+
+        # Save legacy copy
+        self.legacy_schedule_file.parent.mkdir(exist_ok=True, parents=True)
+        with open(self.legacy_schedule_file, 'w') as f:
             json.dump(schedule_data, f, indent=2, default=str)
         
         logger.info(f"Schedule saved with {len(schedule_data)} posts")
@@ -335,9 +398,14 @@ class MCRDSEPostScheduler(RedditAutomationBase):
             title = title.replace(f"{{{var_name}}}", replacement)
             content = content.replace(f"{{{var_name}}}", replacement)
         
-        # Add MCRDSE reference (subtle)
-        if random.random() < 0.3:  # 30% chance
-            content += "\n\n*For research-based resources, check out the MCRDSE research portal.*"
+        # Add CTA if configured
+        cta_url = self.config.get("cta_url")
+        cta_text = self.config.get("cta_text", "Learn more")
+        if cta_url:
+            content += f"\n\n**{cta_text}:** {cta_url}"
+        else:
+            if random.random() < 0.3:  # 30% chance
+                content += "\n\n*For research-based resources, check out the MCRDSE research portal.*"
         
         # Select subreddit if not specified
         if not subreddit:
@@ -369,63 +437,79 @@ class MCRDSEPostScheduler(RedditAutomationBase):
     
     def select_subreddit_for_post(self, post_type: str) -> str:
         """Select appropriate subreddit for post type"""
-        primary = self.config["subreddit_distribution"]["primary_focus"]
-        secondary = self.config["subreddit_distribution"]["secondary_focus"]
-        
-        # Weighted selection
-        if random.random() < 0.7:  # 70% chance for primary
+        primary = self.config.get("subreddit_distribution", {}).get("primary_focus", [])
+        secondary = self.config.get("subreddit_distribution", {}).get("secondary_focus", [])
+        crosspost = self.config.get("subreddit_distribution", {}).get("crosspost_to", [])
+        moderated = (
+            self.status_tracker.status_data.get(self.account_name, {})
+            .get("subreddits", {})
+            .get("moderated", [])
+        )
+        fallback = self.config_manager.bot_settings.get("subreddits", [])
+
+        if moderated and random.random() < 0.6:
+            return random.choice(moderated)
+        if primary and random.random() < 0.7:
             return random.choice(primary)
-        else:
+        if secondary and random.random() < 0.8:
             return random.choice(secondary)
+        if crosspost:
+            return random.choice(crosspost)
+        if fallback:
+            return random.choice(fallback)
+        return "microdosing"
     
     def generate_scheduled_time(self) -> datetime:
         """Generate a scheduled time based on optimal posting times"""
         now = datetime.now()
-        
-        # Get optimal times
-        optimal_times = self.config["posting_settings"]["optimal_posting_times"]
-        
-        # Weighted random selection
-        weights = [t["weight"] for t in optimal_times]
-        times = [t["time"] for t in optimal_times]
-        
-        selected_time_str = random.choices(times, weights=weights, k=1)[0]
-        
-        # Parse time
-        hour, minute = map(int, selected_time_str.split(":"))
-        
-        # Schedule for today or tomorrow
-        scheduled = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        
-        # If time has passed today, schedule for tomorrow
-        if scheduled <= now:
-            scheduled += timedelta(days=1)
-        
-        # Add random jitter
+
+        windows = self.config.get("posting_settings", {}).get("time_windows") or []
+        if windows:
+            start_str, end_str = random.choice(windows).split("-")
+            start_hour, start_minute = map(int, start_str.split(":"))
+            end_hour, end_minute = map(int, end_str.split(":"))
+            start_dt = now.replace(hour=start_hour, minute=start_minute, second=0, microsecond=0)
+            end_dt = now.replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
+            if end_dt <= start_dt:
+                end_dt += timedelta(days=1)
+            if start_dt <= now <= end_dt:
+                window_start = now
+                window_end = end_dt
+            else:
+                window_start = start_dt if now < start_dt else start_dt + timedelta(days=1)
+                window_end = end_dt if now < start_dt else end_dt + timedelta(days=1)
+            total_minutes = max(1, int((window_end - window_start).total_seconds() / 60))
+            offset = random.randint(0, total_minutes)
+            scheduled = window_start + timedelta(minutes=offset)
+        else:
+            optimal_times = self.config["posting_settings"]["optimal_posting_times"]
+            weights = [t["weight"] for t in optimal_times]
+            times = [t["time"] for t in optimal_times]
+            selected_time_str = random.choices(times, weights=weights, k=1)[0]
+            hour, minute = map(int, selected_time_str.split(":"))
+            scheduled = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if scheduled <= now:
+                scheduled += timedelta(days=1)
+
         if self.config["safety_settings"]["randomize_post_times"]:
             jitter = random.randint(
                 -self.config["safety_settings"]["jitter_minutes"],
                 self.config["safety_settings"]["jitter_minutes"]
             )
             scheduled += timedelta(minutes=jitter)
-        
-        # Check avoid times
+
         avoid_times = self.config["posting_settings"]["avoid_posting_times"]
         for avoid_range in avoid_times:
             start_str, end_str = avoid_range.split("-")
             start_hour, start_minute = map(int, start_str.split(":"))
             end_hour, end_minute = map(int, end_str.split(":"))
-            
             avoid_start = scheduled.replace(hour=start_hour, minute=start_minute)
             avoid_end = scheduled.replace(hour=end_hour, minute=end_minute)
-            
             if avoid_end < avoid_start:
                 avoid_end += timedelta(days=1)
-            
             if avoid_start <= scheduled <= avoid_end:
-                # Move to next available time
                 scheduled = avoid_end + timedelta(minutes=30)
-        
+
         return scheduled
     
     def setup_browser(self):
@@ -479,7 +563,10 @@ class MCRDSEPostScheduler(RedditAutomationBase):
             title = post_data["title"]
             content = post_data["content"]
             if not self.status_tracker.can_perform_action(
-                self.account_name, "posting", subreddit=subreddit, daily_limit=self.config["posting_settings"]["max_posts_per_day"]
+                self.account_name,
+                "posting",
+                subreddit=subreddit,
+                daily_limit=self.config["posting_settings"]["max_posts_per_day"],
             ):
                 logger.info(f"Posting limited for {self.account_name}; skipping r/{subreddit}")
                 return False, "posting_limited"
@@ -577,6 +664,10 @@ class MCRDSEPostScheduler(RedditAutomationBase):
                             self.account_name, subreddit, post_data.get("type", "unknown"), False,
                             daily_limit=self.config["posting_settings"]["max_posts_per_day"]
                         )
+                        if "rate" in error:
+                            self.status_tracker.update_account_status(
+                                self.account_name, "rate_limited", {"reason": error}
+                            )
                         return False, error
                 
                 logger.error("Post failed for unknown reason")
@@ -597,6 +688,10 @@ class MCRDSEPostScheduler(RedditAutomationBase):
     def schedule_post(self, post_data: Dict):
         """Add a post to the schedule"""
         schedule_data = self.load_schedule()
+
+        if not self._can_schedule_more_posts(schedule_data):
+            logger.warning("Posting limits reached; skipping schedule")
+            return None
         
         # Set status to scheduled if not already
         post_data["status"] = "scheduled"
@@ -616,7 +711,11 @@ class MCRDSEPostScheduler(RedditAutomationBase):
         logger.info(f"Generating {num_posts} posts scheduled over next {days_ahead} days")
         
         posts = []
+        schedule_data = self.load_schedule()
         for i in range(num_posts):
+            if not self._can_schedule_more_posts(schedule_data):
+                logger.warning("Posting limits reached; stopping generation")
+                break
             # Determine post type based on content mix
             post_types = list(self.config["content_strategy"]["content_mix"].keys())
             weights = list(self.config["content_strategy"]["content_mix"].values())
@@ -636,14 +735,83 @@ class MCRDSEPostScheduler(RedditAutomationBase):
             post["scheduled_for"] = scheduled_time.replace(hour=hour, minute=minute).isoformat()
             
             posts.append(post)
+            schedule_data.append(post)
         
-        # Add to schedule
-        schedule_data = self.load_schedule()
-        schedule_data.extend(posts)
         self.save_schedule(schedule_data)
         
         logger.info(f"Generated and scheduled {len(posts)} posts")
         return posts
+
+    def seed_subreddit_content(self, subreddit: str, count: int, days: int = 30) -> List[Dict]:
+        """Seed a subreddit with scheduled content over a window."""
+        posts = []
+        schedule_data = self.load_schedule()
+        for _ in range(count):
+            if not self._can_schedule_more_posts(schedule_data):
+                break
+            post_types = list(self.config["content_strategy"]["content_mix"].keys())
+            weights = list(self.config["content_strategy"]["content_mix"].values())
+            post_type = random.choices(post_types, weights=weights, k=1)[0]
+            post = self.generate_post_from_template(post_type, subreddit=subreddit)
+            days_offset = random.randint(0, max(1, days) - 1)
+            scheduled_time = datetime.fromisoformat(post["scheduled_for"])
+            scheduled_time += timedelta(days=days_offset)
+            post["scheduled_for"] = scheduled_time.isoformat()
+            post["seeded"] = True
+            posts.append(post)
+            schedule_data.append(post)
+        self.save_schedule(schedule_data)
+        return posts
+
+    def seed_network_content(self, count_per_subreddit: Optional[int] = None, days: int = 30) -> Dict[str, int]:
+        network = self.load_network_config()
+        if not network.get("enabled"):
+            return {}
+        categories = network.get("categories", {})
+        cross = network.get("cross_promotion", {})
+        count = count_per_subreddit or int(network.get("seed_posts_per_subreddit", 10))
+        seeded = {}
+        for group in categories.values():
+            if not isinstance(group, list):
+                continue
+            for subreddit in group:
+                posts = self.seed_subreddit_content(subreddit, count=count, days=days)
+                seeded[subreddit] = len(posts)
+                # Optional weekly digest for hubs
+                if cross.get("weekly_digest") and subreddit in categories.get("primary_hubs", []):
+                    digest = self.generate_weekly_digest(subreddit, related=group)
+                    if digest:
+                        self.schedule_post(digest)
+        return seeded
+
+    def generate_weekly_digest(self, subreddit: str, related: Optional[List[str]] = None) -> Optional[Dict]:
+        related = related or []
+        items = "\n".join([f"- r/{name}" for name in related if name != subreddit][:5])
+        title = "Weekly Digest: Network highlights and threads"
+        content = (
+            "Here is a quick weekly roundup from across the network.\n\n"
+            "## Related communities\n"
+            f"{items if items else '- r/' + subreddit}\n\n"
+            "Share the best discussions you’ve seen this week in the comments."
+        )
+        scheduled_time = self.generate_scheduled_time()
+        return {
+            "id": f"digest_{int(time.time())}_{random.randint(1000, 9999)}",
+            "type": "digest",
+            "subreddit": subreddit,
+            "title": title,
+            "content": content,
+            "status": "scheduled",
+            "created_at": datetime.now().isoformat(),
+            "scheduled_for": scheduled_time.isoformat(),
+            "account": self.account_name,
+            "attempts": 0,
+            "last_attempt": None,
+            "posted_at": None,
+            "post_url": None,
+            "error": None,
+            "quality_score": 0.6,
+        }
     
     def check_due_posts(self) -> List[Dict]:
         """Check for posts that are due to be posted"""
@@ -699,7 +867,16 @@ class MCRDSEPostScheduler(RedditAutomationBase):
                 post["last_attempt"] = datetime.now().isoformat()
                 
                 # Submit post
-                success, result = self.submit_post(post)
+                action_result = self.execute_safely(
+                    lambda: self.submit_post(post),
+                    action_name="submit_post",
+                    max_retries=self.config["safety_settings"]["max_retries"],
+                )
+                raw_result = action_result.result
+                if isinstance(raw_result, tuple) and len(raw_result) >= 2:
+                    success, result = raw_result[0], raw_result[1]
+                else:
+                    success, result = action_result.success, raw_result
                 
                 if success:
                     post["status"] = "posted"
@@ -789,6 +966,58 @@ class MCRDSEPostScheduler(RedditAutomationBase):
             logger.info(f"Cleaned up {removed_count} old posts from schedule")
         
         return removed_count
+
+    def _get_recent_post_counts(self) -> Dict[str, int]:
+        entry = self.status_tracker.status_data.get(self.account_name, {})
+        posts = entry.get("activity_stats", {}).get("posts", [])
+        now = datetime.now()
+        day_count = 0
+        week_count = 0
+        for item in posts:
+            try:
+                ts = datetime.fromisoformat(item.get("timestamp", ""))
+            except Exception:
+                continue
+            if not item.get("success"):
+                continue
+            if ts.date() == now.date():
+                day_count += 1
+            if (now - ts).days < 7:
+                week_count += 1
+        return {"today": day_count, "week": week_count}
+
+    def _can_schedule_more_posts(self, schedule_data: List[Dict]) -> bool:
+        if self.status_tracker.should_skip_account(self.account_name):
+            return False
+        remaining = self.status_tracker.get_cooldown_remaining(self.account_name, "posting")
+        if remaining and remaining > 0:
+            return False
+        limits = self.config.get("posting_settings", {})
+        max_day = limits.get("max_posts_per_day", 1)
+        max_week = limits.get("max_posts_per_week", 7)
+        counts = self._get_recent_post_counts()
+        scheduled_today = 0
+        scheduled_week = 0
+        now = datetime.now()
+        for post in schedule_data:
+            if post.get("status") not in ("scheduled", "processing"):
+                continue
+            try:
+                scheduled_time = datetime.fromisoformat(post.get("scheduled_for", ""))
+            except Exception:
+                continue
+            if scheduled_time.date() == now.date():
+                scheduled_today += 1
+            if (scheduled_time - now).days < 7:
+                scheduled_week += 1
+
+        total_today = counts["today"] + scheduled_today
+        total_week = counts["week"] + scheduled_week
+        if total_today >= max_day:
+            return False
+        if total_week >= max_week:
+            return False
+        return True
     
     def run_scheduler_daemon(self):
         """Run the scheduler as a daemon (continuous operation)"""
@@ -930,6 +1159,9 @@ def main():
     parser = argparse.ArgumentParser(description="MCRDSE Post Scheduler - Selenium Version")
     parser.add_argument("--account", default="account1", help="Reddit account to use")
     parser.add_argument("--generate", type=int, help="Generate N posts and schedule them")
+    parser.add_argument("--seed-network", action="store_true", help="Seed network subreddits with scheduled posts")
+    parser.add_argument("--seed-count", type=int, help="Seed count per subreddit (overrides network config)")
+    parser.add_argument("--seed-days", type=int, default=30, help="Days to spread seeded posts across")
     parser.add_argument("--schedule", action="store_true", help="Schedule a specific post (interactive)")
     parser.add_argument("--post-now", action="store_true", help="Post immediately (bypass schedule)")
     parser.add_argument("--view", action="store_true", help="View schedule")
@@ -1142,6 +1374,13 @@ def main():
         removed = scheduler.cleanup_old_schedule()
         print(f"✓ Removed {removed} old posts")
     
+    elif args.seed_network:
+        print("\nSeeding network content...")
+        seeded = scheduler.seed_network_content(count_per_subreddit=args.seed_count, days=args.seed_days)
+        print(f"✓ Seeded {len(seeded)} subreddits")
+        for sub, count in list(seeded.items())[:10]:
+            print(f"  r/{sub}: {count} posts")
+
     else:
         # Interactive mode
         print("\nInteractive Mode")

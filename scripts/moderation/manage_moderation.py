@@ -46,6 +46,7 @@ class SeleniumModerationManager(RedditAutomationBase):
         super().__init__(account_name=account_name, dry_run=dry_run)
         self.config = self.load_config()
         self.moderation_stats = {}
+        self.activity_limits = self._load_activity_limits()
         
         # Load account-specific settings
         self.account_config = self.account
@@ -54,9 +55,10 @@ class SeleniumModerationManager(RedditAutomationBase):
         """Load moderation configuration"""
         config_path = Path("scripts/moderation/config/moderation_config.json")
         
+        file_config = {}
         if config_path.exists():
             try:
-                return json.loads(config_path.read_text())
+                file_config = json.loads(config_path.read_text())
             except json.JSONDecodeError:
                 logger.warning("Config file corrupted, using defaults")
         
@@ -64,12 +66,15 @@ class SeleniumModerationManager(RedditAutomationBase):
         default_config = {
             "moderation": {
                 "auto_approve_trusted_users": True,
+                "trusted_authors": [],
                 "remove_spam_keywords": ["buy", "sell", "vendor", "price", "dm me"],
                 "remove_self_harm_keywords": ["suicide", "kill myself", "end my life"],
                 "require_flair": True,
                 "min_post_length": 50,
                 "max_posts_per_hour": 3,
-                "max_comments_per_hour": 10
+                "max_comments_per_hour": 10,
+                "queue_processing_limit": 10,
+                "conservative_mode": True
             },
             "flairs": {
                 "post_flairs": [
@@ -183,11 +188,24 @@ message: |
         }
         
         # Save default config
-        config_path.parent.mkdir(exist_ok=True, parents=True)
-        config_path.write_text(json.dumps(default_config, indent=2))
-        logger.info(f"Created default config at {config_path}")
+        if not config_path.exists():
+            config_path.parent.mkdir(exist_ok=True, parents=True)
+            config_path.write_text(json.dumps(default_config, indent=2))
+            logger.info(f"Created default config at {config_path}")
         
+        if file_config and isinstance(file_config, dict):
+            return {**default_config, **file_config}
         return default_config
+
+    def _load_activity_limits(self) -> Dict:
+        moderation_feature = (self.activity_schedule or {}).get("moderation", {})
+        limits = {
+            "max_actions_per_run": moderation_feature.get("max_actions_per_run", 10),
+            "auto_remove_reported": moderation_feature.get("auto_remove_reported", False),
+            "remove_spam": moderation_feature.get("remove_spam", True),
+            "notify_on_flags": moderation_feature.get("notify_on_flags", True),
+        }
+        return limits
     
     def load_account_config(self) -> Dict:
         """Load account-specific configuration"""
@@ -244,10 +262,23 @@ message: |
         except Exception as e:
             logger.error(f"Login failed: {e}")
             return False
+
+    def _can_moderate(self, subreddit_name: str) -> bool:
+        if self.status_tracker.should_skip_account(self.account_name):
+            return False
+        if not self.verify_moderator_status(subreddit_name):
+            return False
+        remaining = self.status_tracker.get_cooldown_remaining(self.account_name, "moderation")
+        if remaining and remaining > 0:
+            return False
+        return True
     
     def navigate_to_subreddit(self, subreddit_name: str, section: str = "") -> bool:
         """Navigate to a specific subreddit section"""
         try:
+            if self.dry_run:
+                logger.info("[dry-run] Skipping navigation to r/%s/%s", subreddit_name, section)
+                return True
             base_url = f"https://old.reddit.com/r/{subreddit_name}"
             if section:
                 base_url += f"/{section}"
@@ -269,6 +300,9 @@ message: |
     def setup_automoderator(self, subreddit_name: str, template: str = "basic") -> bool:
         """Setup AutoModerator rules via wiki"""
         try:
+            if self.dry_run:
+                logger.info("[dry-run] Would set up AutoModerator for r/%s", subreddit_name)
+                return True
             if not self.navigate_to_subreddit(subreddit_name, "wiki/config/automoderator"):
                 logger.error(f"Cannot access AutoModerator config for r/{subreddit_name}")
                 return False
@@ -310,6 +344,9 @@ message: |
     def setup_post_flairs(self, subreddit_name: str) -> bool:
         """Setup post flairs for the subreddit"""
         try:
+            if self.dry_run:
+                logger.info("[dry-run] Would set up post flairs for r/%s", subreddit_name)
+                return True
             if not self.navigate_to_subreddit(subreddit_name, "about/flair"):
                 logger.error(f"Cannot access flair settings for r/{subreddit_name}")
                 return False
@@ -376,6 +413,9 @@ message: |
     def setup_user_flairs(self, subreddit_name: str) -> bool:
         """Setup user flairs for the subreddit"""
         try:
+            if self.dry_run:
+                logger.info("[dry-run] Would set up user flairs for r/%s", subreddit_name)
+                return True
             if not self.navigate_to_subreddit(subreddit_name, "about/flair"):
                 logger.error(f"Cannot access flair settings for r/{subreddit_name}")
                 return False
@@ -442,6 +482,9 @@ message: |
     def setup_subreddit_rules(self, subreddit_name: str) -> bool:
         """Setup subreddit rules"""
         try:
+            if self.dry_run:
+                logger.info("[dry-run] Would set up rules for r/%s", subreddit_name)
+                return True
             if not self.navigate_to_subreddit(subreddit_name, "about/rules"):
                 logger.error(f"Cannot access rules settings for r/{subreddit_name}")
                 return False
@@ -495,6 +538,9 @@ message: |
     def configure_subreddit_settings(self, subreddit_name: str) -> bool:
         """Configure basic subreddit settings"""
         try:
+            if self.dry_run:
+                logger.info("[dry-run] Would configure settings for r/%s", subreddit_name)
+                return True
             if not self.navigate_to_subreddit(subreddit_name, "about/edit"):
                 logger.error(f"Cannot access edit settings for r/{subreddit_name}")
                 return False
@@ -600,55 +646,65 @@ This community is for educational purposes only. Not medical advice.
 ---
 *Part of the MCRDSE network - Advancing psychedelic research and education.*"""
     
-    def check_moderation_queue(self, subreddit_name: str) -> Dict:
-        """Check and process moderation queue"""
-        try:
-            if not self.navigate_to_subreddit(subreddit_name, "about/modqueue"):
-                logger.error(f"Cannot access mod queue for r/{subreddit_name}")
-                return {}
-            
-            stats = {
+    def _process_queue_items(self, subreddit_name: str) -> Dict:
+        if self.dry_run:
+            logger.info("[dry-run] Would process queue items for r/%s", subreddit_name)
+            return {
                 "subreddit": subreddit_name,
                 "timestamp": datetime.now().isoformat(),
                 "total_items": 0,
                 "approved": 0,
                 "removed": 0,
                 "ignored": 0,
-                "processed_items": []
+                "processed_items": [],
             }
-            
-            # Find all queue items
-            queue_items = self.driver.find_elements(By.CSS_SELECTOR, ".thing")
-            
-            for item in queue_items:
-                try:
-                    item_stats = self.process_queue_item(item)
-                    stats["total_items"] += 1
-                    
-                    if item_stats["action"] == "approved":
-                        stats["approved"] += 1
-                    elif item_stats["action"] == "removed":
-                        stats["removed"] += 1
-                    else:
-                        stats["ignored"] += 1
-                    
-                    stats["processed_items"].append(item_stats)
-                    
-                    # Small delay between items
-                    time.sleep(1)
-                    
-                except Exception as e:
-                    logger.warning(f"Error processing queue item: {e}")
-                    continue
-            
-            logger.info(f"Processed {stats['total_items']} items in r/{subreddit_name} queue")
-            return stats
-            
+        stats = {
+            "subreddit": subreddit_name,
+            "timestamp": datetime.now().isoformat(),
+            "total_items": 0,
+            "approved": 0,
+            "removed": 0,
+            "ignored": 0,
+            "processed_items": [],
+        }
+
+        queue_items = self.driver.find_elements(By.CSS_SELECTOR, ".thing")
+        max_items = self.config["moderation"].get("queue_processing_limit", 10)
+        max_items = min(max_items, self.activity_limits.get("max_actions_per_run", max_items))
+
+        for item in queue_items[:max_items]:
+            try:
+                item_stats = self.process_queue_item(item, subreddit_name)
+                stats["total_items"] += 1
+
+                if item_stats["action"] == "approved":
+                    stats["approved"] += 1
+                elif item_stats["action"] == "removed":
+                    stats["removed"] += 1
+                else:
+                    stats["ignored"] += 1
+
+                stats["processed_items"].append(item_stats)
+                time.sleep(1)
+            except Exception as e:
+                logger.warning(f"Error processing queue item: {e}")
+                continue
+
+        logger.info(f"Processed {stats['total_items']} items in r/{subreddit_name} queue")
+        return stats
+
+    def check_moderation_queue(self, subreddit_name: str) -> Dict:
+        """Check and process moderation queue"""
+        try:
+            if not self.navigate_to_subreddit(subreddit_name, "about/modqueue"):
+                logger.error(f"Cannot access mod queue for r/{subreddit_name}")
+                return {}
+            return self._process_queue_items(subreddit_name)
         except Exception as e:
             logger.error(f"Error checking moderation queue for r/{subreddit_name}: {e}")
             return {}
     
-    def process_queue_item(self, item_element) -> Dict:
+    def process_queue_item(self, item_element, subreddit_name: str) -> Dict:
         """Process a single queue item"""
         item_info = {
             "type": "unknown",
@@ -656,7 +712,8 @@ This community is for educational purposes only. Not medical advice.
             "author": "",
             "reason": "",
             "action": "ignored",
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "subreddit": subreddit_name,
         }
         
         try:
@@ -688,14 +745,31 @@ This community is for educational purposes only. Not medical advice.
             
             # Analyze content
             should_remove = self.should_remove_item(item_element, item_info)
+            can_auto_approve = self._can_auto_approve(item_info)
             
-            # Take action
+            # Take action conservatively
             if should_remove:
                 self.remove_item(item_element)
                 item_info["action"] = "removed"
-            else:
+            elif can_auto_approve and not self.config["moderation"].get("conservative_mode", True):
                 self.approve_item(item_element)
                 item_info["action"] = "approved"
+            elif can_auto_approve and self.config["moderation"].get("conservative_mode", True):
+                # Conservative: approve only if trusted
+                if item_info.get("author") in self.config["moderation"].get("trusted_authors", []):
+                    self.approve_item(item_element)
+                    item_info["action"] = "approved"
+                else:
+                    item_info["action"] = "ignored"
+            else:
+                item_info["action"] = "ignored"
+
+            self.status_tracker.record_moderation_activity(
+                self.account_name,
+                item_info.get("subreddit", "unknown"),
+                item_info["action"],
+                item_info["action"] in ("approved", "removed"),
+            )
             
         except Exception as e:
             logger.warning(f"Error in process_queue_item: {e}")
@@ -742,10 +816,19 @@ This community is for educational purposes only. Not medical advice.
             pass
         
         return False
+
+    def _can_auto_approve(self, item_info: Dict) -> bool:
+        if not self.config["moderation"].get("auto_approve_trusted_users", True):
+            return False
+        trusted = self.config["moderation"].get("trusted_authors", [])
+        return item_info.get("author") in trusted
     
     def approve_item(self, item_element):
         """Approve a queue item"""
         try:
+            if self.dry_run:
+                logger.info("[dry-run] Would approve item")
+                return
             # Find approve button
             approve_button = item_element.find_element(By.CSS_SELECTOR, "button.approve")
             approve_button.click()
@@ -756,6 +839,9 @@ This community is for educational purposes only. Not medical advice.
     def remove_item(self, item_element):
         """Remove a queue item"""
         try:
+            if self.dry_run:
+                logger.info("[dry-run] Would remove item")
+                return
             # Find remove button
             remove_button = item_element.find_element(By.CSS_SELECTOR, "button.remove")
             remove_button.click()
@@ -782,11 +868,8 @@ This community is for educational purposes only. Not medical advice.
     
     def setup_complete_moderation(self, subreddit_name: str) -> bool:
         """Complete moderation setup for a subreddit"""
-        if not self.status_tracker.can_perform_action(self.account_name, "moderation", subreddit=subreddit_name):
+        if not self._can_moderate(subreddit_name):
             logger.info(f"Moderation limited for {self.account_name}; skipping r/{subreddit_name}")
-            return False
-        if not self.verify_moderator_status(subreddit_name):
-            logger.info(f"No moderator access for r/{subreddit_name}; skipping setup")
             return False
         logger.info(f"Starting complete moderation setup for r/{subreddit_name}")
         
@@ -828,6 +911,32 @@ This community is for educational purposes only. Not medical advice.
         
         logger.info(f"Completed {success_count}/{len(steps)} setup steps for r/{subreddit_name}")
         return success_count >= 3  # Require at least 3 successful steps
+
+    def check_spam_queue(self, subreddit_name: str) -> Dict:
+        """Check and process spam queue"""
+        if not self.activity_limits.get("remove_spam", True):
+            return {}
+        try:
+            if not self.navigate_to_subreddit(subreddit_name, "about/spam"):
+                logger.error(f"Cannot access spam queue for r/{subreddit_name}")
+                return {}
+            return self._process_queue_items(subreddit_name)
+        except Exception as exc:
+            logger.error(f"Error checking spam queue for r/{subreddit_name}: {exc}")
+            return {}
+
+    def check_reported_queue(self, subreddit_name: str) -> Dict:
+        """Check and process reported queue"""
+        if not self.activity_limits.get("auto_remove_reported", False):
+            return {}
+        try:
+            if not self.navigate_to_subreddit(subreddit_name, "about/reports"):
+                logger.error(f"Cannot access reports for r/{subreddit_name}")
+                return {}
+            return self._process_queue_items(subreddit_name)
+        except Exception as exc:
+            logger.error(f"Error checking reports for r/{subreddit_name}: {exc}")
+            return {}
     
     def run_daily_moderation(self, subreddit_names: List[str] = None):
         """Run daily moderation tasks for specified subreddits"""
@@ -840,7 +949,7 @@ This community is for educational purposes only. Not medical advice.
         results = {}
         for subreddit in subreddit_names:
             logger.info(f"Processing r/{subreddit}")
-            if not self.verify_moderator_status(subreddit):
+            if not self._can_moderate(subreddit):
                 logger.info(f"No moderator access for r/{subreddit}; skipping")
                 continue
             
@@ -855,6 +964,21 @@ This community is for educational purposes only. Not medical advice.
             self.status_tracker.record_moderation_activity(
                 self.account_name, subreddit, "daily_moderation", bool(queue_result.success)
             )
+
+            if self.activity_limits.get("remove_spam", True):
+                self.execute_safely(
+                    lambda: self.check_spam_queue(subreddit),
+                    max_retries=1,
+                    login_required=True,
+                    action_name="moderation_action",
+                )
+            if self.activity_limits.get("auto_remove_reported", False):
+                self.execute_safely(
+                    lambda: self.check_reported_queue(subreddit),
+                    max_retries=1,
+                    login_required=True,
+                    action_name="moderation_action",
+                )
             
             # Delay between subreddits
             time.sleep(5)
@@ -876,6 +1000,11 @@ This community is for educational purposes only. Not medical advice.
                 return [sub["name"] for sub in data.get("subreddits", [])]
             except:
                 pass
+
+        # Fallback to configured subreddits
+        configured = self.config_manager.bot_settings.get("subreddits", [])
+        if configured:
+            return configured
         
         # Fallback: prompt user
         if not self.headless:

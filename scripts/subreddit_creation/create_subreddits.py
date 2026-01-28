@@ -38,6 +38,7 @@ class SubredditCreator(RedditAutomationBase):
         self.config = self.load_config()
         self.profile_name = self.config.get("default_profile") or "conservative"
         self.profile_config = self.config.get("profiles", {}).get(self.profile_name, {})
+        self.network_config = self.load_network_config()
         self.subreddit_names = self.generate_subreddit_names()
         
     def load_config(self) -> Dict:
@@ -112,6 +113,15 @@ class SubredditCreator(RedditAutomationBase):
             }
         return config
 
+    def load_network_config(self) -> Dict:
+        path = Path("config/subreddit_network.json")
+        if not path.exists():
+            return {}
+        try:
+            return json.loads(path.read_text())
+        except Exception:
+            return {}
+
     def _get_template_set(self) -> Dict:
         if "subreddit_templates" in self.config:
             return {}
@@ -133,6 +143,14 @@ class SubredditCreator(RedditAutomationBase):
     
     def generate_subreddit_names(self):
         """Generate unique subreddit names"""
+        if self.network_config.get("enabled"):
+            categories = self.network_config.get("categories", {})
+            names = []
+            for group in categories.values():
+                if isinstance(group, list):
+                    names.extend(group)
+            if names:
+                return list(dict.fromkeys(names))
         names = []
         if "subreddit_templates" in self.config:
             for template in self.config.get("subreddit_templates", []):
@@ -168,10 +186,26 @@ class SubredditCreator(RedditAutomationBase):
         
         # Remove duplicates and return
         return list(set(names))
+
+    def _append_network_links(self, sidebar: str, subreddit_name: str) -> str:
+        if not self.network_config.get("enabled"):
+            return sidebar
+        cross = self.network_config.get("cross_promotion", {})
+        related_map = cross.get("related_map", {})
+        links_per = int(cross.get("links_per_sidebar", 3))
+        related = related_map.get(subreddit_name, [])
+        if not related:
+            return sidebar
+        related = related[:links_per]
+        links = "\n".join([f"- r/{name}" for name in related])
+        return sidebar + "\n\n## Network Links\n" + links
     
     def check_account_eligibility(self):
         """Check if account meets Reddit's subreddit creation requirements"""
         try:
+            if self.dry_run or not self.driver:
+                logger.info("[dry-run] Skipping eligibility check")
+                return True
             # Navigate to profile to check age and karma
             self.driver.get("https://old.reddit.com/user/{}/".format(self.account_name))
             time.sleep(2)
@@ -184,11 +218,59 @@ class SubredditCreator(RedditAutomationBase):
         except Exception as e:
             logger.error(f"Error checking eligibility: {e}")
             return False
+
+    def _creation_limits_ok(self) -> Tuple[bool, str]:
+        profile = self.profile_config or {}
+        max_per_day = int(profile.get("max_subreddits_per_day", 1))
+        max_per_week = int(profile.get("max_subreddits_per_week", 2))
+        max_total = int(profile.get("max_total_subreddits", 3))
+
+        entry = self.status_tracker.status_data.get(self.account_name, {})
+        creations = entry.get("activity_stats", {}).get("subreddit_creations", [])
+        successful = [c for c in creations if c.get("success")]
+
+        now = datetime.now()
+        day_count = 0
+        week_count = 0
+        for c in successful:
+            try:
+                ts = datetime.fromisoformat(c.get("timestamp"))
+            except Exception:
+                continue
+            delta = now - ts
+            if delta.days < 1:
+                day_count += 1
+            if delta.days < 7:
+                week_count += 1
+
+        if max_total and len(successful) >= max_total:
+            return False, "total_limit"
+        if max_per_day and day_count >= max_per_day:
+            return False, "daily_limit"
+        if max_per_week and week_count >= max_per_week:
+            return False, "weekly_limit"
+        return True, "ok"
+
+    def _subreddit_exists(self, subreddit_name: str) -> bool:
+        if not self.driver:
+            return False
+        try:
+            self.driver.get(f"https://old.reddit.com/r/{subreddit_name}")
+            time.sleep(2)
+            page = self.driver.page_source.lower()
+            if "subreddit not found" in page or "doesn't exist" in page:
+                return False
+            return True
+        except Exception:
+            return False
     
-    def create_subreddit(self, name, description, sidebar):
+    def create_subreddit(self, name, description, sidebar, dry_run=False):
         """Create a new subreddit"""
         try:
             logger.info(f"Attempting to create r/{name}")
+            if dry_run:
+                logger.info(f"[dry-run] Would create r/{name}")
+                return True
             
             # Navigate to creation page
             self.driver.get("https://old.reddit.com/subreddits/create")
@@ -250,20 +332,17 @@ class SubredditCreator(RedditAutomationBase):
                 rule_fields[i].send_keys(rule)
                 time.sleep(0.5)
             
-            # Submit (but don't actually submit in test mode)
-            logger.info(f"Ready to submit r/{name}. Check details and submit manually.")
-            
-            # For actual creation, uncomment:
-            # submit_button = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
-            # submit_button.click()
-            # time.sleep(5)
+            # Submit
+            submit_button = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
+            submit_button.click()
+            time.sleep(5)
             
             # Verify creation
-            # if f"/r/{name}/" in self.driver.current_url:
-            #     logger.info(f"Successfully created r/{name}")
-            #     return True
+            if f"/r/{name}/" in (self.driver.current_url or ""):
+                logger.info(f"Successfully created r/{name}")
+                return True
             
-            return False  # Return False for testing
+            return False
             
         except Exception as e:
             logger.error(f"Error creating subreddit: {e}")
@@ -432,6 +511,10 @@ Let's build a supportive, evidence-based community together!""",
             if not enabled:
                 logger.info(f"Subreddit creation disabled ({reason}); exiting.")
                 return
+            limits_ok, limit_reason = self._creation_limits_ok()
+            if not limits_ok:
+                logger.info(f"Creation limits reached ({limit_reason}); exiting.")
+                return
             if not self.dry_run:
                 if not self.driver:
                     self._setup_browser()
@@ -455,6 +538,9 @@ Let's build a supportive, evidence-based community together!""",
                     self.account_name, "creation", subreddit=subreddit_name
                 ):
                     logger.info(f"Skipping creation for r/{subreddit_name} due to cooldown/limits")
+                    continue
+                if self._subreddit_exists(subreddit_name):
+                    logger.info(f"Skipping r/{subreddit_name}; already exists")
                     continue
                 logger.info(f"Processing: r/{subreddit_name}")
                 
@@ -498,10 +584,11 @@ Let's build a supportive, evidence-based community together!""",
                             f"## Disclaimer\n"
                             f"This community does not provide medical advice. Consult healthcare professionals."
                         )
+                sidebar = self._append_network_links(sidebar, subreddit_name)
                 
                 # Create subreddit
                 creation_result = self.execute_safely(
-                    lambda: self.create_subreddit(subreddit_name, description, sidebar),
+                    lambda: self.create_subreddit(subreddit_name, description, sidebar, dry_run=self.dry_run),
                     max_retries=2,
                     login_required=True,
                     action_name="create_subreddit",
@@ -509,33 +596,44 @@ Let's build a supportive, evidence-based community together!""",
                 if creation_result.success and creation_result.result:
                     # Configure settings
                     time.sleep(5)
-                    self.execute_safely(
-                        lambda: self.configure_subreddit(subreddit_name),
-                        max_retries=2,
-                        login_required=True,
-                    )
+                    if self.config.get("post_creation", {}).get("configure_settings", True):
+                        self.execute_safely(
+                            lambda: self.configure_subreddit(subreddit_name),
+                            max_retries=2,
+                            login_required=True,
+                            action_name="configure_subreddit",
+                        )
                     
                     # Setup AutoModerator
                     time.sleep(3)
-                    self.execute_safely(
-                        lambda: self.setup_automod(subreddit_name),
-                        max_retries=2,
-                        login_required=True,
-                    )
+                    if self.config.get("post_creation", {}).get("setup_automod", True):
+                        self.execute_safely(
+                            lambda: self.setup_automod(subreddit_name),
+                            max_retries=2,
+                            login_required=True,
+                            action_name="setup_automod",
+                        )
                     
                     # Create initial content
                     time.sleep(3)
-                    self.execute_safely(
-                        lambda: self.create_initial_content(subreddit_name),
-                        max_retries=2,
-                        login_required=True,
-                    )
+                    if self.config.get("post_creation", {}).get("welcome_post", True):
+                        self.execute_safely(
+                            lambda: self.create_initial_content(subreddit_name),
+                            max_retries=2,
+                            login_required=True,
+                            action_name="welcome_post",
+                        )
                     
                     created_count += 1
                     self.status_tracker.record_subreddit_creation(
-                        self.account_name, subreddit_name, True
+                        self.account_name,
+                        subreddit_name,
+                        True,
+                        cooldown_days=int(self.profile_config.get("min_days_between_creations", 7)),
                     )
                     self._record_created_subreddit(subreddit_name)
+                    if self.config.get("post_creation", {}).get("add_to_scan_list", False):
+                        self._add_to_scan_list(subreddit_name)
                     logger.info(f"Successfully setup r/{subreddit_name}")
                     
                     # Delay between creations
@@ -548,7 +646,10 @@ Let's build a supportive, evidence-based community together!""",
                         time.sleep(delay)
                 else:
                     self.status_tracker.record_subreddit_creation(
-                        self.account_name, subreddit_name, False
+                        self.account_name,
+                        subreddit_name,
+                        False,
+                        cooldown_days=int(self.profile_config.get("min_days_between_creations", 7)),
                     )
                     logger.warning(f"Failed to create r/{subreddit_name}")
             
@@ -563,6 +664,7 @@ Let's build a supportive, evidence-based community together!""",
 
     def _record_created_subreddit(self, subreddit_name: str) -> None:
         history_path = Path("scripts/subreddit_creation/history/created_subreddits.json")
+        legacy_path = Path("data/created_subreddits.json")
         try:
             history_path.parent.mkdir(parents=True, exist_ok=True)
             existing = []
@@ -578,8 +680,30 @@ Let's build a supportive, evidence-based community together!""",
             }
             existing.append(entry)
             history_path.write_text(json.dumps(existing, indent=2))
+            legacy_path.parent.mkdir(parents=True, exist_ok=True)
+            legacy = []
+            if legacy_path.exists():
+                content = legacy_path.read_text().strip()
+                if content:
+                    legacy = json.loads(content)
+            legacy.append(entry)
+            legacy_path.write_text(json.dumps(legacy, indent=2))
         except Exception as exc:
             logger.warning(f"Failed to record subreddit history: {exc}")
+
+    def _add_to_scan_list(self, subreddit_name: str) -> None:
+        path = Path("config/subreddits.json")
+        try:
+            existing = []
+            if path.exists():
+                content = path.read_text().strip()
+                if content:
+                    existing = json.loads(content)
+            if subreddit_name not in existing:
+                existing.append(subreddit_name)
+                path.write_text(json.dumps(existing, indent=2))
+        except Exception as exc:
+            logger.warning(f"Failed to update subreddits.json: {exc}")
 
 if __name__ == "__main__":
     # Create a simple command-line interface
