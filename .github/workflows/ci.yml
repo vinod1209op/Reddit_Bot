@@ -28,31 +28,39 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -q
+          mkdir -p logs/ci
+          pytest -q 2>&1 | tee logs/ci/pytest.log
 
       - name: Lint (ruff)
         run: |
-          ruff check .
+          ruff check . 2>&1 | tee logs/ci/ruff.log
 
       - name: Type check (mypy)
         run: |
-          mypy --ignore-missing-imports src
+          mypy --ignore-missing-imports src 2>&1 | tee logs/ci/mypy.log
 
       - name: Security scan (bandit)
         run: |
-          bandit -r src -x tests
+          bandit -r src -x tests 2>&1 | tee logs/ci/bandit.log
 
       - name: Dependency audit (pip-audit)
         run: |
-          pip-audit -r requirements.txt
+          pip-audit -r requirements.txt 2>&1 | tee logs/ci/pip-audit.log
 
       - name: Smoke test CLI
         run: |
-          python apps/cli/microdose_bot.py --help
+          python apps/cli/microdose_bot.py --help 2>&1 | tee logs/ci/cli_smoke.log
 
       - name: Smoke test Streamlit
         run: |
-          python -m streamlit run apps/streamlit/app.py --server.headless true --server.port 8501 &
+          python -m streamlit run apps/streamlit/app.py --server.headless true --server.port 8501 2>&1 | tee logs/ci/streamlit_smoke.log &
           sleep 5
           curl -fsS http://localhost:8501/_stcore/health
           pkill -f "streamlit run apps/streamlit/app.py"
+
+      - name: Upload CI logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-logs
+          path: logs/ci/*.log
