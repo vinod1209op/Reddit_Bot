@@ -809,14 +809,14 @@ def get_queue_count() -> int:
     return 0
 
 def get_runs_7d() -> int:
-    since = (datetime.utcnow() - timedelta(days=7)).isoformat() + "Z"
+    since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat() + "Z"
     sb_count = _fetch_supabase_count("scan_runs", {"timestamp_utc": f"gte.{since}"})
     if sb_count:
         return sb_count
     return 0
 
 def get_match_rate_7d() -> str:
-    since = (datetime.utcnow() - timedelta(days=7)).isoformat() + "Z"
+    since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat() + "Z"
     rows = _fetch_supabase_rows(
         "scan_runs",
         {
@@ -1609,12 +1609,12 @@ def main() -> None:
         
         browser_col1, browser_col2 = st.columns(2)
         with browser_col1:
-            if st.button("▶ Start", use_container_width=True):
+            if st.button("▶ Start", width="stretch"):
                 if ensure_bot(cfg):
                     st.session_state["browser_ready"] = True
                     log_ui("Browser ready.", level="ok")
         with browser_col2:
-            if st.button("■ Close", use_container_width=True):
+            if st.button("■ Close", width="stretch"):
                 close_bot()
                 st.session_state["browser_ready"] = False
                 log_ui("Browser closed.", level="info")
@@ -1622,7 +1622,7 @@ def main() -> None:
         # Quick actions
         st.subheader("Quick Actions")
 
-        if st.button("Clear search cache", use_container_width=True):
+        if st.button("Clear search cache", width="stretch"):
             for key in list(st.session_state.keys()):
                 if key.startswith(
                     (
@@ -1640,7 +1640,7 @@ def main() -> None:
             st.info("Search cache cleared.")
             st.rerun()
 
-        if st.button("Test DB connection", use_container_width=True):
+        if st.button("Test DB connection", width="stretch"):
             health = _fetch_account_health_from_supabase()
             if health:
                 log_ui(f"DB check OK • {len(health)} accounts", level="ok")
@@ -1706,7 +1706,7 @@ def main() -> None:
 
         search_left, search_right = st.columns([1, 6])
         with search_left:
-            submitted_search = st.button("Search", use_container_width=True)
+            submitted_search = st.button("Search", width="stretch")
         with search_right:
             pager_slot = st.empty()
         if submitted_search:
@@ -1785,25 +1785,25 @@ def main() -> None:
                         "cooldowns": info.get("cooldowns", {}),
                     }
                 )
-            st.dataframe(status_rows, use_container_width=True)
+            st.dataframe(status_rows, width="stretch")
         else:
             st.caption("No local account status available.")
 
         st.markdown("### Created subreddits")
         if created_subs:
-            st.dataframe(created_subs, use_container_width=True)
+            st.dataframe(created_subs, width="stretch")
         else:
             st.caption("No created subreddits recorded yet.")
 
         st.markdown("### Post schedule")
         if post_schedule:
-            st.dataframe(post_schedule, use_container_width=True)
+            st.dataframe(post_schedule, width="stretch")
         else:
             st.caption("No scheduled posts yet.")
 
         st.markdown("### Moderation activity (last 7 days)")
         if moderation_records:
-            st.dataframe(moderation_records, use_container_width=True)
+            st.dataframe(moderation_records, width="stretch")
         else:
             st.caption("No moderation history records yet.")
         if posts:
@@ -1842,14 +1842,14 @@ def main() -> None:
                 with pager_slot.container():
                     _, col_prev, col_page, col_next = st.columns([6, 1.2, 1, 1.2], gap="small")
                     with col_prev:
-                        if st.button("Prev", disabled=page_index <= 0, use_container_width=True):
+                        if st.button("Prev", disabled=page_index <= 0, width="stretch"):
                             st.session_state["page_index"] = max(0, page_index - 1)
                             st.session_state[f"page_index_{data_source}"] = st.session_state["page_index"]
                             st.rerun()
                     with col_page:
                         st.caption(f"Page {page_index + 1} of {total_pages}")
                     with col_next:
-                        if st.button("Next", disabled=(page_index + 1) >= total_pages, use_container_width=True):
+                        if st.button("Next", disabled=(page_index + 1) >= total_pages, width="stretch"):
                             st.session_state["page_index"] = min(total_pages - 1, page_index + 1)
                             st.session_state[f"page_index_{data_source}"] = st.session_state["page_index"]
                             st.rerun()
