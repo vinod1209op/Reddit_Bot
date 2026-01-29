@@ -203,6 +203,34 @@
         "**Welcome to r/{name}!**\n\n## About\nA community-first {type_lower} space for microdosing discussion.\n\n## Community Rules\n1. Be respectful and kind\n2. No sourcing or selling of substances\n3. Share experiences, not medical advice\n4. Practice harm reduction\n\n## Disclaimer\nThis community does not provide medical advice. Consult healthcare professionals.",
         "**Welcome to r/{name}!**\n\n## About\nA friendly {type_lower} forum for respectful discussion and support.\n\n## Community Rules\n1. Be respectful and kind\n2. No sourcing or selling of substances\n3. Share experiences, not medical advice\n4. Practice harm reduction\n\n## Disclaimer\nThis community does not provide medical advice. Consult healthcare professionals."
       ]
+    },
+    "corporate_public": {
+      "name_templates": [
+        "{type}Insights",
+        "{type}Research",
+        "{type}Community",
+        "{type}Forum",
+        "{type}Briefing",
+        "{type}Review"
+      ],
+      "type_variants": [
+        "Microdosing",
+        "PsychedelicResearch",
+        "Neuroplasticity",
+        "Integration",
+        "HarmReduction",
+        "Therapeutics",
+        "ClinicalInsights"
+      ],
+      "description_templates": [
+        "A professional community for clear, evidence\u2011based discussion on {type}.",
+        "A curated forum for public\u2011facing updates and responsible discussion on {type}.",
+        "A research\u2011aware space for learning and dialogue on {type} topics."
+      ],
+      "sidebar_templates": [
+        "**Welcome to r/{name}!**\n\n## Purpose\nA professional, public\u2011facing community for evidence\u2011based discussion on {type_lower}.\n\n## Community Guidelines\n1. Be respectful and constructive\n2. No sourcing or transactions\n3. Share experiences, not medical advice\n4. Cite sources for factual claims\n5. Practice harm reduction\n\n## What to Post\n- Research summaries and insights\n- Thoughtful questions\n- Resource recommendations\n\n## Disclaimer\nThis community does not provide medical advice. Consult qualified professionals.",
+        "**Welcome to r/{name}!**\n\n## About\nWe focus on clear, responsible conversations about {type_lower}.\n\n## Guidelines\n1. Be respectful and constructive\n2. No sourcing or sales\n3. No medical advice\n4. Cite sources when possible\n5. Emphasize harm reduction\n\n## Posting Tips\n- Be concise and evidence\u2011oriented\n- Link primary sources when available\n- Separate experience from claims\n\n## Disclaimer\nThis community does not provide medical advice. Consult qualified professionals."
+      ]
     }
   }
 }

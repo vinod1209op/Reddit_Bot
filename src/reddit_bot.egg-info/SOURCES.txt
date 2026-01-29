@@ -4,9 +4,13 @@ src/__init__.py
 src/microdose_study_bot/__init__.py
 src/microdose_study_bot/core/__init__.py
 src/microdose_study_bot/core/account_manager.py
+src/microdose_study_bot/core/account_status.py
 src/microdose_study_bot/core/config.py
+src/microdose_study_bot/core/config_models.py
 src/microdose_study_bot/core/logging.py
+src/microdose_study_bot/core/metrics.py
 src/microdose_study_bot/core/models.py
+src/microdose_study_bot/core/rate_limiter.py
 src/microdose_study_bot/core/reddit_client.py
 src/microdose_study_bot/core/text_normalization.py
 src/microdose_study_bot/core/safety/__init__.py
@@ -14,9 +18,12 @@ src/microdose_study_bot/core/safety/checker.py
 src/microdose_study_bot/core/safety/policies.py
 src/microdose_study_bot/core/storage/__init__.py
 src/microdose_study_bot/core/storage/csv_log_writer.py
+src/microdose_study_bot/core/storage/idempotency_store.py
 src/microdose_study_bot/core/storage/scan_store.py
+src/microdose_study_bot/core/storage/state_cleanup.py
 src/microdose_study_bot/core/utils/__init__.py
 src/microdose_study_bot/core/utils/console_tee.py
+src/microdose_study_bot/core/utils/http.py
 src/microdose_study_bot/core/utils/retry.py
 src/microdose_study_bot/core/utils/scan_shards.py
 src/microdose_study_bot/core/utils/vpn_manager.py
@@ -32,6 +39,7 @@ src/microdose_study_bot/reddit_api/metrics.py
 src/microdose_study_bot/reddit_api/reply.py
 src/microdose_study_bot/reddit_api/scan.py
 src/microdose_study_bot/reddit_selenium/__init__.py
+src/microdose_study_bot/reddit_selenium/automation_base.py
 src/microdose_study_bot/reddit_selenium/login.py
 src/microdose_study_bot/reddit_selenium/main.py
 src/microdose_study_bot/reddit_selenium/rate_limit.py
@@ -49,4 +57,5 @@ src/microdose_study_bot/reddit_selenium/utils/safety_enforcer_stub.py
 src/reddit_bot.egg-info/PKG-INFO
 src/reddit_bot.egg-info/SOURCES.txt
 src/reddit_bot.egg-info/dependency_links.txt
+src/reddit_bot.egg-info/entry_points.txt
 src/reddit_bot.egg-info/top_level.txt

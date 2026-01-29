@@ -67,6 +67,7 @@ class UnifiedLogger:
     _lock = threading.Lock()
     _sentry_initialized = False
     _metrics_thread_started = False
+    _global_initialized = False
     
     def __init__(self, name: str = "reddit_bot", log_level: Optional[str] = None):
         self.name = name
@@ -80,74 +81,31 @@ class UnifiedLogger:
         
         with self._lock:
             self.logger = logging.getLogger(name)
-            
-            # Only add handlers if this logger hasn't been initialized yet
-            if name not in UnifiedLogger._initialized_loggers:
-                self.logger.setLevel(level)
-                
+            self.logger.setLevel(level)
+            # Configure root logger once; all loggers propagate to root
+            if not UnifiedLogger._global_initialized:
                 # Create logs directory relative to repo root
                 path_parts = Path(__file__).resolve().parents
                 project_root = path_parts[3] if len(path_parts) > 3 else path_parts[2]
                 logs_dir = project_root / "logs"
                 logs_dir.mkdir(exist_ok=True)
-                
-                # Use daily log files with rotation
+
                 timestamp = datetime.now().strftime("%Y%m%d")
                 log_file = logs_dir / f"bot_{timestamp}.log"
-                
-                # Rotating file handler (10 MB max, keep 5 backups)
-                file_handler = RotatingFileHandler(
-                    log_file,
-                    maxBytes=10*1024*1024,  # 10 MB
-                    backupCount=5,
-                    encoding='utf-8'
-                )
-                file_handler.setLevel(level)
-                
-                # Console handler with different format
-                console_handler = logging.StreamHandler(sys.stdout)
-                console_handler.setLevel(
-                    getattr(logging, os.getenv('CONSOLE_LOG_LEVEL', 'INFO').upper(), logging.INFO)
-                )
-                
-                # Formatters
-                detailed_formatter = logging.Formatter(
-                    '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
-                )
-                simple_formatter = logging.Formatter(
-                    '%(asctime)s - %(levelname)s - %(message)s'
-                )
 
-                if os.getenv("LOG_REDACTION", "1").lower() not in ("0", "false", "no"):
-                    detailed_formatter = _RedactingFormatter(detailed_formatter)
-                    simple_formatter = _RedactingFormatter(simple_formatter)
-                
-                file_handler.setFormatter(detailed_formatter)
-                console_handler.setFormatter(simple_formatter)
-                
-                self.logger.addHandler(file_handler)
-                self.logger.addHandler(console_handler)
-                self.logger.propagate = False
-                
-                # Structured JSON logging (enabled by default)
-                if os.getenv('ENABLE_JSON_LOGGING', '1').lower() not in ('0', 'false', 'no'):
-                    self._enable_json_logging(logs_dir, timestamp, level)
+                # Configure root handlers once
+                self._ensure_root_logger(logs_dir, timestamp, level)
 
-                # Metrics handler + snapshots
                 if os.getenv("METRICS_ENABLED", "1").lower() not in ("0", "false", "no"):
-                    self.logger.addHandler(_MetricsHandler())
                     self._start_metrics_thread(logs_dir)
 
-                # Optional Sentry integration
+                # Optional Sentry integration (once)
                 self._maybe_init_sentry()
 
-                # Configure root logger for modules that use logging.getLogger
-                self._ensure_root_logger(logs_dir, timestamp, level)
-                
-                UnifiedLogger._initialized_loggers.add(name)
+                UnifiedLogger._global_initialized = True
                 self.logger.info(f"Logger initialized. Log file: {log_file}")
-            else:
-                self.logger.debug(f"Reusing existing logger: {name}")
+            # Let all loggers propagate to root handlers
+            self.logger.propagate = True
     
     def _enable_json_logging(self, logs_dir: Path, timestamp: str, level: int, target_logger: Optional[logging.Logger] = None):
         """Enable JSON-structured logging to a separate file"""

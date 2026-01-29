@@ -21,7 +21,7 @@ logger = UnifiedLogger("SubredditCreator").get_logger()
 class SubredditCreator(RedditAutomationBase):
     """Creates and configures new subreddits for MCRDSE"""
     
-    def __init__(self, account_name="account1", headless=False, dry_run=False):
+    def __init__(self, account_name="account1", headless=False, dry_run=False, ui_mode="modern", session=None, owns_session=True):
         """
         Initialize with account name from config/accounts.json
         
@@ -30,12 +30,34 @@ class SubredditCreator(RedditAutomationBase):
         """
         os.environ["SELENIUM_HEADLESS"] = "1" if headless else "0"
         self.account_name = account_name
-        super().__init__(account_name=account_name, dry_run=dry_run)
+        super().__init__(account_name=account_name, dry_run=dry_run, session=session, owns_session=owns_session)
         self.config = self.load_config()
         self.profile_name = self.config.get("default_profile") or "conservative"
         self.profile_config = self.config.get("profiles", {}).get(self.profile_name, {})
         self.network_config = self.load_network_config()
+        self.randomize_templates = self._bool_env("RANDOMIZE_TEMPLATES", default=True) or bool(
+            self.config.get("randomize_templates", True)
+        )
+        self.bypass_cooldowns = self._bool_env("BYPASS_CREATION_COOLDOWN", default=False)
+        self.template_set_name = self._pick_template_set_name()
         self.subreddit_names = self.generate_subreddit_names()
+        self.ui_mode = ui_mode
+
+    def _bool_env(self, name: str, default: bool = False) -> bool:
+        value = os.getenv(name)
+        if value is None:
+            return default
+        return str(value).strip().lower() in ("1", "true", "yes", "y", "on")
+
+    def _pick_template_set_name(self) -> Optional[str]:
+        if "subreddit_templates" in self.config:
+            return None
+        template_sets = self.config.get("template_sets", {})
+        if not isinstance(template_sets, dict) or not template_sets:
+            return None
+        if self.randomize_templates:
+            return random.choice(list(template_sets.keys()))
+        return None
         
     def load_config(self) -> Dict:
         """Load configuration from files - FIXED VERSION"""
@@ -124,7 +146,7 @@ class SubredditCreator(RedditAutomationBase):
         template_sets = self.config.get("template_sets", {})
         if not isinstance(template_sets, dict) or not template_sets:
             return {}
-        set_name = self.profile_config.get("template_set") or self.config.get("default_template_set")
+        set_name = self.template_set_name or self.profile_config.get("template_set") or self.config.get("default_template_set")
         if not set_name:
             set_name = next(iter(template_sets))
         return template_sets.get(set_name, {})
@@ -146,7 +168,30 @@ class SubredditCreator(RedditAutomationBase):
                 if isinstance(group, list):
                     names.extend(group)
             if names:
-                return list(dict.fromkeys(names))
+                # Expand names with optional variants for stronger randomization
+                variants = self.network_config.get("name_variants", {})
+                prefixes = variants.get("prefixes", ["", "The", "Official"])
+                suffixes = variants.get("suffixes", ["Hub", "Forum", "Insights", "Updates", "Review"])
+                expanded = []
+                for base in names:
+                    expanded.append(base)
+                    if self.randomize_templates:
+                        for p in prefixes:
+                            for s in suffixes:
+                                if p:
+                                    expanded.append(f"{p}{base}{s}")
+                                else:
+                                    expanded.append(f"{base}{s}")
+                # Normalize, de-dupe, and shuffle
+                cleaned = []
+                seen = set()
+                for name in expanded:
+                    norm = "".join(ch for ch in name if ch.isalnum() or ch == "_")[:21]
+                    if norm and norm not in seen:
+                        seen.add(norm)
+                        cleaned.append(norm)
+                random.shuffle(cleaned)
+                return cleaned
         names = []
         if "subreddit_templates" in self.config:
             for template in self.config.get("subreddit_templates", []):
@@ -216,6 +261,8 @@ class SubredditCreator(RedditAutomationBase):
             return False
 
     def _creation_limits_ok(self) -> Tuple[bool, str]:
+        if self._bool_env("BYPASS_CREATION_LIMITS", default=False):
+            return True, "bypassed"
         profile = self.profile_config or {}
         max_per_day = int(profile.get("max_subreddits_per_day", 1))
         max_per_week = int(profile.get("max_subreddits_per_week", 2))
@@ -261,77 +308,535 @@ class SubredditCreator(RedditAutomationBase):
             return False
     
     def create_subreddit(self, name, description, sidebar, dry_run=False):
-        """Create a new subreddit"""
+        """Create a new subreddit using the selected UI mode."""
+        if self.ui_mode == "classic":
+            return self.create_subreddit_classic(name, description, sidebar, dry_run=dry_run)
+        return self.create_subreddit_modern(name, description, sidebar, dry_run=dry_run)
+
+    def create_subreddit_modern(self, name, description, sidebar, dry_run=False):
+        """Create a new subreddit using the modern Reddit UI."""
         try:
-            logger.info(f"Attempting to create r/{name}")
+            logger.info(f"Attempting to create r/{name} (modern)")
             if dry_run:
                 logger.info(f"[dry-run] Would create r/{name}")
                 return True
-            
-            # Navigate to creation page
-            self.driver.get("https://old.reddit.com/subreddits/create")
-            time.sleep(3)
-            
-            # Fill subreddit name
+
             from selenium.webdriver.common.by import By
             from selenium.webdriver.support.ui import WebDriverWait
             from selenium.webdriver.support import expected_conditions as EC
-            
-            name_field = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.ID, "name"))
-            )
-            name_field.clear()
-            name_field.send_keys(name)
-            time.sleep(1)
+
+            def _find_field(selectors, timeout=10):
+                last_error = None
+                end_time = time.time() + timeout
+                while time.time() < end_time:
+                    for by, selector in selectors:
+                        try:
+                            elements = self.driver.find_elements(by, selector)
+                        except Exception as exc:
+                            last_error = exc
+                            continue
+                        if not elements:
+                            continue
+                        visible = [el for el in elements if el.is_displayed() and el.is_enabled()]
+                        if visible:
+                            logger.info(f"Found visible field for selector: {selector}")
+                            return visible[0]
+                        if elements:
+                            last_error = None
+                    time.sleep(0.2)
+                if last_error:
+                    raise last_error
+                raise RuntimeError("Field not found/visible for selectors: %s" % selectors)
+
+            def _fill_field(field, value, label):
+                try:
+                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", field)
+                    self.driver.execute_script(
+                        "arguments[0].removeAttribute('readonly'); arguments[0].removeAttribute('disabled');",
+                        field,
+                    )
+                    field.click()
+                    field.clear()
+                    field.send_keys(value)
+                    return
+                except Exception as exc:
+                    logger.warning(f"Fallback to JS set for {label}: {exc}")
+                    self.driver.execute_script(
+                        """
+                        const el = arguments[0];
+                        const val = arguments[1];
+                        el.value = val;
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                        """,
+                        field,
+                        value,
+                    )
+
+            def _safe_click(element, label):
+                try:
+                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+                    element.click()
+                    return True
+                except Exception as exc:
+                    logger.warning(f"Fallback to JS click for {label}: {exc}")
+                    try:
+                        self.driver.execute_script("arguments[0].click();", element)
+                        return True
+                    except Exception as js_exc:
+                        logger.warning(f"JS click failed for {label}: {js_exc}")
+                        return False
+
+            logger.info("Using modern create flow...")
+            self.driver.get("https://www.reddit.com/subreddits/create")
+            time.sleep(4)
+
+            name_field = _find_field([
+                (By.CSS_SELECTOR, "input[name='name']"),
+                (By.ID, "name"),
+                (By.CSS_SELECTOR, "input[aria-label*='name' i]"),
+                (By.CSS_SELECTOR, "input[placeholder*='name' i]"),
+                (By.CSS_SELECTOR, "input[data-testid*='name' i]"),
+            ], timeout=6)
+            _fill_field(name_field, name, "name_modern")
+
+            title_field = _find_field([
+                (By.CSS_SELECTOR, "input[name='title']"),
+                (By.ID, "title"),
+                (By.CSS_SELECTOR, "input[aria-label*='title' i]"),
+                (By.CSS_SELECTOR, "input[placeholder*='title' i]"),
+            ], timeout=6)
+            _fill_field(title_field, f"Microdosing {name.split('_')[-1]} Community", "title_modern")
+
+            desc_field = _find_field([
+                (By.CSS_SELECTOR, "textarea[name='description']"),
+                (By.CSS_SELECTOR, "textarea[aria-label*='description' i]"),
+                (By.CSS_SELECTOR, "textarea[placeholder*='description' i]"),
+                (By.CSS_SELECTOR, "textarea[name='public_description']"),
+            ], timeout=6)
+            _fill_field(desc_field, description, "description_modern")
+
+            for selector in [
+                "input[type='radio'][value='public']",
+                "input[name='type'][value='public']",
+                "input[name='communityType'][value='public']",
+                "input[name='privacy'][value='public']",
+            ]:
+                try:
+                    radio = self.driver.find_element(By.CSS_SELECTOR, selector)
+                    _safe_click(radio, "public_modern")
+                    break
+                except Exception:
+                    continue
+
+            submit_button = None
+            for by, selector in [
+                (By.CSS_SELECTOR, "button[type='submit']"),
+                (By.XPATH, "//button[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'create')]"),
+                (By.XPATH, "//button[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'community')]"),
+            ]:
+                try:
+                    candidates = self.driver.find_elements(by, selector)
+                except Exception:
+                    candidates = []
+                visible = [c for c in candidates if c.is_displayed() and c.is_enabled()]
+                if visible:
+                    submit_button = visible[-1]
+                    logger.info(f"Found modern submit button via selector: {selector}")
+                    break
+            if submit_button:
+                if os.getenv("MANUAL_SUBMIT", "1").strip().lower() not in ("0", "false", "no"):
+                    logger.info("Manual submit enabled. Please click the Create/Submit button in the browser.")
+                    try:
+                        input("After clicking submit, press Enter to continue...")
+                    except Exception:
+                        pass
+                else:
+                    _safe_click(submit_button, "submit_modern")
+                    time.sleep(5)
+                return True
+            logger.info("Modern submit button not found.")
+            return False
+        except Exception as exc:
+            logger.warning(f"Modern create flow failed: {exc}")
+            return False
+
+    def create_subreddit_classic(self, name, description, sidebar, dry_run=False):
+        """Create a new subreddit using the classic Reddit UI."""
+        try:
+            logger.info(f"Attempting to create r/{name} (classic)")
+            if dry_run:
+                logger.info(f"[dry-run] Would create r/{name}")
+                return True
+
+            from selenium.webdriver.common.by import By
+            from selenium.webdriver.support.ui import WebDriverWait
+            from selenium.webdriver.support import expected_conditions as EC
+
+            def _find_field(selectors, timeout=10):
+                last_error = None
+                end_time = time.time() + timeout
+                while time.time() < end_time:
+                    for by, selector in selectors:
+                        try:
+                            elements = self.driver.find_elements(by, selector)
+                        except Exception as exc:
+                            last_error = exc
+                            continue
+                        if not elements:
+                            continue
+                        visible = [el for el in elements if el.is_displayed() and el.is_enabled()]
+                        if visible:
+                            logger.info(f"Found visible field for selector: {selector}")
+                            return visible[0]
+                        if elements:
+                            last_error = None
+                    time.sleep(0.2)
+                if last_error:
+                    raise last_error
+                raise RuntimeError("Field not found/visible for selectors: %s" % selectors)
+
+            def _fill_field(field, value, label):
+                try:
+                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", field)
+                    self.driver.execute_script(
+                        "arguments[0].removeAttribute('readonly'); arguments[0].removeAttribute('disabled');",
+                        field,
+                    )
+                    field.click()
+                    field.clear()
+                    field.send_keys(value)
+                    return
+                except Exception as exc:
+                    logger.warning(f"Fallback to JS set for {label}: {exc}")
+                    self.driver.execute_script(
+                        """
+                        const el = arguments[0];
+                        const val = arguments[1];
+                        el.value = val;
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                        """,
+                        field,
+                        value,
+                    )
+
+            def _safe_click(element, label):
+                try:
+                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+                    element.click()
+                    return True
+                except Exception as exc:
+                    logger.warning(f"Fallback to JS click for {label}: {exc}")
+                    try:
+                        self.driver.execute_script("arguments[0].click();", element)
+                        return True
+                    except Exception as js_exc:
+                        logger.warning(f"JS click failed for {label}: {js_exc}")
+                        return False
+
+            logger.info("Using classic create flow...")
+            self.driver.get("https://old.reddit.com/subreddits/create")
+            time.sleep(3)
+
+            try:
+                name_field = _find_field([(By.ID, "name")])
+                _fill_field(name_field, name, "name")
+                time.sleep(1)
+            except Exception as exc:
+                logger.warning(f"Failed to fill name: {exc}")
             
             # Fill title
-            title_field = self.driver.find_element(By.ID, "title")
-            title_field.clear()
-            title_field.send_keys(f"Microdosing {name.split('_')[-1]} Community")
-            time.sleep(1)
+            try:
+                title_field = _find_field([(By.ID, "title")])
+                _fill_field(title_field, f"Microdosing {name.split('_')[-1]} Community", "title")
+                time.sleep(1)
+            except Exception as exc:
+                logger.warning(f"Failed to fill title: {exc}")
             
             # Fill description
-            desc_field = self.driver.find_element(By.ID, "description")
-            desc_field.clear()
-            desc_field.send_keys(description)
-            time.sleep(1)
+            logger.info("Filling public description...")
+            desc_field = None
+            try:
+                desc_field = _find_field([
+                    (By.NAME, "public_description"),
+                    (By.ID, "public_description"),
+                    (By.ID, "description"),
+                    (By.NAME, "description"),
+                    (By.CSS_SELECTOR, "textarea[name='description']"),
+                    (By.CSS_SELECTOR, "textarea[name='public_description']"),
+                ])
+                try:
+                    desc_attrs = self.driver.execute_script(
+                        "const el = arguments[0]; return {"
+                        "id: el.id || '', "
+                        "name: el.name || '', "
+                        "disabled: !!el.disabled, "
+                        "readonly: !!el.readOnly, "
+                        "tag: el.tagName.toLowerCase(), "
+                        "type: (el.type || '')"
+                        "};",
+                        desc_field,
+                    )
+                    logger.info(f"Description field attrs: {desc_attrs}")
+                except Exception as exc:
+                    logger.warning(f"Failed to inspect description field attrs: {exc}")
+                _fill_field(desc_field, description, "description")
+                time.sleep(1)
+            except Exception as exc:
+                logger.warning(f"Failed to fill public description: {exc}")
             
             # Fill sidebar
-            sidebar_field = self.driver.find_element(By.ID, "sidebar")
-            sidebar_field.clear()
-            sidebar_field.send_keys(sidebar)
-            time.sleep(1)
+            logger.info("Filling sidebar...")
+            try:
+                textareas = self.driver.find_elements(By.TAG_NAME, "textarea")
+                visible_textareas = []
+                for ta in textareas:
+                    if ta.is_displayed():
+                        visible_textareas.append(
+                            {
+                                "id": ta.get_attribute("id") or "",
+                                "name": ta.get_attribute("name") or "",
+                                "aria": ta.get_attribute("aria-label") or "",
+                                "class": (ta.get_attribute("class") or "")[:80],
+                            }
+                        )
+                if visible_textareas:
+                    logger.info(f"Visible textareas: {visible_textareas}")
+            except Exception as exc:
+                logger.warning(f"Failed to list textareas: {exc}")
+
+            try:
+                sidebar_field = _find_field([
+                    (By.XPATH, "//h3[contains(translate(., 'SIDEBAR', 'sidebar'), 'sidebar')]/following::textarea[1]"),
+                    (By.XPATH, "//label[contains(translate(., 'SIDEBAR', 'sidebar'), 'sidebar')]/following::textarea[1]"),
+                    (By.NAME, "description"),
+                    (By.ID, "description"),
+                    (By.CSS_SELECTOR, "textarea[name='description']"),
+                    (By.ID, "sidebar"),
+                    (By.NAME, "sidebar"),
+                    (By.CSS_SELECTOR, "textarea[name='sidebar']"),
+                ])
+                if desc_field is not None and sidebar_field == desc_field:
+                    logger.info("Sidebar field matches description field; skipping sidebar fill.")
+                else:
+                    _fill_field(sidebar_field, sidebar, "sidebar")
+                time.sleep(1)
+            except Exception as exc:
+                logger.warning(f"Failed to fill sidebar: {exc}")
+
+            # Fill submission text (optional)
+            try:
+                submit_field = _find_field([
+                    (By.NAME, "submit_text"),
+                    (By.ID, "submit_text"),
+                    (By.CSS_SELECTOR, "textarea[name='submit_text']"),
+                ])
+                _fill_field(submit_field, "", "submit_text")
+                time.sleep(0.5)
+            except Exception as exc:
+                logger.info(f"Submission text field not filled: {exc}")
             
-            # Select category (Health)
-            category_select = self.driver.find_element(By.ID, "type")
-            for option in category_select.find_elements(By.TAG_NAME, "option"):
-                if "Health" in option.text:
-                    option.click()
-                    break
-            time.sleep(1)
+            # Select category (Health) if available
+            try:
+                logger.info("Selecting category...")
+                category_select = None
+                for by, selector in [
+                    (By.ID, "type"),
+                    (By.NAME, "type"),
+                    (By.CSS_SELECTOR, "select[name='type']"),
+                    (By.CSS_SELECTOR, "select#type"),
+                ]:
+                    try:
+                        category_select = self.driver.find_element(by, selector)
+                        break
+                    except Exception:
+                        continue
+                if category_select:
+                    for option in category_select.find_elements(By.TAG_NAME, "option"):
+                        if "Health" in option.text:
+                            option.click()
+                            break
+                    time.sleep(1)
+                else:
+                    logger.info("Category select not found; skipping category selection.")
+            except Exception as exc:
+                logger.warning(f"Category selection skipped: {exc}")
             
-            # Set to public
-            public_radio = self.driver.find_element(By.CSS_SELECTOR, "input[value='public']")
-            public_radio.click()
-            time.sleep(1)
+            # Set to public if available
+            try:
+                logger.info("Setting visibility to public...")
+                public_radio = None
+                for by, selector in [
+                    (By.CSS_SELECTOR, "input[value='public']"),
+                    (By.CSS_SELECTOR, "input[name='sr_type'][value='public']"),
+                    (By.CSS_SELECTOR, "input[type='radio'][value='public']"),
+                ]:
+                    try:
+                        public_radio = self.driver.find_element(by, selector)
+                        break
+                    except Exception:
+                        continue
+                if public_radio:
+                    _safe_click(public_radio, "public visibility")
+                    time.sleep(1)
+                else:
+                    logger.info("Public radio not found; skipping visibility selection.")
+            except Exception as exc:
+                logger.warning(f"Public visibility selection skipped: {exc}")
             
             # Add rules (basic ones)
-            rule_fields = self.driver.find_elements(By.CSS_SELECTOR, "input[name^='rules']")
-            rules = [
-                "No sourcing or selling of substances",
-                "Be respectful and kind",
-                "Share experiences, not medical advice",
-                "Practice harm reduction principles"
-            ]
-            
-            for i, rule in enumerate(rules[:min(len(rules), len(rule_fields))]):
-                rule_fields[i].send_keys(rule)
-                time.sleep(0.5)
+            try:
+                logger.info("Filling rules...")
+                rule_fields = [
+                    f for f in self.driver.find_elements(By.CSS_SELECTOR, "input[name^='rules']")
+                    if f.is_displayed() and f.is_enabled()
+                ]
+                rules = [
+                    "No sourcing or selling of substances",
+                    "Be respectful and kind",
+                    "Share experiences, not medical advice",
+                    "Practice harm reduction principles"
+                ]
+                
+                for i, rule in enumerate(rules[:min(len(rules), len(rule_fields))]):
+                    try:
+                        _fill_field(rule_fields[i], rule, f"rule_{i+1}")
+                        time.sleep(0.5)
+                    except Exception as exc:
+                        logger.warning(f"Rule field {i+1} skipped: {exc}")
+            except Exception as exc:
+                logger.info(f"Rules section skipped: {exc}")
             
             # Submit
-            submit_button = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
-            submit_button.click()
-            time.sleep(5)
+            logger.info("Submitting form...")
+            submit_button = None
+            try:
+                def _btn_info(el):
+                    return {
+                        "tag": el.tag_name,
+                        "type": el.get_attribute("type") or "",
+                        "name": el.get_attribute("name") or "",
+                        "id": el.get_attribute("id") or "",
+                        "value": (el.get_attribute("value") or "")[:60],
+                        "text": (el.text or "")[:60],
+                        "displayed": el.is_displayed(),
+                        "enabled": el.is_enabled(),
+                    }
+
+                candidates = []
+                for sel in [
+                    "input[type='submit']",
+                    "button[type='submit']",
+                    "input[type='button']",
+                    "button",
+                ]:
+                    try:
+                        candidates.extend(self.driver.find_elements(By.CSS_SELECTOR, sel))
+                    except Exception:
+                        continue
+                if candidates:
+                    visible = [_btn_info(c) for c in candidates if c.is_displayed()]
+                    if visible:
+                        logger.info(f"Submit candidates (visible): {visible}")
+            except Exception as exc:
+                logger.warning(f"Failed to list submit candidates: {exc}")
+
+            for by, selector in [
+                (By.CSS_SELECTOR, "input[type='submit']"),
+                (By.CSS_SELECTOR, "button[type='submit']"),
+                (By.XPATH, "//input[@type='submit' and contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'create')]"),
+                (By.XPATH, "//input[@type='button' and contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'create')]"),
+                (By.XPATH, "//button[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'create')]"),
+                (By.XPATH, "//button[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'submit')]"),
+            ]:
+                try:
+                    candidates = self.driver.find_elements(by, selector)
+                except Exception:
+                    candidates = []
+                visible = [c for c in candidates if c.is_displayed() and c.is_enabled()]
+                if visible:
+                    submit_button = visible[-1]
+                    logger.info(f"Found submit button via selector: {selector}")
+                    break
+            if not submit_button:
+                try:
+                    self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                    time.sleep(0.5)
+                except Exception:
+                    pass
+                for by, selector in [
+                    (By.CSS_SELECTOR, "input[type='submit']"),
+                    (By.CSS_SELECTOR, "button[type='submit']"),
+                    (By.XPATH, "//input[@type='submit' and contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'create')]"),
+                    (By.XPATH, "//button[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'create')]"),
+                ]:
+                    try:
+                        candidates = self.driver.find_elements(by, selector)
+                    except Exception:
+                        candidates = []
+                    visible = [c for c in candidates if c.is_displayed() and c.is_enabled()]
+                    if visible:
+                        submit_button = visible[-1]
+                        logger.info(f"Found submit button after scroll via selector: {selector}")
+                        break
+            if submit_button:
+                if os.getenv("MANUAL_SUBMIT", "1").strip().lower() not in ("0", "false", "no"):
+                    logger.info("Manual submit enabled. Please click the Create/Submit button in the browser.")
+                    try:
+                        input("After clicking submit, press Enter to continue...")
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        disabled_attr = submit_button.get_attribute("disabled")
+                        if disabled_attr:
+                            logger.info(f"Submit button disabled; attribute={disabled_attr!r}")
+                        _safe_click(submit_button, "submit")
+                        time.sleep(5)
+                        logger.info(f"Post-submit URL: {self.driver.current_url}")
+                        if "/subreddits/create" in (self.driver.current_url or ""):
+                            try:
+                                error_elems = self.driver.find_elements(By.CSS_SELECTOR, ".error, .errors, .error .error")
+                            except Exception:
+                                error_elems = []
+                            error_texts = []
+                            for el in error_elems:
+                                try:
+                                    txt = (el.text or "").strip()
+                                    if txt:
+                                        error_texts.append(txt)
+                                except Exception:
+                                    continue
+                            if error_texts:
+                                logger.warning(f"Create form errors: {error_texts}")
+                                if any("tricky" in e.lower() or "captcha" in e.lower() for e in error_texts):
+                                    logger.warning("CAPTCHA detected. Please solve it in the browser, then press Enter here to retry submit.")
+                                    try:
+                                        input("Solve CAPTCHA in the open browser, then press Enter to continue...")
+                                    except Exception:
+                                        pass
+                                    _safe_click(submit_button, "submit_after_captcha")
+                                    time.sleep(5)
+                            else:
+                                # Fallback: grab any visible text that hints at error
+                                try:
+                                    body_text = (self.driver.find_element(By.TAG_NAME, "body").text or "")
+                                    for hint in ["already taken", "name is taken", "try another", "error", "invalid"]:
+                                        if hint in body_text.lower():
+                                            logger.warning(f"Create form hint detected: {hint}")
+                                            break
+                                except Exception:
+                                    pass
+                    except Exception as exc:
+                        logger.warning(f"Submit click failed: {exc}")
+                        try:
+                            self.driver.execute_script("arguments[0].form && arguments[0].form.submit();", submit_button)
+                            time.sleep(5)
+                        except Exception as js_exc:
+                            logger.warning(f"Submit form JS failed: {js_exc}")
+            else:
+                logger.info("Submit button not found; skipping submit.")
             
             # Verify creation
             if f"/r/{name}/" in (self.driver.current_url or ""):
@@ -363,6 +868,7 @@ class SubredditCreator(RedditAutomationBase):
     
     def setup_automod(self, subreddit_name):
         """Setup AutoModerator rules"""
+        from selenium.webdriver.common.by import By
         automod_rules = """---
 # AutoModerator rules for r/{} - MCRDSE Community
 
@@ -435,6 +941,7 @@ modmail: "Self-harm content detected: {{permalink}}"
     
     def create_initial_content(self, subreddit_name):
         """Create initial posts to seed the community"""
+        from selenium.webdriver.common.by import By
         initial_posts = [
             {
                 "title": "Welcome to r/{}! Introduce yourself!".format(subreddit_name),
@@ -498,7 +1005,7 @@ Let's build a supportive, evidence-based community together!""",
             except Exception as e:
                 logger.error(f"Failed to create post: {e}")
     
-    def run(self, max_subreddits=3, headless=False):
+    def run(self, max_subreddits=3, headless=False, keep_open: bool = False):
         """Main execution method"""
         try:
             validation = self.run_validations()
@@ -528,15 +1035,18 @@ Let's build a supportive, evidence-based community together!""",
                 return
             
             # Create subreddits
+            created_history = self._load_created_subreddits()
+            random.shuffle(self.subreddit_names)
             created_count = 0
             for subreddit_name in self.subreddit_names[:max_subreddits]:
-                if not self.status_tracker.can_perform_action(
-                    self.account_name, "creation", subreddit=subreddit_name
-                ):
-                    logger.info(f"Skipping creation for r/{subreddit_name} due to cooldown/limits")
-                    continue
-                if self._subreddit_exists(subreddit_name):
-                    logger.info(f"Skipping r/{subreddit_name}; already exists")
+                if not self.bypass_cooldowns:
+                    if not self.status_tracker.can_perform_action(
+                        self.account_name, "creation", subreddit=subreddit_name
+                    ):
+                        logger.info(f"Skipping creation for r/{subreddit_name} due to cooldown/limits")
+                        continue
+                if subreddit_name in created_history:
+                    logger.info(f"Skipping r/{subreddit_name}; already created (history)")
                     continue
                 logger.info(f"Processing: r/{subreddit_name}")
                 
@@ -592,33 +1102,37 @@ Let's build a supportive, evidence-based community together!""",
                 if creation_result.success and creation_result.result:
                     # Configure settings
                     time.sleep(5)
-                    if self.config.get("post_creation", {}).get("configure_settings", True):
-                        self.execute_safely(
-                            lambda: self.configure_subreddit(subreddit_name),
-                            max_retries=2,
-                            login_required=True,
-                            action_name="configure_subreddit",
-                        )
+                    if os.getenv("SKIP_CREATION_SETUP", "").strip().lower() not in ("1", "true", "yes"):
+                        if self.config.get("post_creation", {}).get("configure_settings", True):
+                            self.execute_safely(
+                                lambda: self.configure_subreddit(subreddit_name),
+                                max_retries=2,
+                                login_required=True,
+                                action_name="configure_subreddit",
+                            )
+                    else:
+                        logger.info("Skipping post-creation setup steps (SKIP_CREATION_SETUP=1)")
                     
-                    # Setup AutoModerator
-                    time.sleep(3)
-                    if self.config.get("post_creation", {}).get("setup_automod", True):
-                        self.execute_safely(
-                            lambda: self.setup_automod(subreddit_name),
-                            max_retries=2,
-                            login_required=True,
-                            action_name="setup_automod",
-                        )
-                    
-                    # Create initial content
-                    time.sleep(3)
-                    if self.config.get("post_creation", {}).get("welcome_post", True):
-                        self.execute_safely(
-                            lambda: self.create_initial_content(subreddit_name),
-                            max_retries=2,
-                            login_required=True,
-                            action_name="welcome_post",
-                        )
+                    if os.getenv("SKIP_CREATION_SETUP", "").strip().lower() not in ("1", "true", "yes"):
+                        # Setup AutoModerator
+                        time.sleep(3)
+                        if self.config.get("post_creation", {}).get("setup_automod", True):
+                            self.execute_safely(
+                                lambda: self.setup_automod(subreddit_name),
+                                max_retries=2,
+                                login_required=True,
+                                action_name="setup_automod",
+                            )
+                        
+                        # Create initial content
+                        time.sleep(3)
+                        if self.config.get("post_creation", {}).get("welcome_post", True):
+                            self.execute_safely(
+                                lambda: self.create_initial_content(subreddit_name),
+                                max_retries=2,
+                                login_required=True,
+                                action_name="welcome_post",
+                            )
                     
                     created_count += 1
                     self.status_tracker.record_subreddit_creation(
@@ -628,6 +1142,7 @@ Let's build a supportive, evidence-based community together!""",
                         cooldown_days=int(self.profile_config.get("min_days_between_creations", 7)),
                     )
                     self._record_created_subreddit(subreddit_name)
+                    created_history.add(subreddit_name)
                     if self.config.get("post_creation", {}).get("add_to_scan_list", False):
                         self._add_to_scan_list(subreddit_name)
                     logger.info(f"Successfully setup r/{subreddit_name}")
@@ -638,8 +1153,15 @@ Let's build a supportive, evidence-based community together!""",
                     if self.dry_run:
                         logger.info(f"[dry-run] Would wait {delay/3600:.1f} hours before next creation")
                     else:
-                        logger.info(f"Waiting {delay/3600:.1f} hours before next creation")
-                        time.sleep(delay)
+                        if max_subreddits <= 1:
+                            logger.info("Single-create run; skipping long wait before next creation.")
+                            try:
+                                input("Press Enter to continue to the next step...")
+                            except Exception:
+                                pass
+                        else:
+                            logger.info(f"Waiting {delay/3600:.1f} hours before next creation")
+                            time.sleep(delay)
                 else:
                     self.status_tracker.record_subreddit_creation(
                         self.account_name,
@@ -656,7 +1178,8 @@ Let's build a supportive, evidence-based community together!""",
             import traceback
             traceback.print_exc()
         finally:
-            self.cleanup()
+            if not keep_open:
+                self.cleanup()
 
     def _record_created_subreddit(self, subreddit_name: str) -> None:
         history_path = Path("scripts/subreddit_creation/history/created_subreddits.json")
@@ -687,6 +1210,23 @@ Let's build a supportive, evidence-based community together!""",
         except Exception as exc:
             logger.warning(f"Failed to record subreddit history: {exc}")
 
+    def _load_created_subreddits(self) -> set[str]:
+        history_path = Path("scripts/subreddit_creation/history/created_subreddits.json")
+        legacy_path = Path("data/created_subreddits.json")
+        for path in (history_path, legacy_path):
+            if not path.exists():
+                continue
+            try:
+                content = path.read_text().strip()
+                if not content:
+                    continue
+                entries = json.loads(content)
+                if isinstance(entries, list):
+                    return {e.get("subreddit") for e in entries if isinstance(e, dict) and e.get("subreddit")}
+            except Exception:
+                continue
+        return set()
+
     def _add_to_scan_list(self, subreddit_name: str) -> None:
         path = Path("config/subreddits.json")
         try:
@@ -708,6 +1248,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Create MCRDSE subreddits")
     parser.add_argument("--account", default="account1", help="Reddit account to use")
     parser.add_argument("--max", type=int, default=2, help="Maximum subreddits to create")
+    parser.add_argument("--name", help="Create a single specific subreddit name (overrides config list)")
+    parser.add_argument("--ui", choices=["modern", "classic"], default="modern", help="Select UI flow")
     parser.add_argument("--headless", action="store_true", help="Run browser in background")
     parser.add_argument("--test", action="store_true", help="Test mode - only show what would be created")
     parser.add_argument("--dry-run", action="store_true", help="Simulate actions without executing")
@@ -732,6 +1274,7 @@ if __name__ == "__main__":
         account_name=args.account,
         headless=args.headless,
         dry_run=bool(args.test or args.dry_run),
+        ui_mode=args.ui,
     )
 
     if args.validate_only:
@@ -740,6 +1283,11 @@ if __name__ == "__main__":
         creator.cleanup()
         sys.exit(0)
     
+    if args.name:
+        creator.subreddit_names = [args.name.strip()]
+        args.max = 1
+        logger.info(f"Override name provided: r/{creator.subreddit_names[0]}")
+
     # Show what subreddits would be created
     logger.info("Subreddit names that would be created:")
     for i, name in enumerate(creator.subreddit_names[:args.max], 1):

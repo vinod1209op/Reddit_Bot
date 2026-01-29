@@ -2,8 +2,8 @@
   "discussion": {
     "templates": [
       {
-        "title": "What are your thoughts on {topic}?",
-        "content": "I've been thinking about {topic} recently and wanted to get the community's perspective.\n\n**Some questions to consider:**\n- What has your experience been with {topic}?\n- What research have you seen on this topic?\n- How do you approach {topic} in practice?\n\nLet's have a thoughtful discussion!",
+        "title": "Perspective check: {topic}",
+        "content": "We\u2019re reviewing how this community thinks about {topic}.\n\nContext:\n- What has changed recently?\n- What\u2019s still unclear or debated?\n\nOpen questions:\n- What should we prioritize next?\n- Which claims deserve stronger evidence?",
         "variables": {
           "topic": [
             "microdosing protocols",
@@ -15,14 +15,15 @@
         }
       },
       {
-        "title": "Discussion: The future of {field}",
-        "content": "Where do you see {field} heading in the next 5-10 years?\n\n**Discussion points:**\n1. Current trends and developments\n2. Potential breakthroughs on the horizon\n3. Challenges that need addressing\n4. How we can contribute as a community\n\nShare your insights and predictions!",
+        "title": "Community input needed: {topic}",
+        "content": "We\u2019re gathering practical perspectives on {topic}.\n\nWhy this matters:\n- It shapes how people make decisions\n- It affects what gets studied next\n\nWhat we\u2019d value from you:\n- One insight you trust\n- One misconception you keep seeing",
         "variables": {
-          "field": [
-            "psychedelic therapy",
-            "microdosing research",
-            "consciousness studies",
-            "mental health treatment"
+          "topic": [
+            "integration practices",
+            "tracking outcomes",
+            "dosage consistency",
+            "safety routines",
+            "long\u2011term effects"
           ]
         }
       }
@@ -31,14 +32,14 @@
   "question": {
     "templates": [
       {
-        "title": "Question about {topic} for experienced practitioners",
-        "content": "I'm curious about {topic} and would appreciate insights from those with experience.\n\n**My specific questions:**\n1. What are the key considerations for {topic}?\n2. What resources would you recommend for learning more?\n3. What common misconceptions should I be aware of?\n\nThanks in advance for your wisdom!",
+        "title": "Question for experienced members: {topic}",
+        "content": "We\u2019re looking for grounded, experience\u2011based guidance on {topic}.\n\nKey questions:\n- What are the top considerations you\u2019d flag?\n- What resources or references actually helped?\n- What would you do differently in hindsight?",
         "variables": {
           "topic": [
             "starting a microdosing protocol",
             "psychedelic integration practices",
-            "combining meditation with microdosing",
-            "tracking neuroplasticity changes"
+            "tracking cognitive changes",
+            "balancing routine and flexibility"
           ]
         }
       }
@@ -47,14 +48,14 @@
   "resource": {
     "templates": [
       {
-        "title": "Resource Collection: {topic}",
-        "content": "I've compiled some helpful resources about {topic} that might benefit the community.\n\n**Resources included:**\n- Research papers and studies\n- Educational articles\n- Community guidelines\n- Safety information\n\nFeel free to add your own recommendations in the comments!",
+        "title": "Resource roundup: {topic}",
+        "content": "We\u2019re curating a practical list of resources on {topic}.\n\nIf you have strong references, please share:\n- Peer\u2011reviewed studies\n- Clear, evidence\u2011based explainers\n- Reputable tools or frameworks",
         "variables": {
           "topic": [
-            "microdosing safety",
-            "psychedelic research methods",
             "neuroplasticity exercises",
-            "integration techniques"
+            "integration frameworks",
+            "harm reduction guides",
+            "outcome tracking methods"
           ]
         }
       }
@@ -63,44 +64,14 @@
   "experience": {
     "templates": [
       {
-        "title": "My experience with {topic} - What I've learned",
-        "content": "I wanted to share my personal journey with {topic} in case it helps others.\n\n**Background:** {background}\n\n**Key insights:**\n1. {insight1}\n2. {insight2}\n3. {insight3}\n\n**Advice for others:**\n- {advice1}\n- {advice2}\n\n*Remember: This is my personal experience. Yours may differ.*",
+        "title": "Reflection: {theme}",
+        "content": "Sharing a structured reflection for anyone thinking about {theme}.\n\nWhat stood out to me:\n- One practical takeaway\n- One risk or constraint\n- One question I\u2019m still exploring",
         "variables": {
-          "topic": [
-            "microdosing for creativity",
-            "psychedelic therapy",
-            "mindfulness practices",
-            "personal growth work"
-          ],
-          "background": [
-            "Seeking alternatives for mental wellness",
-            "Exploring consciousness expansion",
-            "Looking for sustainable self-improvement"
-          ],
-          "insight1": [
-            "Patience is more important than intensity",
-            "Set and setting matter immensely",
-            "Integration is where real change happens"
-          ],
-          "insight2": [
-            "Small consistent steps yield better results",
-            "Community support makes a huge difference",
-            "Documenting experiences helps with insights"
-          ],
-          "insight3": [
-            "Balance is key to sustainable practice",
-            "Individual responses vary significantly",
-            "Education reduces risk and increases benefit"
-          ],
-          "advice1": [
-            "Start low and go slow",
-            "Keep a detailed journal",
-            "Find a supportive community"
-          ],
-          "advice2": [
-            "Consult professionals when in doubt",
-            "Listen to your body and mind",
-            "Focus on integration over experience"
+          "theme": [
+            "personal growth work",
+            "integration routines",
+            "long\u2011term consistency",
+            "balancing expectations"
           ]
         }
       }
@@ -109,26 +80,26 @@
   "news": {
     "templates": [
       {
-        "title": "News Update: {development} in psychedelic research",
-        "content": "There's been an interesting development in psychedelic research that I wanted to share.\n\n**What's happening:**\n{summary}\n\n**Why it matters:**\n{significance}\n\n**Sources & further reading:**\n- [Link to study/article]\n- [Related research]\n\nWhat are your thoughts on this development?",
+        "title": "Update: {development} in psychedelic research",
+        "content": "Quick summary we\u2019re tracking: {summary}.\n\nWhy it matters:\n- {significance}\n\nIf you have primary sources or critiques, please add them below.",
         "variables": {
           "development": [
-            "New clinical trial results",
-            "Policy changes affecting research",
-            "Breakthrough in understanding mechanisms",
-            "Innovative therapeutic approaches"
+            "new clinical trial results",
+            "policy changes affecting research",
+            "breakthroughs in mechanisms",
+            "innovations in therapeutic approaches"
           ],
           "summary": [
-            "A recent study published in a major journal shows promising results",
-            "Regulatory changes are opening new avenues for research",
-            "Scientists have discovered new insights into how psychedelics work",
-            "New therapeutic protocols are showing significant benefits"
+            "a recent study published in a major journal shows promising results",
+            "regulatory changes are opening new avenues for research",
+            "researchers reported new insights into how psychedelics work",
+            "early evidence suggests meaningful clinical outcomes"
           ],
           "significance": [
-            "This could lead to new treatment options",
-            "It represents progress in destigmatization",
-            "It deepens our scientific understanding",
-            "It may influence future research directions"
+            "this could expand treatment options",
+            "it may shift how future studies are designed",
+            "it strengthens the evidence base",
+            "it helps clarify risks and benefits"
           ]
         }
       }

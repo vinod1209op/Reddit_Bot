@@ -76,5 +76,13 @@
       "active_hours": "manual"
     },
     "subreddits_note": ""
+  },
+  {
+    "name": "account4",
+    "activity_profile": "researcher",
+    "email_env_var": "REDDIT_EMAIL_4",
+    "password_env_var": "REDDIT_PASSWORD_4",
+    "cookies_path": "data/cookies_account4.pkl",
+    "username": "Delicious-Test-2566"
   }
 ]

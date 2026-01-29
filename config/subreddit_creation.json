@@ -2,10 +2,10 @@
   "default_profile": "conservative",
   "profiles": {
     "conservative": {
-      "max_subreddits_per_day": 1,
+      "max_subreddits_per_day": 0,
       "max_subreddits_per_week": 2,
       "min_days_between_creations": 7,
-      "template_set": "research_focused",
+      "template_set": "corporate_public",
       "delay_min_minutes": 1440,
       "delay_max_minutes": 10080,
       "safety_check_requirements": {
@@ -228,8 +228,7 @@
         "**Welcome to r/{name}!**\n\n## About\nA friendly {type_lower} forum for respectful discussion and support.\n\n## Community Rules\n1. Be respectful and kind\n2. No sourcing or selling of substances\n3. Share experiences, not medical advice\n4. Practice harm reduction\n\n## Disclaimer\nThis community does not provide medical advice. Consult healthcare professionals."
       ]
     }
-  }
-  ,
+  },
   "post_creation": {
     "configure_settings": true,
     "setup_automod": true,

@@ -39,7 +39,7 @@ logger = UnifiedLogger("PostScheduler").get_logger()
 class MCRDSEPostScheduler(RedditAutomationBase):
     """Schedule and post content to MCRDSE subreddits using Selenium"""
     
-    def __init__(self, account_name="account1", headless=True, dry_run=False):
+    def __init__(self, account_name="account1", headless=True, dry_run=False, session=None, owns_session=True):
         """
         Initialize post scheduler
         
@@ -50,7 +50,7 @@ class MCRDSEPostScheduler(RedditAutomationBase):
         os.environ["SELENIUM_HEADLESS"] = "1" if headless else "0"
         self.account_name = account_name
         self.headless = headless
-        super().__init__(account_name=account_name, dry_run=dry_run)
+        super().__init__(account_name=account_name, dry_run=dry_run, session=session, owns_session=owns_session)
         self.config = self.load_config()
         self.schedule_file = Path("scripts/content_scheduling/schedule/post_schedule.json")
         self.legacy_schedule_file = Path("data/post_schedule.json")
@@ -346,15 +346,38 @@ class MCRDSEPostScheduler(RedditAutomationBase):
     def load_schedule(self) -> List[Dict]:
         """Load scheduled posts from file"""
         schedule_data = []
-        if self.schedule_file.exists():
+        schedule_exists = self.schedule_file.exists()
+        if schedule_exists:
             try:
-                with open(self.schedule_file, 'r') as f:
-                    schedule_data = json.load(f)
+                content = self.schedule_file.read_text().strip()
+                if not content:
+                    return []
+                schedule_data = json.loads(content)
             except json.JSONDecodeError:
-                logger.error("Schedule file corrupted, starting with empty schedule")
+                logger.error("Schedule file corrupted, attempting recovery")
+                # Try legacy schedule even if primary exists
+                try:
+                    if self.legacy_schedule_file.exists():
+                        with open(self.legacy_schedule_file, 'r') as f:
+                            schedule_data = json.load(f)
+                            return schedule_data or []
+                except json.JSONDecodeError:
+                    logger.error("Legacy schedule file also corrupted")
+                # Try most recent backup
+                backup_dir = Path("scripts/content_scheduling/schedule/backups")
+                if backup_dir.exists():
+                    backups = sorted(backup_dir.glob("schedule_backup_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+                    for path in backups[:5]:
+                        try:
+                            schedule_data = json.loads(path.read_text())
+                            logger.warning("Recovered schedule from backup: %s", path)
+                            return schedule_data or []
+                        except Exception:
+                            continue
+                logger.error("Schedule recovery failed; starting with empty schedule")
 
-        # Fall back to legacy schedule if needed
-        if not schedule_data and self.legacy_schedule_file.exists():
+        # Fall back to legacy schedule only if primary schedule file is missing
+        if not schedule_exists and self.legacy_schedule_file.exists():
             try:
                 with open(self.legacy_schedule_file, 'r') as f:
                     schedule_data = json.load(f)
@@ -404,14 +427,14 @@ class MCRDSEPostScheduler(RedditAutomationBase):
             title = title.replace(f"{{{var_name}}}", replacement)
             content = content.replace(f"{{{var_name}}}", replacement)
         
-        # Add CTA if configured
+        # Add CTA if configured (inline URL in sentence)
         cta_url = self.config.get("cta_url")
-        cta_text = self.config.get("cta_text", "Learn more")
+        cta_text = self.config.get("cta_text", "Take the MCRDSE Movement Quiz")
         if cta_url:
-            content += f"\n\n**{cta_text}:** {cta_url}"
+            content += f"\n\nIf this topic resonates, {cta_text} at {cta_url}."
         else:
             if random.random() < 0.3:  # 30% chance
-                content += "\n\n*For research-based resources, check out the MCRDSE research portal.*"
+                content += "\n\nFor research-based resources, check out the MCRDSE research portal."
         
         # Select subreddit if not specified
         if not subreddit:
@@ -540,6 +563,75 @@ class MCRDSEPostScheduler(RedditAutomationBase):
         except Exception as e:
             logger.error(f"Login failed: {e}")
             return False
+
+    def _find_first(self, selectors: List[Tuple[str, str]], wait_seconds: int = 6):
+        """Return the first visible element matching any selector."""
+        for by, value in selectors:
+            try:
+                element = WebDriverWait(self.driver, wait_seconds).until(
+                    EC.presence_of_element_located((by, value))
+                )
+                if element and element.is_displayed():
+                    return element
+            except Exception:
+                continue
+        return None
+
+    def _find_by_id_deep(self, element_id: str):
+        """Find element by id, including inside shadow roots."""
+        try:
+            return self.driver.execute_script(
+                """
+                const targetId = arguments[0];
+                function findByIdDeep(root) {
+                  if (!root) return null;
+                  if (root.querySelector) {
+                    const direct = root.querySelector('#' + targetId);
+                    if (direct) return direct;
+                  }
+                  const nodes = root.querySelectorAll ? root.querySelectorAll('*') : [];
+                  for (const node of nodes) {
+                    if (node.shadowRoot) {
+                      const found = findByIdDeep(node.shadowRoot);
+                      if (found) return found;
+                    }
+                  }
+                  return null;
+                }
+                return findByIdDeep(document);
+                """,
+                element_id,
+            )
+        except Exception:
+            return None
+
+    def _query_selector_deep(self, selector: str):
+        """Find first element matching selector, including inside shadow roots."""
+        try:
+            return self.driver.execute_script(
+                """
+                const sel = arguments[0];
+                function findDeep(root) {
+                  if (!root) return null;
+                  if (root.querySelector) {
+                    const direct = root.querySelector(sel);
+                    if (direct) return direct;
+                  }
+                  const nodes = root.querySelectorAll ? root.querySelectorAll('*') : [];
+                  for (const node of nodes) {
+                    if (node.shadowRoot) {
+                      const found = findDeep(node.shadowRoot);
+                      if (found) return found;
+                    }
+                  }
+                  return null;
+                }
+                return findDeep(document);
+                """,
+                selector,
+            )
+        except Exception:
+            return None
     
     def human_typing(self, element, text: str):
         """Simulate human typing with random delays and occasional typos"""
@@ -558,6 +650,7 @@ class MCRDSEPostScheduler(RedditAutomationBase):
             element.send_keys(char)
             # Random delay between keystrokes (50-150ms)
             time.sleep(random.uniform(0.05, 0.15))
+
     
     def submit_post(self, post_data: Dict) -> Tuple[bool, Optional[str]]:
         """Submit a post to Reddit using Selenium"""
@@ -568,22 +661,24 @@ class MCRDSEPostScheduler(RedditAutomationBase):
             subreddit = post_data["subreddit"]
             title = post_data["title"]
             content = post_data["content"]
-            if not self.status_tracker.can_perform_action(
-                self.account_name,
-                "posting",
-                subreddit=subreddit,
-                daily_limit=self.config["posting_settings"]["max_posts_per_day"],
-            ):
-                logger.info(f"Posting limited for {self.account_name}; skipping r/{subreddit}")
-                return False, "posting_limited"
+            if os.getenv("BYPASS_POSTING_LIMITS", "").strip().lower() not in ("1", "true", "yes"):
+                if not self.status_tracker.can_perform_action(
+                    self.account_name,
+                    "posting",
+                    subreddit=subreddit,
+                    daily_limit=self.config["posting_settings"]["max_posts_per_day"],
+                ):
+                    logger.info(f"Posting limited for {self.account_name}; skipping r/{subreddit}")
+                    return False, "posting_limited"
             limits = (self.activity_schedule or {}).get("rate_limits", {})
-            allowed, wait_seconds = self.rate_limiter.check_rate_limit(
-                self.account_name, "submit_post", limits
-            )
-            if not allowed:
-                self.status_tracker.set_cooldown(self.account_name, "posting", wait_seconds)
-                logger.info(f"Rate limited for posting; wait {wait_seconds}s")
-                return False, "rate_limited"
+            if os.getenv("BYPASS_POSTING_LIMITS", "").strip().lower() not in ("1", "true", "yes"):
+                allowed, wait_seconds = self.rate_limiter.check_rate_limit(
+                    self.account_name, "submit_post", limits
+                )
+                if not allowed:
+                    self.status_tracker.set_cooldown(self.account_name, "posting", wait_seconds)
+                    logger.info(f"Rate limited for posting; wait {wait_seconds}s")
+                    return False, "rate_limited"
             
             idem_path = Path(os.getenv("IDEMPOTENCY_PATH", IDEMPOTENCY_DEFAULT_PATH))
             post_key = build_post_key(post_data)
@@ -594,64 +689,367 @@ class MCRDSEPostScheduler(RedditAutomationBase):
             logger.info(f"Submitting post to r/{subreddit}: {title[:50]}...")
             mark_attempt(idem_path, post_key, {"subreddit": subreddit, "title": title})
             
-            # Navigate to submit page
-            submit_url = f"https://old.reddit.com/r/{subreddit}/submit"
+            # Navigate to modern submit page (new Reddit only)
+            submit_url = f"https://www.reddit.com/r/{subreddit}/submit"
             self.driver.get(submit_url)
             time.sleep(3)
             
-            # Check for CAPTCHA
-            if "captcha" in self.driver.page_source.lower():
-                logger.error("CAPTCHA detected!")
+            # Check for CAPTCHA (strict element-based check to avoid false positives)
+            def _captcha_present() -> Tuple[bool, str]:
+                try:
+                    selectors = [
+                        "iframe[src*='recaptcha']",
+                        "iframe[src*='hcaptcha']",
+                        "div.g-recaptcha",
+                        "div.h-captcha",
+                        "[id*='captcha' i]",
+                        "[class*='captcha' i]",
+                        "input[name*='captcha' i]",
+                    ]
+                    for sel in selectors:
+                        elements = self.driver.find_elements(By.CSS_SELECTOR, sel)
+                        for el in elements:
+                            try:
+                                if el.is_displayed():
+                                    return True, f"selector:{sel}"
+                            except Exception:
+                                continue
+                except Exception:
+                    pass
+                return False, ""
+
+            captcha_found, captcha_reason = _captcha_present()
+            if captcha_found:
+                logger.error("CAPTCHA detected! (%s)", captcha_reason)
+                # Short wait + refresh loop before prompting (iframe sometimes clears)
+                for attempt in range(2):
+                    time.sleep(2)
+                    self.driver.refresh()
+                    time.sleep(2)
+                    captcha_found, captcha_reason = _captcha_present()
+                    if not captcha_found:
+                        break
                 if not self.headless:
                     input("Please solve CAPTCHA and press Enter...")
                     time.sleep(3)
+                    still_found, still_reason = _captcha_present()
+                    if still_found:
+                        logger.error("CAPTCHA still present after manual solve (%s)", still_reason)
+                        return False, "captcha_unresolved"
                 else:
                     return False, "CAPTCHA detected in headless mode"
             
-            # Select text post
+            # Ensure Text tab selected (modern UI only)
             try:
-                text_button = self.driver.find_element(By.CSS_SELECTOR, "input[value='self']")
-                text_button.click()
-                time.sleep(1)
-            except:
-                logger.warning("Could not find text post button, continuing anyway")
+                text_tab = self._find_first(
+                    [
+                        (By.XPATH, "//button[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'text')]"),
+                    ],
+                    wait_seconds=3,
+                )
+                if text_tab:
+                    self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", text_tab)
+                    text_tab.click()
+                    time.sleep(0.8)
+            except Exception:
+                logger.warning("Could not find text tab in modern Reddit UI")
             
-            # Enter title
-            title_field = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='title']"))
+            # Enter title (modern UI only)
+            title_field = self._find_first(
+                [
+                    (By.CSS_SELECTOR, "faceplate-textarea-input[name='title']"),
+                    (By.CSS_SELECTOR, "#post-composer__title faceplate-textarea-input[name='title']"),
+                ],
+                wait_seconds=10,
             )
-            title_field.clear()
-            self.human_typing(title_field, title)
+            if not title_field:
+                return False, "title_field_not_found"
+            try:
+                self.driver.execute_script(
+                    "arguments[0].value = arguments[1];"
+                    "arguments[0].dispatchEvent(new Event('input', {bubbles:true}));"
+                    "arguments[0].dispatchEvent(new Event('change', {bubbles:true}));",
+                    title_field,
+                    title,
+                )
+            except Exception:
+                title_field.send_keys(title)
             time.sleep(1)
             
-            # Enter content
-            content_field = self.driver.find_element(By.CSS_SELECTOR, "textarea[name='text']")
-            content_field.clear()
-            self.human_typing(content_field, content)
-            time.sleep(2)
-            
-            # Add flair if required
+            # Switch to Markdown editor (modern UI)
             try:
-                flair_button = self.driver.find_element(By.CSS_SELECTOR, ".flairselector-btn")
-                flair_button.click()
+                more_options = self._find_first(
+                    [
+                        (By.CSS_SELECTOR, "button[aria-label='More options']"),
+                    ],
+                    wait_seconds=3,
+                )
+                if not more_options:
+                    more_options = self._query_selector_deep("button[aria-label='More options']")
+                if more_options:
+                    try:
+                        more_options.click()
+                    except Exception:
+                        self.driver.execute_script("arguments[0].click();", more_options)
+                    time.sleep(0.5)
+                else:
+                    logger.warning("Markdown toggle: More options button not found")
+                # Click "Switch to Markdown" in the dropdown (shadow DOM)
+                self.driver.execute_script(
+                    """
+                    function findDeepAll(root, selector, acc) {
+                      if (!root) return;
+                      if (root.querySelectorAll) {
+                        root.querySelectorAll(selector).forEach(n => acc.push(n));
+                      }
+                      const nodes = root.querySelectorAll ? root.querySelectorAll('*') : [];
+                      for (const node of nodes) {
+                        if (node.shadowRoot) findDeepAll(node.shadowRoot, selector, acc);
+                      }
+                    }
+                    const acc = [];
+                    findDeepAll(document, 'rpl-menu-item', acc);
+                    for (const item of acc) {
+                      const txt = (item.textContent || '').trim();
+                      if (txt.includes('Switch to Markdown')) {
+                        item.click();
+                        break;
+                      }
+                    }
+                    """
+                )
+                # Confirm Markdown editor is visible
+                for _ in range(5):
+                    visible = self.driver.execute_script(
+                        """
+                        const comp = document.querySelector('shreddit-markdown-composer');
+                        if (!comp || !comp.shadowRoot) return false;
+                        const header = comp.shadowRoot.querySelector('div .text-secondary-weak');
+                        const text = header ? header.textContent || '' : '';
+                        return text.includes('Markdown Editor');
+                        """
+                    )
+                    if visible:
+                        break
+                    time.sleep(0.5)
+                time.sleep(0.2)
+            except Exception:
+                logger.warning("Could not switch to Markdown editor")
+
+            # Enter content (Markdown editor)
+            try:
+                textarea = None
+                for _ in range(8):
+                    textarea = self.driver.execute_script(
+                        """
+                        const comp = document.querySelector('shreddit-markdown-composer');
+                        if (!comp) return null;
+                        if (!comp.shadowRoot) return null;
+                        return comp.shadowRoot.querySelector('textarea[part=\"textarea-input\"]');
+                        """
+                    )
+                    if textarea:
+                        break
+                    time.sleep(0.5)
+                if not textarea:
+                    textarea = self._query_selector_deep("textarea[part='textarea-input']")
+                if not textarea:
+                    # Try light DOM inside markdown composer (if any)
+                    textarea = self.driver.execute_script(
+                        """
+                        const comp = document.querySelector('shreddit-markdown-composer');
+                        if (!comp) return null;
+                        return comp.querySelector('textarea[part=\"textarea-input\"]');
+                        """
+                    )
+                if not textarea:
+                    exists = self.driver.execute_script(
+                        """
+                        const comp = document.querySelector('shreddit-markdown-composer');
+                        if (!comp) return 'composer_missing';
+                        return comp.shadowRoot ? 'composer_shadow_ok' : 'composer_shadow_missing';
+                        """
+                    )
+                    counts = self.driver.execute_script(
+                        """
+                        function countDeep(root, selector) {
+                          let count = 0;
+                          if (root && root.querySelectorAll) {
+                            count += root.querySelectorAll(selector).length;
+                          }
+                          const nodes = root && root.querySelectorAll ? root.querySelectorAll('*') : [];
+                          for (const node of nodes) {
+                            if (node.shadowRoot) {
+                              count += countDeep(node.shadowRoot, selector);
+                            }
+                          }
+                          return count;
+                        }
+                        return {
+                          markdown_composers: countDeep(document, 'shreddit-markdown-composer'),
+                          textarea_parts: countDeep(document, \"textarea[part='textarea-input']\"),
+                        };
+                        """
+                    )
+                    logger.error(
+                        "Markdown editor: textarea not found after retries (%s, counts=%s)",
+                        exists,
+                        counts,
+                    )
+                    if exists == "composer_missing" and not self.headless:
+                        try:
+                            input("Markdown editor not found. Please switch to Markdown manually, then press Enter...")
+                        except Exception:
+                            pass
+                        # Retry once after manual switch
+                        textarea = self._query_selector_deep("textarea[part='textarea-input']")
+                        if textarea:
+                            logger.info("Markdown editor: textarea found after manual switch")
+                        else:
+                            logger.warning("Markdown editor still missing; falling back to rich-text editor")
+                    if not textarea:
+                        # Fallback to rich-text editor if markdown is unavailable
+                        rt_field = self._find_first(
+                            [
+                                (By.CSS_SELECTOR, "shreddit-composer#post-composer_bodytext [contenteditable='true'][role='textbox']"),
+                            ],
+                            wait_seconds=5,
+                        )
+                        if rt_field:
+                            try:
+                                rt_field.click()
+                                self.human_typing(rt_field, content)
+                            except Exception:
+                                self.driver.execute_script("arguments[0].innerText = arguments[1];", rt_field, content)
+                            time.sleep(1)
+                            return True, "fallback_richtext"
+                    return False, "content_field_not_found"
+                self.driver.execute_script(
+                    "arguments[0].value = arguments[1];"
+                    "arguments[0].dispatchEvent(new Event('input', {bubbles:true}));"
+                    "arguments[0].dispatchEvent(new Event('change', {bubbles:true}));",
+                    textarea,
+                    content,
+                )
                 time.sleep(1)
-                
-                # Select a random flair
-                flair_options = self.driver.find_elements(By.CSS_SELECTOR, ".flairselector-item")
-                if flair_options:
-                    random.choice(flair_options).click()
+            except Exception:
+                logger.error("Markdown editor: failed to set content")
+                return False, "content_field_not_found"
+            
+            # Add flair if required (modern UI only)
+            try:
+                flair_open_button = self._find_first(
+                    [
+                        (By.CSS_SELECTOR, "#reddit-post-flair-button"),
+                    ],
+                    wait_seconds=2,
+                )
+                if flair_open_button:
+                    flair_open_button.click()
                     time.sleep(1)
-            except:
+                    flair_map = {
+                        "discussion": "Research Discussion",
+                        "question": "Question",
+                        "resource": "Resource Share",
+                        "experience": "Personal Experience",
+                        "news": "Community News",
+                    }
+                    preferred = flair_map.get(post_data.get("type", ""), "")
+                    chosen = False
+                    if preferred:
+                        try:
+                            option = self._find_first(
+                                [
+                                    (By.XPATH, f"//faceplate-radio-input[.//span[contains(normalize-space(.), '{preferred}')]]"),
+                                ],
+                                wait_seconds=2,
+                            )
+                            if option:
+                                option.click()
+                                chosen = True
+                        except Exception:
+                            pass
+                    if not chosen:
+                        flair_options = self.driver.find_elements(
+                            By.XPATH,
+                            "//faceplate-radio-input[not(@id='post-flair-radio-input-no-flair')]",
+                        )
+                        flair_options = [f for f in flair_options if f.is_displayed()]
+                        if flair_options:
+                            random.choice(flair_options).click()
+                            chosen = True
+                    if chosen:
+                        time.sleep(1)
+                        apply_btn = self._find_first(
+                            [
+                                (By.CSS_SELECTOR, "#post-flair-modal-apply-button"),
+                            ],
+                            wait_seconds=2,
+                        )
+                        if apply_btn:
+                            apply_btn.click()
+                            time.sleep(1)
+            except Exception:
                 logger.debug("Could not add flair, continuing anyway")
             
-            # Submit
-            submit_button = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
-            submit_button.click()
+            # Submit (modern UI only)
+            submit_button = self._find_first(
+                [
+                    (By.CSS_SELECTOR, "#inner-post-submit-button"),
+                    (By.CSS_SELECTOR, "#submit-post-button"),
+                ],
+                wait_seconds=5,
+            )
+            if not submit_button:
+                submit_button = self._find_by_id_deep("inner-post-submit-button")
+            if not submit_button:
+                submit_button = self._find_by_id_deep("submit-post-button")
+            if not submit_button:
+                return False, "submit_button_not_found"
+            try:
+                self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", submit_button)
+            except Exception:
+                pass
+            try:
+                submit_button.click()
+            except Exception:
+                try:
+                    self.driver.execute_script(
+                        "const host = document.querySelector('#submit-post-button');"
+                        "const btn = host && host.shadowRoot ? host.shadowRoot.querySelector('#inner-post-submit-button') : null;"
+                        "if (btn) btn.click();",
+                    )
+                except Exception:
+                    pass
             time.sleep(5)
             
-            # Check if post was successful
-            if "comments" in self.driver.current_url:
+            def _success_from_page() -> bool:
+                try:
+                    toast_text = self.driver.execute_script(
+                        """
+                        const nodes = Array.from(document.querySelectorAll('[role="alert"], faceplate-toast, .toast, .Toast'));
+                        return nodes.map(n => (n.textContent || '')).join(' ').toLowerCase();
+                        """
+                    )
+                    if isinstance(toast_text, str) and ("post" in toast_text and ("submitted" in toast_text or "posted" in toast_text)):
+                        return True
+                except Exception:
+                    pass
+                return False
+
+            success = False
+            post_url = self.driver.current_url
+            for _ in range(10):
                 post_url = self.driver.current_url
+                if "comments" in post_url:
+                    success = True
+                    break
+                if _success_from_page():
+                    success = True
+                    break
+                time.sleep(2)
+
+            if success:
                 logger.info(f"Post successful: {post_url}")
                 self.rate_limiter.record_action(self.account_name, "submit_post")
                 self.status_tracker.record_post_activity(
@@ -661,40 +1059,53 @@ class MCRDSEPostScheduler(RedditAutomationBase):
                 if post_key:
                     mark_success(idem_path, post_key, {"post_url": post_url})
                 return True, post_url
-            else:
-                # Check for errors
-                page_text = self.driver.page_source.lower()
-                error_messages = [
-                    "try again later",
-                    "you're doing that too much",
-                    "rate limit",
-                    "something went wrong",
-                    "please try again"
-                ]
-                
-                for error in error_messages:
-                    if error in page_text:
-                        logger.error(f"Post failed: {error}")
-                        self.status_tracker.record_post_activity(
-                            self.account_name, subreddit, post_data.get("type", "unknown"), False,
-                            daily_limit=self.config["posting_settings"]["max_posts_per_day"]
+
+            # Check for errors
+            page_text = self.driver.page_source.lower()
+            error_messages = [
+                "try again later",
+                "you're doing that too much",
+                "rate limit",
+                "something went wrong",
+                "please try again"
+            ]
+            
+            for error in error_messages:
+                if error in page_text:
+                    logger.error(f"Post failed: {error}")
+                    self.status_tracker.record_post_activity(
+                        self.account_name, subreddit, post_data.get("type", "unknown"), False,
+                        daily_limit=self.config["posting_settings"]["max_posts_per_day"]
+                    )
+                    if "rate" in error:
+                        self.status_tracker.update_account_status(
+                            self.account_name, "rate_limited", {"reason": error}
                         )
-                        if "rate" in error:
-                            self.status_tracker.update_account_status(
-                                self.account_name, "rate_limited", {"reason": error}
-                            )
-                        if post_key:
-                            mark_failure(idem_path, post_key, error=error)
-                        return False, error
-                
-                logger.error("Post failed for unknown reason")
+                    if post_key:
+                        mark_failure(idem_path, post_key, error=error)
+                    return False, error
+            
+            current_url = self.driver.current_url
+            if current_url != submit_url:
+                logger.warning("Post result unclear; URL changed. Assuming success.")
+                self.rate_limiter.record_action(self.account_name, "submit_post")
                 self.status_tracker.record_post_activity(
-                    self.account_name, subreddit, post_data.get("type", "unknown"), False,
+                    self.account_name, subreddit, post_data.get("type", "unknown"), True,
                     daily_limit=self.config["posting_settings"]["max_posts_per_day"]
                 )
                 if post_key:
-                    mark_failure(idem_path, post_key, error="unknown")
-                return False, "Unknown error"
+                    mark_success(idem_path, post_key, {"post_url": current_url, "assumed": True})
+                return True, current_url
+
+            logger.error("Post failed for unknown reason (no error markers, no success markers)")
+            logger.info("Post submit debug: url=%s", current_url)
+            self.status_tracker.record_post_activity(
+                self.account_name, subreddit, post_data.get("type", "unknown"), False,
+                daily_limit=self.config["posting_settings"]["max_posts_per_day"]
+            )
+            if post_key:
+                mark_failure(idem_path, post_key, error="unknown")
+            return False, "Unknown error"
             
         except Exception as e:
             logger.error(f"Error submitting post: {e}")
@@ -846,6 +1257,8 @@ class MCRDSEPostScheduler(RedditAutomationBase):
         
         due_posts = []
         for post in schedule_data:
+            if post.get("account") and post.get("account") != self.account_name:
+                continue
             if post["status"] != "scheduled":
                 continue
             

@@ -39,13 +39,30 @@ class ActionResult:
     error: Optional[str] = None
 
 
+@dataclass
+class AutomationSession:
+    driver: Any
+    browser_manager: Optional[BrowserManager]
+    login_manager: Optional[LoginManager]
+    human_sim: Optional[HumanSimulator]
+    logged_in: bool
+    last_login_status: str
+
+
 class RedditAutomationBase:
     """
     Base class for Selenium automation scripts.
     Handles browser setup, login, status tracking, retries, and cleanup.
     """
 
-    def __init__(self, account_name: str, config_profile: str = "default", dry_run: bool = False):
+    def __init__(
+        self,
+        account_name: str,
+        config_profile: str = "default",
+        dry_run: bool = False,
+        session: Optional[AutomationSession] = None,
+        owns_session: bool = True,
+    ):
         self.logger = UnifiedLogger(self.__class__.__name__).get_logger()
         self.account_name = account_name
         self.config_profile = config_profile
@@ -73,11 +90,20 @@ class RedditAutomationBase:
         self.driver = None
         self.logged_in = False
         self.last_login_status = "unknown"
+        self.owns_session = owns_session
 
-        if not self.dry_run:
+        if session is not None:
+            self.browser_manager = session.browser_manager
+            self.login_manager = session.login_manager
+            self.human_sim = session.human_sim
+            self.driver = session.driver
+            self.logged_in = session.logged_in
+            self.last_login_status = session.last_login_status
+
+        if session is None and not self.dry_run:
             self._setup_browser()
             self._login_with_fallback()
-        else:
+        elif session is None:
             self.logged_in = True
             self.last_login_status = "dry_run"
         self._write_run_log(event="start")
@@ -347,6 +373,8 @@ class RedditAutomationBase:
         }
 
     def cleanup(self) -> None:
+        if not self.owns_session:
+            return
         if self.login_manager and self.logged_in:
             cookie_file = self.account.get("cookies_path") or self.config_manager.selenium_settings.get("cookie_file")
             if cookie_file:
@@ -368,6 +396,16 @@ class RedditAutomationBase:
             {"cleanup": True, "dry_run": self.dry_run},
         )
         self._write_run_log(event="end")
+
+    def export_session(self) -> AutomationSession:
+        return AutomationSession(
+            driver=self.driver,
+            browser_manager=self.browser_manager,
+            login_manager=self.login_manager,
+            human_sim=self.human_sim,
+            logged_in=self.logged_in,
+            last_login_status=self.last_login_status,
+        )
 
     def _write_run_log(self, event: str) -> None:
         try:

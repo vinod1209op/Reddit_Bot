@@ -4,6 +4,7 @@ MCRDSE Subreddit Moderation Manager
 """
 
 import json
+import sys
 import time
 import logging
 import random
@@ -25,7 +26,7 @@ logger = UnifiedLogger("ModerationManager").get_logger()
 class SeleniumModerationManager(RedditAutomationBase):
     """Selenium-based moderation manager for MCRDSE subreddits"""
     
-    def __init__(self, account_name="account1", headless=True, dry_run=False):
+    def __init__(self, account_name="account1", headless=True, dry_run=False, session=None, owns_session=True):
         """
         Initialize moderation manager with Selenium
         
@@ -36,13 +37,62 @@ class SeleniumModerationManager(RedditAutomationBase):
         os.environ["SELENIUM_HEADLESS"] = "1" if headless else "0"
         self.account_name = account_name
         self.headless = headless
-        super().__init__(account_name=account_name, dry_run=dry_run)
+        super().__init__(account_name=account_name, dry_run=dry_run, session=session, owns_session=owns_session)
         self.config = self.load_config()
         self.moderation_stats = {}
         self.activity_limits = self._load_activity_limits()
+        self.moderation_ui_mode = "old"
+        self.moderation_urls_used = []
         
         # Load account-specific settings
         self.account_config = self.account
+
+    def _find_first(self, selectors: List[Tuple[str, str]], wait_seconds: int = 6):
+        """Return the first visible element matching any selector."""
+        for by, value in selectors:
+            try:
+                element = WebDriverWait(self.driver, wait_seconds).until(
+                    EC.presence_of_element_located((by, value))
+                )
+                if element and element.is_displayed():
+                    return element
+            except Exception:
+                continue
+        return None
+
+    def _set_field_value(self, element, value: str) -> bool:
+        """Set input/textarea value with JS fallback for old Reddit forms."""
+        try:
+            element.clear()
+            element.send_keys(value)
+            return True
+        except Exception:
+            try:
+                self.driver.execute_script(
+                    "arguments[0].value = arguments[1]; arguments[0].dispatchEvent(new Event('input', {bubbles:true}));",
+                    element,
+                    value,
+                )
+                return True
+            except Exception:
+                return False
+
+    def _click_first(self, selectors: List[Tuple[str, str]], wait_seconds: int = 6) -> bool:
+        """Click the first visible element that matches any selector."""
+        element = self._find_first(selectors, wait_seconds=wait_seconds)
+        if not element:
+            return False
+        try:
+            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+            time.sleep(0.2)
+            element.click()
+            return True
+        except Exception:
+            try:
+                self.driver.execute_script("arguments[0].click();", element)
+                return True
+            except Exception:
+                return False
         
     def load_config(self) -> Dict:
         """Load moderation configuration"""
@@ -228,7 +278,8 @@ message: |
             self.driver.get(f"https://old.reddit.com/r/{subreddit_name}/about/moderators")
             time.sleep(2)
             page = self.driver.page_source.lower()
-            return self.account_name.lower() in page
+            username = (self.account_config or {}).get("username") or self.account_name
+            return username.lower() in page
         except Exception as exc:
             logger.warning(f"Moderator verification failed: {exc}")
             return False
@@ -259,11 +310,13 @@ message: |
     def _can_moderate(self, subreddit_name: str) -> bool:
         if self.status_tracker.should_skip_account(self.account_name):
             return False
-        if not self.verify_moderator_status(subreddit_name):
-            return False
-        remaining = self.status_tracker.get_cooldown_remaining(self.account_name, "moderation")
-        if remaining and remaining > 0:
-            return False
+        if os.getenv("BYPASS_MODERATOR_CHECK", "").strip().lower() not in ("1", "true", "yes"):
+            if not self.verify_moderator_status(subreddit_name):
+                return False
+        if os.getenv("BYPASS_MODERATION_COOLDOWN", "").strip().lower() not in ("1", "true", "yes"):
+            remaining = self.status_tracker.get_cooldown_remaining(self.account_name, "moderation")
+            if remaining and remaining > 0:
+                return False
         return True
     
     def navigate_to_subreddit(self, subreddit_name: str, section: str = "") -> bool:
@@ -276,6 +329,8 @@ message: |
             if section:
                 base_url += f"/{section}"
             
+            self.moderation_urls_used.append(base_url)
+            logger.info("Using old Reddit URL: %s", base_url)
             self.driver.get(base_url)
             time.sleep(3)
             
@@ -296,36 +351,211 @@ message: |
             if self.dry_run:
                 logger.info("[dry-run] Would set up AutoModerator for r/%s", subreddit_name)
                 return True
-            if not self.navigate_to_subreddit(subreddit_name, "wiki/config/automoderator"):
-                logger.error(f"Cannot access AutoModerator config for r/{subreddit_name}")
+            # Check view URL first to determine if page exists
+            view_url = f"https://old.reddit.com/r/{subreddit_name}/wiki/config/automoderator"
+            self.moderation_urls_used.append(view_url)
+            logger.info("Using old Reddit URL: %s", view_url)
+            self.driver.get(view_url)
+            time.sleep(2)
+            if "wiki is disabled" in self.driver.page_source.lower():
+                logger.warning("Wiki is disabled; enable wiki in subreddit settings first")
                 return False
-            
-            # Check if we need to edit
-            try:
-                edit_button = self.driver.find_element(By.LINK_TEXT, "edit")
-                edit_button.click()
+
+            if "page \"config/automoderator\" was not found" in self.driver.page_source.lower():
+                # Go directly to create page flow (old Reddit)
+                create_url = f"https://old.reddit.com/r/{subreddit_name}/wiki/create/config/automoderator"
+                self.moderation_urls_used.append(create_url)
+                logger.info("Using old Reddit URL: %s", create_url)
+                self.driver.get(create_url)
                 time.sleep(2)
-            except NoSuchElementException:
-                # Already on edit page or different layout
-                pass
+            else:
+                # Page exists; go to edit URL
+                edit_url = f"https://old.reddit.com/r/{subreddit_name}/wiki/edit/config/automoderator"
+                self.moderation_urls_used.append(edit_url)
+                logger.info("Using old Reddit URL: %s", edit_url)
+                self.driver.get(edit_url)
+                time.sleep(2)
             
             # Get automod content from config
             automod_content = self.config["automod_templates"].get(template, self.config["automod_templates"]["basic"])
             
             # Find textarea and insert rules
-            textarea = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.NAME, "content"))
+            textarea = self._find_first(
+                [
+                    (By.NAME, "content"),
+                    (By.ID, "wiki_page_content"),
+                    (By.CSS_SELECTOR, "textarea[name='content']"),
+                    (By.CSS_SELECTOR, "textarea"),
+                ],
+                wait_seconds=10,
             )
-            
-            # Clear and insert
-            textarea.clear()
-            textarea.send_keys(automod_content)
+            if not textarea:
+                # Fallback: pick the largest visible textarea
+                try:
+                    textareas = [t for t in self.driver.find_elements(By.TAG_NAME, "textarea") if t.is_displayed()]
+                    if textareas:
+                        textarea = sorted(
+                            textareas,
+                            key=lambda t: (t.size.get("height", 0) * t.size.get("width", 0)),
+                            reverse=True,
+                        )[0]
+                except Exception:
+                    textarea = None
+            if not textarea:
+                logger.error("AutoModerator textarea not found on old Reddit page")
+                return False
+
+            # Clear and insert (JS fallback for invalid element state)
+            if not self._set_field_value(textarea, automod_content):
+                logger.error("Failed to set AutoModerator content")
+                return False
             time.sleep(2)
-            
+
+            # Optional: fill revision reason if present
+            try:
+                reason_input = self._find_first(
+                    [
+                        (By.NAME, "reason"),
+                        (By.NAME, "reasonforrevision"),
+                        (By.CSS_SELECTOR, "input[name*='reason']"),
+                    ],
+                    wait_seconds=1,
+                )
+                if reason_input:
+                    self._set_field_value(reason_input, "initial automod setup")
+            except Exception:
+                pass
+
             # Save
-            save_button = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
-            save_button.click()
+            save_button = self._find_first(
+                [
+                    (By.CSS_SELECTOR, "button[type='submit']"),
+                    (By.CSS_SELECTOR, "input[type='submit']"),
+                    (By.CSS_SELECTOR, "input[name='save']"),
+                    (By.CSS_SELECTOR, "input[value='save page']"),
+                    (By.XPATH, "//input[@type='submit' and contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'save')]"),
+                    (By.XPATH, "//button[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'save')]"),
+                ]
+            )
+            if save_button:
+                try:
+                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", save_button)
+                    time.sleep(0.2)
+                    save_button.click()
+                except Exception:
+                    try:
+                        self.driver.execute_script("arguments[0].click();", save_button)
+                    except Exception:
+                        pass
+            else:
+                logger.warning("AutoModerator save button not found on old UI page")
             time.sleep(3)
+
+            # If edit/create page no longer shows "not found", treat as success
+            if "page \"config/automoderator\" was not found" not in self.driver.page_source.lower():
+                logger.info("AutoModerator edit page indicates content exists")
+            # Verify page exists after save (poll a few times)
+            view_url = f"https://old.reddit.com/r/{subreddit_name}/wiki/config/automoderator"
+            ok = False
+            for _ in range(3):
+                self.moderation_urls_used.append(view_url)
+                logger.info("Using old Reddit URL: %s", view_url)
+                self.driver.get(view_url)
+                time.sleep(2)
+                if "page \"config/automoderator\" was not found" not in self.driver.page_source.lower():
+                    ok = True
+                    break
+            if not ok:
+                logger.warning("AutoModerator save may have failed (url=%s title=%s)", self.driver.current_url, self.driver.title)
+                logger.warning("AutoModerator page still not created after save")
+                # Retry once via explicit form submit on create URL
+                create_url = f"https://old.reddit.com/r/{subreddit_name}/wiki/create/config/automoderator"
+                self.moderation_urls_used.append(create_url)
+                logger.info("Retrying AutoModerator create via URL: %s", create_url)
+                self.driver.get(create_url)
+                time.sleep(2)
+                textarea = self._find_first(
+                    [
+                        (By.NAME, "content"),
+                        (By.ID, "wiki_page_content"),
+                        (By.CSS_SELECTOR, "textarea[name='content']"),
+                        (By.CSS_SELECTOR, "textarea"),
+                    ],
+                    wait_seconds=6,
+                )
+                if textarea and self._set_field_value(textarea, automod_content):
+                    try:
+                        reason_input = self._find_first(
+                            [
+                                (By.NAME, "reason"),
+                                (By.NAME, "reasonforrevision"),
+                                (By.CSS_SELECTOR, "input[name*='reason']"),
+                            ],
+                            wait_seconds=1,
+                        )
+                        if reason_input:
+                            self._set_field_value(reason_input, "initial automod setup")
+                    except Exception:
+                        pass
+                    try:
+                        form = textarea.find_element(By.XPATH, "./ancestor::form[1]")
+                        form.submit()
+                    except Exception:
+                        self._click_first(
+                            [
+                                (By.CSS_SELECTOR, "input[type='submit']"),
+                                (By.CSS_SELECTOR, "button[type='submit']"),
+                                (By.CSS_SELECTOR, "input[name='save']"),
+                            ],
+                            wait_seconds=2,
+                        )
+                    time.sleep(3)
+                    self.driver.get(view_url)
+                    time.sleep(2)
+                    if "page \"config/automoderator\" was not found" in self.driver.page_source.lower():
+                        logger.warning("AutoModerator page still not created after retry")
+                        return False
+                else:
+                    return False
+
+            # Final verification: ensure content is non-empty in edit view
+            edit_url = f"https://old.reddit.com/r/{subreddit_name}/wiki/edit/config/automoderator"
+            self.moderation_urls_used.append(edit_url)
+            logger.info("Using old Reddit URL: %s", edit_url)
+            self.driver.get(edit_url)
+            time.sleep(2)
+            textarea = self._find_first(
+                [
+                    (By.NAME, "content"),
+                    (By.ID, "wiki_page_content"),
+                    (By.CSS_SELECTOR, "textarea[name='content']"),
+                    (By.CSS_SELECTOR, "textarea"),
+                ],
+                wait_seconds=6,
+            )
+            current_value = (textarea.get_attribute("value") or "").strip() if textarea else ""
+            if textarea:
+                if not current_value:
+                    logger.warning("AutoModerator content empty after save; rewriting")
+                else:
+                    logger.info("AutoModerator content present; re-saving to ensure persistence")
+                if not self._set_field_value(textarea, automod_content):
+                    logger.error("Failed to rewrite AutoModerator content")
+                    return False
+                try:
+                    form = textarea.find_element(By.XPATH, "./ancestor::form[1]")
+                    form.submit()
+                except Exception:
+                    self._click_first(
+                        [
+                            (By.CSS_SELECTOR, "input[type='submit']"),
+                            (By.CSS_SELECTOR, "button[type='submit']"),
+                            (By.CSS_SELECTOR, "input[name='save']"),
+                            (By.CSS_SELECTOR, "input[value='save page']"),
+                        ],
+                        wait_seconds=2,
+                    )
+                time.sleep(3)
             
             logger.info(f"AutoModerator configured for r/{subreddit_name}")
             return True
@@ -345,56 +575,104 @@ message: |
                 return False
             
             # Switch to link flair (post flair) section
-            try:
-                link_flair_tab = self.driver.find_element(By.CSS_SELECTOR, "a[href$='link_flair']")
-                link_flair_tab.click()
-                time.sleep(2)
-            except NoSuchElementException:
-                # Might already be on the right page
-                pass
+            self._click_first(
+                [
+                    (By.CSS_SELECTOR, "a[href$='link_templates']"),
+                    (By.CSS_SELECTOR, "a[href*='link_templates']"),
+                    (By.CSS_SELECTOR, "a[href$='link_flair']"),
+                    (By.CSS_SELECTOR, "a[href*='link_flair']"),
+                    (By.XPATH, "//a[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'post flair')]"),
+                    (By.XPATH, "//a[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'link flair')]"),
+                ]
+            )
+            time.sleep(2)
             
             # Get flairs from config
             flairs = self.config["flairs"]["post_flairs"]
             
             for flair in flairs:
                 try:
-                    # Click "Add flair" button
-                    add_button = self.driver.find_element(By.CSS_SELECTOR, "button.add-flair-row")
-                    add_button.click()
-                    time.sleep(1)
-                    
-                    # Find the new row
-                    rows = self.driver.find_elements(By.CSS_SELECTOR, ".flairrow")
-                    new_row = rows[-1] if rows else None
-                    
-                    if new_row:
-                        # Fill flair text
-                        text_input = new_row.find_element(By.CSS_SELECTOR, "input.flair-text-input")
-                        text_input.clear()
-                        text_input.send_keys(flair["name"])
-                        time.sleep(0.5)
-                        
-                        # Set color
-                        color_input = new_row.find_element(By.CSS_SELECTOR, "input.flair-color-input")
-                        color_input.clear()
-                        color_input.send_keys(flair["color"])
-                        time.sleep(0.5)
-                        
-                        # Save (there's usually an implicit save on blur)
-                        text_input.send_keys(Keys.TAB)
+                    def find_link_form_with_empty():
+                        for f in self.driver.find_elements(By.CSS_SELECTOR, "form"):
+                            try:
+                                flair_type = f.find_element(By.NAME, "flair_type").get_attribute("value")
+                                if (flair_type or "").upper() != "LINK_FLAIR":
+                                    continue
+                                text_inputs = f.find_elements(By.NAME, "text")
+                                for inp in text_inputs:
+                                    if not (inp.get_attribute("value") or "").strip():
+                                        return f, inp
+                            except Exception:
+                                continue
+                        # Fallback: empty template container
+                        try:
+                            empty_row = self.driver.find_element(By.ID, "empty-link-flair-template")
+                            empty_form = empty_row.find_element(By.CSS_SELECTOR, "form")
+                            empty_text = empty_form.find_element(By.NAME, "text")
+                            if not (empty_text.get_attribute("value") or "").strip():
+                                return empty_form, empty_text
+                        except Exception:
+                            pass
+                        return None, None
+
+                    # Re-find LINK_FLAIR form each time (page refreshes on save)
+                    link_form, empty_text = find_link_form_with_empty()
+                    if not link_form or not empty_text:
+                        # Reload templates page once to get a fresh blank row
+                        self.driver.get(f"https://old.reddit.com/r/{subreddit_name}/about/flair#link_templates")
+                        time.sleep(2)
+                        link_form, empty_text = find_link_form_with_empty()
+                    if not link_form or not empty_text:
+                        raise NoSuchElementException("No empty flair text input found")
+
+                    if not self._set_field_value(empty_text, flair["name"]):
+                        raise NoSuchElementException("Failed to set flair text")
+                    time.sleep(0.3)
+
+                    # Best-effort CSS class/color (old UI uses CSS class)
+                    css_inputs = link_form.find_elements(By.NAME, "css_class")
+                    if css_inputs:
+                        self._set_field_value(css_inputs[-1], flair.get("css_class", "").strip())
+                    time.sleep(0.3)
+
+                    # Save row (old UI submits the templates form)
+                    try:
+                        submit_btn = link_form.find_element(By.XPATH, ".//button[@type='submit'] | .//input[@type='submit']")
+                        self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", submit_btn)
+                        submit_btn.click()
                         time.sleep(1)
+                        # Wait briefly for page to refresh
+                        time.sleep(1)
+                    except Exception:
+                        try:
+                            save_in_row = self._find_first(
+                                [
+                                    (By.XPATH, ".//button[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'save')]"),
+                                    (By.XPATH, ".//input[@type='submit' or @type='button'][contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'save')]"),
+                                ],
+                                wait_seconds=1,
+                            )
+                            if save_in_row:
+                                save_in_row.click()
+                                time.sleep(0.5)
+                        except Exception:
+                            pass
                 
                 except Exception as e:
                     logger.warning(f"Error creating flair '{flair['name']}': {e}")
                     continue
             
             # Click save button at bottom
-            try:
-                save_button = self.driver.find_element(By.CSS_SELECTOR, "button.save-button")
-                save_button.click()
+            save_clicked = self._click_first(
+                [
+                    (By.CSS_SELECTOR, "button.save-button"),
+                    (By.CSS_SELECTOR, "button.saveoptions"),
+                    (By.CSS_SELECTOR, "input[type='submit']"),
+                    (By.XPATH, "//button[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'save')]"),
+                ]
+            )
+            if save_clicked:
                 time.sleep(2)
-            except:
-                pass
             
             logger.info(f"Created {len(flairs)} post flairs for r/{subreddit_name}")
             return True
@@ -414,56 +692,99 @@ message: |
                 return False
             
             # Switch to user flair section
-            try:
-                user_flair_tab = self.driver.find_element(By.CSS_SELECTOR, "a[href$='user_flair']")
-                user_flair_tab.click()
-                time.sleep(2)
-            except NoSuchElementException:
-                # Might already be on the right page
-                pass
+            self._click_first(
+                [
+                    (By.CSS_SELECTOR, "a[href$='user_templates']"),
+                    (By.CSS_SELECTOR, "a[href*='user_templates']"),
+                    (By.CSS_SELECTOR, "a[href$='user_flair']"),
+                    (By.CSS_SELECTOR, "a[href*='user_flair']"),
+                    (By.XPATH, "//a[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'user flair')]"),
+                ]
+            )
+            time.sleep(2)
             
             # Get flairs from config
             flairs = self.config["flairs"]["user_flairs"]
-            
+
             for flair in flairs:
                 try:
-                    # Click "Add flair" button
-                    add_button = self.driver.find_element(By.CSS_SELECTOR, "button.add-flair-row")
-                    add_button.click()
-                    time.sleep(1)
-                    
-                    # Find the new row
-                    rows = self.driver.find_elements(By.CSS_SELECTOR, ".flairrow")
-                    new_row = rows[-1] if rows else None
-                    
-                    if new_row:
-                        # Fill flair text
-                        text_input = new_row.find_element(By.CSS_SELECTOR, "input.flair-text-input")
-                        text_input.clear()
-                        text_input.send_keys(flair["name"])
-                        time.sleep(0.5)
-                        
-                        # Set color
-                        color_input = new_row.find_element(By.CSS_SELECTOR, "input.flair-color-input")
-                        color_input.clear()
-                        color_input.send_keys(flair["color"])
-                        time.sleep(0.5)
-                        
-                        # Save (there's usually an implicit save on blur)
-                        text_input.send_keys(Keys.TAB)
+                    def find_user_form_with_empty():
+                        for f in self.driver.find_elements(By.CSS_SELECTOR, "form"):
+                            try:
+                                flair_type = f.find_element(By.NAME, "flair_type").get_attribute("value")
+                                if (flair_type or "").upper() != "USER_FLAIR":
+                                    continue
+                                text_inputs = f.find_elements(By.NAME, "text")
+                                for inp in text_inputs:
+                                    if not (inp.get_attribute("value") or "").strip():
+                                        return f, inp
+                            except Exception:
+                                continue
+                        try:
+                            empty_row = self.driver.find_element(By.ID, "empty-user-flair-template")
+                            empty_form = empty_row.find_element(By.CSS_SELECTOR, "form")
+                            empty_text = empty_form.find_element(By.NAME, "text")
+                            if not (empty_text.get_attribute("value") or "").strip():
+                                return empty_form, empty_text
+                        except Exception:
+                            pass
+                        return None, None
+
+                    # Re-find USER_FLAIR form each time (page refreshes on save)
+                    user_form, empty_text = find_user_form_with_empty()
+                    if not user_form or not empty_text:
+                        self.driver.get(f"https://old.reddit.com/r/{subreddit_name}/about/flair#user_templates")
+                        time.sleep(2)
+                        user_form, empty_text = find_user_form_with_empty()
+                    if not user_form or not empty_text:
+                        raise NoSuchElementException("No empty user flair text input found")
+
+                    if not self._set_field_value(empty_text, flair["name"]):
+                        raise NoSuchElementException("Failed to set user flair text")
+                    time.sleep(0.3)
+
+                    css_inputs = user_form.find_elements(By.NAME, "css_class")
+                    if css_inputs:
+                        self._set_field_value(css_inputs[-1], flair.get("css_class", "").strip())
+                    time.sleep(0.3)
+
+                    # Save row (old UI submits the templates form)
+                    try:
+                        submit_btn = user_form.find_element(By.XPATH, ".//button[@type='submit'] | .//input[@type='submit']")
+                        self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", submit_btn)
+                        submit_btn.click()
                         time.sleep(1)
+                        time.sleep(1)
+                    except Exception:
+                        try:
+                            save_in_row = self._find_first(
+                                [
+                                    (By.XPATH, ".//button[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'save')]"),
+                                    (By.XPATH, ".//input[@type='submit' or @type='button'][contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'save')]"),
+                                ],
+                                wait_seconds=1,
+                            )
+                            if save_in_row:
+                                save_in_row.click()
+                                time.sleep(0.5)
+                        except Exception:
+                            pass
                 
                 except Exception as e:
                     logger.warning(f"Error creating user flair '{flair['name']}': {e}")
                     continue
             
             # Click save button at bottom
-            try:
-                save_button = self.driver.find_element(By.CSS_SELECTOR, "button.save-button")
-                save_button.click()
+            save_clicked = self._click_first(
+                [
+                    (By.CSS_SELECTOR, "button.save-button"),
+                    (By.CSS_SELECTOR, "button.saveoptions"),
+                    (By.CSS_SELECTOR, "input[type='submit']"),
+                    (By.XPATH, "//button[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'save')]"),
+                ]
+            )
+            if save_clicked:
                 time.sleep(2)
-            except:
-                pass
             
             logger.info(f"Created {len(flairs)} user flairs for r/{subreddit_name}")
             return True
@@ -486,39 +807,154 @@ message: |
             
             for i, rule_text in enumerate(rules, 1):
                 try:
-                    # Click "Add rule" button
-                    add_button = self.driver.find_element(By.CSS_SELECTOR, "button.add-rule")
-                    add_button.click()
+                    # Click "Add rule" button (old or new UI)
+                    add_clicked = self._click_first(
+                        [
+                            (By.CSS_SELECTOR, "button.subreddit-rule-add-button"),
+                            (By.CSS_SELECTOR, "button.add-rule"),
+                            (By.CSS_SELECTOR, "a.add-rule"),
+                            (By.XPATH, "//button[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'add a rule')]"),
+                            (By.XPATH, "//button[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'add rule')]"),
+                            (By.XPATH, "//a[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'add a rule')]"),
+                        ]
+                    )
                     time.sleep(1)
-                    
-                    # Find the new rule row (last one)
-                    rule_rows = self.driver.find_elements(By.CSS_SELECTOR, ".rule-row")
+
+                    # New UI rules editor (form already visible)
+                    short_name = self._find_first(
+                        [
+                            (By.XPATH, "//label[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'short name')]/following::input[1]"),
+                            (By.XPATH, "//input[contains(@aria-label,'Short name')]"),
+                            (By.CSS_SELECTOR, "input[name*='short']"),
+                        ],
+                        wait_seconds=2,
+                    )
+                    if short_name:
+                        self._set_field_value(short_name, rule_text[:100])
+                        time.sleep(0.2)
+                        reason_input = self._find_first(
+                            [
+                                (By.XPATH, "//label[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'violation')]/following::input[1]"),
+                                (By.XPATH, "//input[contains(@aria-label,'Violation')]"),
+                                (By.CSS_SELECTOR, "input[name*='reason']"),
+                            ],
+                            wait_seconds=2,
+                        )
+                        if reason_input:
+                            self._set_field_value(reason_input, f"Violates rule {i}")
+                        desc_input = self._find_first(
+                            [
+                                (By.XPATH, "//label[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'full description')]/following::textarea[1]"),
+                                (By.CSS_SELECTOR, "textarea[name*='description']"),
+                                (By.CSS_SELECTOR, "textarea"),
+                            ],
+                            wait_seconds=2,
+                        )
+                        if desc_input:
+                            self._set_field_value(desc_input, rule_text)
+
+                        # Save rule (green check / save button)
+                        saved = self._click_first(
+                            [
+                                (By.XPATH, "//button[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'save')]"),
+                                (By.XPATH, "//button[contains(@aria-label,'Save')]"),
+                                (By.XPATH, "//button[contains(@aria-label,'Add rule')]"),
+                                (By.CSS_SELECTOR, "button[aria-label*='save' i]"),
+                                (By.CSS_SELECTOR, "button[title*='save' i]"),
+                                (By.CSS_SELECTOR, "button.subreddit-rule-submit-button"),
+                            ],
+                            wait_seconds=2,
+                        )
+                        if not saved:
+                            # Fallback: click the last visible button in the rule editor container (green check)
+                            try:
+                                container = desc_input.find_element(By.XPATH, "./ancestor::form[1]")
+                                try:
+                                    debug_buttons = []
+                                    for b in container.find_elements(By.TAG_NAME, "button"):
+                                        debug_buttons.append({
+                                            "text": (b.text or "").strip(),
+                                            "aria": b.get_attribute("aria-label") or "",
+                                            "title": b.get_attribute("title") or "",
+                                            "class": b.get_attribute("class") or "",
+                                            "displayed": bool(b.is_displayed()),
+                                        })
+                                    logger.info("Rule editor buttons: %s", debug_buttons)
+                                except Exception:
+                                    pass
+                                buttons = [b for b in container.find_elements(By.TAG_NAME, "button") if b.is_displayed()]
+                                if buttons:
+                                    try:
+                                        self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", buttons[-1])
+                                        buttons[-1].click()
+                                        saved = True
+                                    except Exception:
+                                        self.driver.execute_script("arguments[0].click();", buttons[-1])
+                                        saved = True
+                            except Exception:
+                                pass
+                        if not saved:
+                            raise NoSuchElementException("Rule save button not found")
+                        time.sleep(1)
+                        continue
+
+                    # Old UI rule rows
+                    rule_rows = self.driver.find_elements(By.CSS_SELECTOR, ".rule-row, .rule, tr.rule")
                     new_row = rule_rows[-1] if rule_rows else None
-                    
+
                     if new_row:
-                        # Fill rule text
-                        text_input = new_row.find_element(By.CSS_SELECTOR, "input.rule-input")
-                        text_input.clear()
-                        text_input.send_keys(rule_text)
+                        text_input = self._find_first(
+                            [
+                                (By.CSS_SELECTOR, "input.rule-input"),
+                                (By.CSS_SELECTOR, "input[name*='short']"),
+                                (By.CSS_SELECTOR, "input[name*='title']"),
+                                (By.CSS_SELECTOR, "input[type='text']"),
+                            ],
+                            wait_seconds=3,
+                        )
+                        if text_input:
+                            self._set_field_value(text_input, rule_text[:100])
                         time.sleep(0.5)
-                        
-                        # Set violation reason (same as rule text for simplicity)
-                        reason_input = new_row.find_element(By.CSS_SELECTOR, "input.reason-input")
-                        reason_input.clear()
-                        reason_input.send_keys(f"Violates rule {i}")
+
+                        reason_input = self._find_first(
+                            [
+                                (By.CSS_SELECTOR, "input.reason-input"),
+                                (By.CSS_SELECTOR, "input[name*='reason']"),
+                                (By.CSS_SELECTOR, "input[name*='violation']"),
+                            ],
+                            wait_seconds=2,
+                        )
+                        if reason_input:
+                            self._set_field_value(reason_input, f"Violates rule {i}")
                         time.sleep(0.5)
+
+                        desc_input = self._find_first(
+                            [
+                                (By.CSS_SELECTOR, "textarea"),
+                                (By.CSS_SELECTOR, "textarea[name*='description']"),
+                                (By.CSS_SELECTOR, "textarea[name*='long']"),
+                            ],
+                            wait_seconds=1,
+                        )
+                        if desc_input:
+                            self._set_field_value(desc_input, rule_text)
                 
                 except Exception as e:
                     logger.warning(f"Error adding rule {i}: {e}")
                     continue
             
             # Click save button
-            try:
-                save_button = self.driver.find_element(By.CSS_SELECTOR, "button.save-rules")
-                save_button.click()
+            save_clicked = self._click_first(
+                [
+                    (By.CSS_SELECTOR, "button.save-rules"),
+                    (By.CSS_SELECTOR, "input[type='submit']"),
+                    (By.XPATH, "//button[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'save')]"),
+                ]
+            )
+            if save_clicked:
                 time.sleep(2)
                 logger.info(f"Rules saved for r/{subreddit_name}")
-            except:
+            else:
                 logger.warning("Could not find save button, rules may not have been saved")
             
             logger.info(f"Added {len(rules)} rules for r/{subreddit_name}")
@@ -597,14 +1033,37 @@ message: |
                     time.sleep(0.5)
             except:
                 pass
-            
-            # Save settings
+
+            # Ensure wiki is enabled (needed for AutoModerator)
             try:
-                save_button = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
-                save_button.click()
+                wiki_radio = self._find_first(
+                    [
+                        (By.CSS_SELECTOR, "input[name='wikimode'][value='mod']"),
+                        (By.CSS_SELECTOR, "input[name='wikimode'][value='any']"),
+                        (By.CSS_SELECTOR, "input[name='wikimode'][value='0']"),
+                    ],
+                    wait_seconds=2,
+                )
+                if wiki_radio and not wiki_radio.is_selected():
+                    wiki_radio.click()
+                    time.sleep(0.2)
+            except Exception:
+                pass
+            
+            # Save settings (old Reddit uses input[type=submit])
+            save_clicked = self._click_first(
+                [
+                    (By.CSS_SELECTOR, "button[type='submit']"),
+                    (By.CSS_SELECTOR, "input[type='submit']"),
+                    (By.XPATH, "//button[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'save')]"),
+                    (By.XPATH, "//input[@type='submit' and contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'save')]"),
+                ],
+                wait_seconds=2,
+            )
+            if save_clicked:
                 time.sleep(3)
                 logger.info(f"Settings saved for r/{subreddit_name}")
-            except:
+            else:
                 logger.warning("Could not find save button")
             
             logger.info(f"Configured basic settings for r/{subreddit_name}")
@@ -903,6 +1362,8 @@ This community is for educational purposes only. Not medical advice.
                 logger.error(f"Error in {step_name}: {e}")
         
         logger.info(f"Completed {success_count}/{len(steps)} setup steps for r/{subreddit_name}")
+        all_old = all("old.reddit.com" in url for url in self.moderation_urls_used) if self.moderation_urls_used else True
+        logger.info("Moderation UI mode: %s (old-only=%s)", self.moderation_ui_mode, all_old)
         return success_count >= 3  # Require at least 3 successful steps
 
     def check_spam_queue(self, subreddit_name: str) -> Dict:
@@ -990,7 +1451,9 @@ This community is for educational purposes only. Not medical advice.
         if tracking_file.exists():
             try:
                 data = json.loads(tracking_file.read_text())
-                return [sub["name"] for sub in data.get("subreddits", [])]
+                if isinstance(data, list):
+                    return [sub.get("subreddit") for sub in data if isinstance(sub, dict) and sub.get("subreddit")]
+                return [sub.get("subreddit") for sub in data.get("subreddits", []) if isinstance(sub, dict) and sub.get("subreddit")]
             except:
                 pass
 
@@ -1043,6 +1506,7 @@ def main():
     parser.add_argument("--queue", action="store_true", help="Check moderation queue")
     parser.add_argument("--headless", action="store_true", help="Run browser in background")
     parser.add_argument("--interactive", action="store_true", help="Interactive mode")
+    parser.add_argument("--watch", action="store_true", help="Auto-restart on code/config changes (interactive mode)")
     parser.add_argument("--dry-run", action="store_true", help="Simulate actions without executing")
     parser.add_argument("--validate-only", action="store_true", help="Validate configs/accounts and exit")
     
@@ -1128,43 +1592,83 @@ def main():
             logger.info("Please specify --subreddit")
     
     elif args.interactive or not any([args.setup, args.daily, args.queue]):
-        # Interactive mode
-        logger.info("\nInteractive Mode")
-        logger.info("1. Setup moderation for a subreddit")
-        logger.info("2. Run daily moderation tasks")
-        logger.info("3. Check moderation queue")
-        logger.info("4. Setup all subreddits")
-        logger.info("5. Exit")
-        
-        choice = input("\nSelect option (1-5): ")
-        
-        if choice == "1":
-            subreddit = input("Enter subreddit name: ").strip()
-            if subreddit:
-                success = manager.setup_complete_moderation(subreddit)
-                logger.info(f"Setup {'complete' if success else 'partially complete'}")
-        
-        elif choice == "2":
-            subreddit = input("Enter subreddit name (or press Enter for all): ").strip()
-            if subreddit:
-                manager.run_daily_moderation([subreddit])
-            else:
-                manager.run_daily_moderation()
-        
-        elif choice == "3":
-            subreddit = input("Enter subreddit name: ").strip()
-            if subreddit:
-                stats = manager.check_moderation_queue(subreddit)
-                if stats:
-                    logger.info(f"\nQueue stats:")
-                    logger.info(f"  Total: {stats.get('total_items', 0)}")
-                    logger.info(f"  Approved: {stats.get('approved', 0)}")
-                    logger.info(f"  Removed: {stats.get('removed', 0)}")
-        
-        elif choice == "4":
-            confirm = input("Setup moderation for ALL MCRDSE subreddits? (yes/no): ")
-            if confirm.lower() == "yes":
-                manager.setup_all_moderation()
+        # Interactive mode (loop until exit)
+        watch_paths = []
+        if getattr(args, "watch", False):
+            watch_paths = [
+                Path("scripts/moderation/manage_moderation.py"),
+                Path("scripts/moderation/config/moderation_config.json"),
+                Path("config/accounts.json"),
+            ]
+        watch_state = {}
+
+        def _snapshot_watch_state():
+            state = {}
+            for p in watch_paths:
+                try:
+                    state[str(p)] = p.stat().st_mtime
+                except Exception:
+                    continue
+            return state
+
+        def _restart_if_changed():
+            if not watch_paths:
+                return
+            nonlocal watch_state
+            current = _snapshot_watch_state()
+            if watch_state and current != watch_state:
+                logger.info("Detected changes in watched files; restarting...")
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+            watch_state = current
+
+        if watch_paths:
+            watch_state = _snapshot_watch_state()
+
+        while True:
+            _restart_if_changed()
+            logger.info("\nInteractive Mode")
+            logger.info("1. Setup moderation for a subreddit")
+            logger.info("2. Run daily moderation tasks")
+            logger.info("3. Check moderation queue")
+            logger.info("4. Setup all subreddits")
+            logger.info("5. Exit")
+            
+            choice = input("\nSelect option (1-5): ").strip()
+            
+            if choice == "1":
+                subreddit = input("Enter subreddit name: ").strip()
+                if subreddit:
+                    success = manager.setup_complete_moderation(subreddit)
+                    logger.info(f"Setup {'complete' if success else 'partially complete'}")
+                _restart_if_changed()
+            
+            elif choice == "2":
+                subreddit = input("Enter subreddit name (or press Enter for all): ").strip()
+                if subreddit:
+                    manager.run_daily_moderation([subreddit])
+                else:
+                    manager.run_daily_moderation()
+                _restart_if_changed()
+            
+            elif choice == "3":
+                subreddit = input("Enter subreddit name: ").strip()
+                if subreddit:
+                    stats = manager.check_moderation_queue(subreddit)
+                    if stats:
+                        logger.info(f"\nQueue stats:")
+                        logger.info(f"  Total: {stats.get('total_items', 0)}")
+                        logger.info(f"  Approved: {stats.get('approved', 0)}")
+                        logger.info(f"  Removed: {stats.get('removed', 0)}")
+                _restart_if_changed()
+            
+            elif choice == "4":
+                confirm = input("Setup moderation for ALL MCRDSE subreddits? (yes/no): ").strip()
+                if confirm.lower() == "yes":
+                    manager.setup_all_moderation()
+                _restart_if_changed()
+            
+            elif choice == "5":
+                break
     
     # Cleanup
     manager.cleanup()
