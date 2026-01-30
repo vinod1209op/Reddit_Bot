@@ -1,0 +1,11 @@
+{
+  "enabled": true,
+  "max_items": 10,
+  "include_statuses": ["posted", "scheduled"],
+  "channels": {
+    "twitter": { "enabled": true, "max_len": 240 },
+    "discord": { "enabled": true },
+    "newsletter": { "enabled": true },
+    "blog": { "enabled": true }
+  }
+}

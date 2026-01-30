@@ -1,14 +1,58 @@
 {
   "cta_url": "https://quiz.mcrdsemovement.com/mcrdse-funnel",
   "cta_text": "Take the MCRDSE Movement Quiz",
+  "ai_assisted_default": false,
   "subreddit_distribution": {
-    "primary_focus": ["Mental_Health_Hub"],
-    "secondary_focus": [],
-    "crosspost_to": []
+    "primary_focus": ["MindWellBeing", "Mental_Health_Hub"],
+    "secondary_focus": ["ClinicalMicrodosingHu"],
+    "crosspost_to": [],
+    "crosspost_requires_manual": true
   },
+  "content_strategy": {
+    "daily_themes": {
+      "Monday": "Research Review",
+      "Tuesday": "Toolkit & Resources",
+      "Wednesday": "Community Support",
+      "Thursday": "Science & Studies",
+      "Friday": "Future & Innovation",
+      "Saturday": "Personal Experiences",
+      "Sunday": "Weekly Reflection"
+    },
+    "theme_post_types": {
+      "Research Review": ["resource", "news"],
+      "Toolkit & Resources": ["resource"],
+      "Community Support": ["discussion", "question"],
+      "Science & Studies": ["news", "discussion"],
+      "Future & Innovation": ["discussion", "question"],
+      "Personal Experiences": ["experience", "discussion"],
+      "Weekly Reflection": ["discussion", "question"]
+    }
+  },
+  "ab_testing": {
+    "enabled": true,
+    "experiments": {
+      "title_style": ["question", "statement", "curiosity_gap"],
+      "post_timing": ["morning", "afternoon", "evening"],
+      "content_length": ["short", "medium", "long"],
+      "media_inclusion": ["text_only", "link"]
+    },
+    "weights": {
+      "title_style": { "question": 0.5, "statement": 0.35, "curiosity_gap": 0.15 },
+      "post_timing": { "morning": 0.4, "afternoon": 0.35, "evening": 0.25 },
+      "content_length": { "short": 0.3, "medium": 0.5, "long": 0.2 },
+      "media_inclusion": { "text_only": 0.7, "link": 0.3 }
+    }
+  },
+  "seo_title_keywords": [
+    "psychedelic research",
+    "microdosing",
+    "integration practices",
+    "harm reduction",
+    "clinical protocols"
+  ],
   "profiles": {
     "low_frequency": {
-      "max_posts_per_day": 2,
+      "max_posts_per_day": 999,
       "content_mix": {
         "discussion": 40,
         "resource": 30,

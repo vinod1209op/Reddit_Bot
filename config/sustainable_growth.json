@@ -1,0 +1,46 @@
+{
+  "network_events": {
+    "network_ama": {
+      "title": "Network AMA: Community Q&A across MCRDSE",
+      "content": "We are hosting a network AMA across all MCRDSE communities.\n\nTopics:\n- Research updates\n- Integration practices\n- Harm reduction\n\nDrop questions below and share context if you can.",
+      "cadence_days": 30,
+      "hour": 12
+    },
+    "shared_challenge": {
+      "title": "Shared Challenge: 30-day reflection journal",
+      "content": "This is a shared challenge across the MCRDSE network.\n\nHow it works:\n- Daily reflection (2-5 minutes)\n- Track mood, focus, and energy\n- Share weekly insights\n\nComment if you are participating.",
+      "cadence_days": 45,
+      "hour": 13
+    }
+  },
+  "evangelist_program": {
+    "min_comments": 6,
+    "min_upvotes": 25,
+    "min_days_active": 30,
+    "flair_name": "Community Evangelist",
+    "invite_template": "Thanks for contributing consistently. If you are open to it, we would like to invite you to help guide discussions and maintain research quality.",
+    "training_materials": [
+      "Community guidelines and sourcing policy",
+      "Harm reduction principles",
+      "Conflict resolution basics",
+      "How to encourage evidence-based discussion"
+    ],
+    "reward_notes": [
+      "Recognition in monthly highlights",
+      "Early access to research summaries",
+      "Optional moderator invitation"
+    ]
+  },
+  "resource_optimization": {
+    "min_posts_for_scoring": 5,
+    "max_focus_subreddits": 2,
+    "max_pause_subreddits": 1,
+    "focus_threshold": 0.6,
+    "pause_threshold": 0.2,
+    "weights": {
+      "upvotes": 0.5,
+      "comments": 0.4,
+      "views": 0.1
+    }
+  }
+}

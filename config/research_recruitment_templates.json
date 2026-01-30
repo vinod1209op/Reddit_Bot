@@ -1,0 +1,20 @@
+{
+  "default": {
+    "title": "Study invitation: share your experience",
+    "content": "We are conducting a community study on psychedelic integration practices.\n\nParticipation is optional and anonymized. If you are interested, reply with your preferred contact method or see the wiki for details.\n\nThis post is for recruitment only. Please keep replies focused and respectful."
+  },
+  "templates": [
+    {
+      "title": "Invitation: integration practices study",
+      "content": "We are recruiting volunteers for a community study on integration practices. Participation is optional and anonymized.\n\nIf you are interested, reply in-thread or check the wiki for details.\n\nPlease keep responses focused and respectful."
+    },
+    {
+      "title": "Call for participants: microdosing journal project",
+      "content": "We are collecting anonymized reflections for a microdosing journal project.\n\nParticipation is optional. If you want to take part, reply with your preferred contact method or see the wiki for details.\n\nThank you for supporting safe research."
+    },
+    {
+      "title": "Research request: outcomes tracking survey",
+      "content": "We are running an anonymized outcomes tracking survey to improve community resources.\n\nIf you would like to participate, reply in-thread or consult the wiki page for details.\n\nParticipation is entirely optional."
+    }
+  ]
+}

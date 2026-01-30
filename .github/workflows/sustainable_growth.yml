@@ -1,0 +1,34 @@
+name: Sustainable Growth Plan
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Generate growth plan
+        run: |
+          set -euxo pipefail
+          python scripts/sustainability/sustainable_growth.py
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sustainable-growth-output
+          path: |
+            logs/sustainable_growth_plan.json
+            logs/sustainable_growth_plan.md

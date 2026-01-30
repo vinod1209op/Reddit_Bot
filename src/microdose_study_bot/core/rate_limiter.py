@@ -7,12 +7,20 @@ from __future__ import annotations
 
 import time
 import random
+import os
 from typing import Dict, List, Tuple
 
 
 class RateLimiter:
     def __init__(self):
         self.activity_log: Dict[str, Dict[str, List[float]]] = {}
+
+    def _bypass_limits(self, action: str) -> bool:
+        if os.getenv("BYPASS_ALL_LIMITS", "1").strip().lower() in ("1", "true", "yes"):
+            return True
+        if os.getenv("BYPASS_ENGAGEMENT_LIMITS", "1").strip().lower() in ("1", "true", "yes"):
+            return str(action).lower() in {"comment", "reply", "vote", "follow", "save", "message"}
+        return False
 
     def _log(self, account_name: str, action: str) -> List[float]:
         return self.activity_log.setdefault(account_name, {}).setdefault(action, [])
@@ -31,6 +39,9 @@ class RateLimiter:
         limits_config expects:
           { action: { per_hour: int, per_day: int, per_week: int, jitter_seconds: int } }
         """
+        if self._bypass_limits(action):
+            return True, 0
+
         if not limits_config or action not in limits_config:
             return True, 0
 

@@ -88,6 +88,10 @@ def _account_cooldowns() -> Dict[str, Dict[str, str]]:
     return results
 
 
+def _load_quality_report() -> Dict:
+    return _load_json(Path("logs/moderation_quality_report.json")) or {}
+
+
 def main() -> None:
     now = datetime.now()
     since = now - timedelta(days=7)
@@ -95,6 +99,9 @@ def main() -> None:
     post_counts = _count_posts(since)
     moderation_counts = _count_moderation_actions(since)
     cooldowns = _account_cooldowns()
+    quality_report = _load_quality_report()
+    analytics_report = _load_json(Path("logs/analytics_report.json")) or {}
+    predictive_report = _load_json(Path("logs/predictive_insights.json")) or {}
 
     report_md = Path("logs/weekly_community_report.md")
     report_json = Path("logs/weekly_community_report.json")
@@ -117,6 +124,44 @@ def main() -> None:
     else:
         lines.append("- None")
 
+    if quality_report:
+        lines.extend(
+            [
+                "",
+                "## Moderation Quality (latest)",
+                f"- Source: {quality_report.get('source_file', '')}",
+                f"- Scored items: {quality_report.get('scored_items', 0)}",
+            ]
+        )
+        top = quality_report.get("top_priority", [])[:5]
+        if top:
+            lines.append("- Top priority samples:")
+            for item in top:
+                lines.append(
+                    f"  - r/{item.get('subreddit')} | {item.get('title')} | score {item.get('scores', {}).get('overall')}"
+                )
+
+    if analytics_report:
+        lines.extend(
+            [
+                "",
+                "## Analytics (latest)",
+                f"- Posts (week): {analytics_report.get('growth', {}).get('posts_week')}",
+                f"- Engagement (comments): {analytics_report.get('engagement', {}).get('comments')}",
+                f"- Spam rate: {analytics_report.get('health', {}).get('spam_rate')}",
+            ]
+        )
+
+    if predictive_report:
+        lines.extend(
+            [
+                "",
+                "## Predictive Insights (latest)",
+                f"- Top topics: {predictive_report.get('top_topics')}",
+                f"- Optimal hours: {predictive_report.get('optimal_hours')}",
+            ]
+        )
+
     report_md.write_text("\n".join(lines) + "\n")
 
     report_json.write_text(
@@ -128,6 +173,9 @@ def main() -> None:
                 "posts_scheduled": post_counts["scheduled"],
                 "posts_posted": post_counts["posted"],
                 "moderation": moderation_counts,
+                "moderation_quality": quality_report,
+                "analytics": analytics_report,
+                "predictive_insights": predictive_report,
                 "cooldowns": cooldowns,
             },
             indent=2,

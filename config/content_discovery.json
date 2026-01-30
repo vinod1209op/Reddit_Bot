@@ -1,0 +1,5 @@
+{
+  "enabled": true,
+  "queue_path": "data/content_discovery_queue.json",
+  "max_items_per_run": 5
+}

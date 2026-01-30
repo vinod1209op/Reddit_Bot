@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "source_keywords": ["study", "paper", "doi", "pubmed", "trial", "meta-analysis"],
+  "topic_keywords": [
+    "microdosing",
+    "integration",
+    "harm reduction",
+    "clinical",
+    "protocol",
+    "neuroplasticity",
+    "therapy",
+    "policy",
+    "safety"
+  ],
+  "min_samples_for_time_opt": 5
+}

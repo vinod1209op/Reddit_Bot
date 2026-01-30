@@ -1,0 +1,45 @@
+{
+  "bot_prefix": "🤖 ",
+  "comment_strategy": {
+    "types": {
+      "question_expander": { "weight": 0.3 },
+      "resource_provider": { "weight": 0.2 },
+      "clarification_seeker": { "weight": 0.25 },
+      "experience_validator": { "weight": 0.25 }
+    }
+  },
+  "monthly_events": {
+    "study_club": {
+      "title": "Study Club: Monthly deep dive — {paper}",
+      "content": "This month’s Study Club will focus on **{paper}**.\n\nAgenda:\n- Summary of the paper\n- Methodology strengths/limitations\n- Practical implications\n\nShare your notes or questions below.",
+      "weekday": "Wednesday",
+      "week_of_month": 1
+    },
+    "researcher_ama": {
+      "title": "Researcher AMA: {guest}",
+      "content": "We’re hosting a Researcher AMA with **{guest}**.\n\nDrop your questions in advance:\n- Study design\n- Safety considerations\n- Future research directions\n\nPlease keep questions concise and respectful.",
+      "weekday": "Friday",
+      "week_of_month": 3
+    },
+    "community_challenge": {
+      "title": "Community Challenge: 30-day microdosing journal",
+      "content": "This month’s challenge: **30-day microdosing journal**.\n\nHow it works:\n- Daily reflection (2-5 minutes)\n- Track mood, focus, and energy\n- Share weekly insights\n\nComment if you’re participating!",
+      "weekday": "Saturday",
+      "week_of_month": 4
+    }
+  },
+  "recognition": {
+    "flair_progression": [
+      { "name": "Contributor", "min_comments": 3 },
+      { "name": "Trusted Contributor", "min_comments": 10 },
+      { "name": "Community Mentor", "min_comments": 25 }
+    ],
+    "featured_contributors_title": "Featured Contributors — {month}",
+    "awards": [
+      "Best Insight",
+      "Most Helpful Reply",
+      "Research Champion",
+      "Community Builder"
+    ]
+  }
+}

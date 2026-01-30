@@ -1,0 +1,32 @@
+{
+  "enabled": true,
+  "activity_dispersion": {
+    "max_account_share": 0.6
+  },
+  "content_variation": {
+    "min_unique_title_ratio": 0.7,
+    "min_unique_content_ratio": 0.6
+  },
+  "behavior_randomization": {
+    "require_random_timing": true,
+    "require_human_typing": true
+  },
+  "backup": {
+    "account_backup_pool": ["account_backup_1", "account_backup_2"],
+    "content_backup_paths": [
+      "scripts/content_scheduling/schedule/post_schedule.json",
+      "scripts/content_scheduling/templates/post_templates.json"
+    ],
+    "community_migration_plan": [
+      "Create replacement subreddit",
+      "Post migration notice",
+      "Redirect sidebar + wiki links",
+      "Archive old community content"
+    ]
+  },
+  "compliance_monitoring": {
+    "weekly_review": true,
+    "monthly_audit": true,
+    "quarterly_strategy_review": true
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "created_at": "2026-01-30T05:47:26.386337",
+  "targets": [
+    "scripts/content_scheduling/schedule/post_schedule.json",
+    "scripts/content_scheduling/templates/post_templates.json",
+    "scripts/subreddit_creation/history/created_subreddits.json",
+    "scripts/moderation/history",
+    "logs"
+  ]
+}

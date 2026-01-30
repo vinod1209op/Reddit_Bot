@@ -1,0 +1,50 @@
+name: Ecosystem Integration Exports
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ecosystem:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build ecosystem exports
+        run: |
+          set -euxo pipefail
+          python scripts/integration/ecosystem_export.py
+
+      - name: Deliver exports (if configured)
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          NEWSLETTER_FROM: ${{ secrets.NEWSLETTER_FROM }}
+          NEWSLETTER_TO: ${{ secrets.NEWSLETTER_TO }}
+        run: |
+          set -euxo pipefail
+          python scripts/integration/ecosystem_delivery.py
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecosystem-exports
+          path: |
+            exports/ecosystem/reddit_to_blog.json
+            exports/ecosystem/blog_to_reddit.json
+            exports/ecosystem/weekly_digest.md
+            exports/ecosystem/discord_payload.json
+            exports/ecosystem/newsletter_payload.json

@@ -1,0 +1,25 @@
+{
+  "tos_tracker": {
+    "sources": [
+      "https://www.reddit.com/policies/user-agreement",
+      "https://www.reddit.com/policies/privacy-policy"
+    ],
+    "last_reviewed": null,
+    "review_frequency_days": 30
+  },
+  "compliance_log": {
+    "log_path": "logs/compliance_log.jsonl",
+    "fields": [
+      "timestamp",
+      "reviewer",
+      "actor",
+      "action",
+      "context",
+      "decision",
+      "evidence",
+      "scope",
+      "notes"
+    ]
+  },
+  "data_usage_policy_path": "information/DATA_USAGE_POLICY.md"
+}

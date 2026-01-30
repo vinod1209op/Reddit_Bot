@@ -1,0 +1,28 @@
+{
+  "exports": {
+    "reddit_to_blog": "exports/ecosystem/reddit_to_blog.json",
+    "blog_to_reddit": "exports/ecosystem/blog_to_reddit.json",
+    "weekly_digest": "exports/ecosystem/weekly_digest.md",
+    "discord_payload": "exports/ecosystem/discord_payload.json",
+    "newsletter_payload": "exports/ecosystem/newsletter_payload.json"
+  },
+  "linkage": {
+    "enabled": false,
+    "description": "Optional, privacy-focused linkage only. No PII stored."
+  },
+  "recommendations": {
+    "max_items": 5
+  },
+  "delivery": {
+    "discord_webhook_env": "DISCORD_WEBHOOK_URL",
+    "newsletter": {
+      "smtp_host_env": "SMTP_HOST",
+      "smtp_port_env": "SMTP_PORT",
+      "smtp_user_env": "SMTP_USERNAME",
+      "smtp_pass_env": "SMTP_PASSWORD",
+      "from_env": "NEWSLETTER_FROM",
+      "to_env": "NEWSLETTER_TO",
+      "subject": "MCRDSE Weekly Digest"
+    }
+  }
+}

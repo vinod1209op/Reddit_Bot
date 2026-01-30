@@ -57,6 +57,8 @@ class MCRDSEPostScheduler(RedditAutomationBase):
         self.post_templates = self.load_templates()
         self.is_running = False
         self.scheduler_thread = None
+        self.ab_log_path = Path("logs/ab_tests.jsonl")
+        self.optimizer = self._load_optimizer()
         
     def load_config(self) -> Dict:
         """Load scheduler configuration"""
@@ -98,6 +100,15 @@ class MCRDSEPostScheduler(RedditAutomationBase):
                     "Saturday": "Personal Experiences",
                     "Sunday": "Weekly Reflection"
                 },
+                "theme_post_types": {
+                    "Research Review": ["resource", "news"],
+                    "Toolkit & Resources": ["resource"],
+                    "Community Support": ["discussion", "question"],
+                    "Science & Studies": ["news", "discussion"],
+                    "Future & Innovation": ["discussion", "question"],
+                    "Personal Experiences": ["experience", "discussion"],
+                    "Weekly Reflection": ["discussion", "question"]
+                },
                 "content_mix": {
                     "discussion": 30,
                     "question": 25,
@@ -130,6 +141,15 @@ class MCRDSEPostScheduler(RedditAutomationBase):
                 "backup_schedule_days": 7,
                 "log_all_actions": True,
                 "send_alerts_on_failure": False
+            },
+            "ab_testing": {
+                "enabled": False,
+                "experiments": {
+                    "title_style": ["question", "statement", "curiosity_gap"],
+                    "post_timing": ["morning", "afternoon", "evening"],
+                    "content_length": ["short", "medium", "long"],
+                    "media_inclusion": ["text_only", "link"]
+                }
             }
         }
 
@@ -177,6 +197,13 @@ class MCRDSEPostScheduler(RedditAutomationBase):
             logger.info(f"Created default config at {config_path}")
 
         return config
+
+    def _load_optimizer(self):
+        try:
+            from scripts.optimization.content_optimizer import ContentOptimizer
+            return ContentOptimizer()
+        except Exception:
+            return None
     
     def load_templates(self) -> Dict:
         """Load post templates"""
@@ -342,6 +369,168 @@ class MCRDSEPostScheduler(RedditAutomationBase):
             return json.loads(path.read_text())
         except Exception:
             return {}
+
+    def _log_ab_event(self, post: Dict, event: str, extra: Optional[Dict] = None) -> None:
+        payload = {
+            "event": event,
+            "timestamp": datetime.now().isoformat(),
+            "post_id": post.get("id"),
+            "subreddit": post.get("subreddit"),
+            "title": post.get("title"),
+            "type": post.get("type"),
+            "ab_test": post.get("ab_test", {}),
+            "crosspost_from": post.get("crosspost_from"),
+            "post_url": post.get("post_url"),
+        }
+        if extra:
+            payload.update(extra)
+        try:
+            self.ab_log_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.ab_log_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+
+    def _pick_theme_for_date(self, dt: datetime) -> Optional[str]:
+        themes = self.config.get("content_strategy", {}).get("daily_themes", {})
+        if not themes:
+            return None
+        return themes.get(dt.strftime("%A"))
+
+    def _select_post_type_for_theme(self, theme: Optional[str]) -> Optional[str]:
+        mapping = self.config.get("content_strategy", {}).get("theme_post_types", {})
+        if not theme or not isinstance(mapping, dict):
+            return None
+        choices = mapping.get(theme, [])
+        if not choices:
+            return None
+        return random.choice(choices)
+
+    def _choose_ab_variants(self) -> Dict[str, str]:
+        ab = self.config.get("ab_testing", {})
+        if not ab.get("enabled"):
+            return {}
+        variants = {}
+        experiments = ab.get("experiments") or {}
+        weights_cfg = ab.get("weights") or {}
+        for key, opts in experiments.items():
+            if isinstance(opts, list) and opts:
+                weights = None
+                if isinstance(weights_cfg.get(key), dict):
+                    weights = [weights_cfg[key].get(opt, 1.0) for opt in opts]
+                if weights:
+                    variants[key] = random.choices(opts, weights=weights, k=1)[0]
+                else:
+                    variants[key] = random.choice(opts)
+        return variants
+
+    def _apply_title_variant(self, title: str, variant: str) -> str:
+        if variant == "question":
+            if title.endswith("?"):
+                return title
+            return f"{title}?"
+        if variant == "curiosity_gap":
+            return f"What most people miss about {title}"
+        if variant == "statement":
+            return title
+        return title
+
+    def _apply_seo_title_keywords(self, title: str) -> str:
+        keywords = self.config.get("seo_title_keywords", [])
+        if not keywords:
+            return title
+        if random.random() > 0.5:
+            return title
+        keyword = random.choice(keywords)
+        if keyword.lower() in title.lower():
+            return title
+        return f"{title} — {keyword}"
+
+    def _apply_length_variant(self, content: str, variant: str) -> str:
+        if variant == "short":
+            parts = [p for p in content.split("\n\n") if p.strip()]
+            return "\n\n".join(parts[:2]) if parts else content
+        if variant == "long":
+            extra = (
+                "\n\nDiscussion prompts:\n"
+                "- What stood out to you most?\n"
+                "- What would you want to see studied next?\n"
+                "- How does this connect to your experience or research focus?"
+            )
+            return content + extra
+        return content
+
+    def _apply_media_variant(self, content: str, variant: str, cta_url: Optional[str]) -> str:
+        if variant in ("link", "links") and cta_url and cta_url not in content:
+            return content + f"\n\nRelated link: {cta_url}"
+        return content
+
+    def _apply_timing_variant(self, scheduled: datetime, variant: str) -> datetime:
+        windows = {
+            "morning": ("09:00", "11:00"),
+            "afternoon": ("12:00", "15:00"),
+            "evening": ("18:00", "21:00"),
+        }
+        if variant not in windows:
+            return scheduled
+        start_str, end_str = windows[variant]
+        start_hour, start_minute = map(int, start_str.split(":"))
+        end_hour, end_minute = map(int, end_str.split(":"))
+        base = scheduled
+        start_dt = base.replace(hour=start_hour, minute=start_minute, second=0, microsecond=0)
+        end_dt = base.replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
+        if end_dt <= start_dt:
+            end_dt += timedelta(days=1)
+        total_minutes = max(1, int((end_dt - start_dt).total_seconds() / 60))
+        offset = random.randint(0, total_minutes)
+        return start_dt + timedelta(minutes=offset)
+
+    def _related_subreddits(self, subreddit: str) -> List[str]:
+        network = self.load_network_config()
+        cross = network.get("cross_promotion", {})
+        related_map = cross.get("related_map", {})
+        related = list(related_map.get(subreddit, []))
+        if related:
+            return related
+        categories = network.get("categories", {})
+        for group in categories.values():
+            if isinstance(group, list) and subreddit in group:
+                return [s for s in group if s != subreddit]
+        return []
+
+    def _generate_crosspost_posts(self, post: Dict, max_crossposts: Optional[int] = None) -> List[Dict]:
+        if post.get("type") == "digest" or post.get("crosspost_from"):
+            return []
+        network = self.load_network_config()
+        cross = network.get("cross_promotion", {})
+        max_cp = int(max_crossposts or cross.get("max_crossposts", 0) or 0)
+        if max_cp <= 0:
+            return []
+        related = self._related_subreddits(post.get("subreddit", ""))
+        if not related:
+            return []
+        random.shuffle(related)
+        selected = related[:max_cp]
+        delay_minutes = int(
+            self.config.get("subreddit_distribution", {}).get("crosspost_delay_minutes", 30)
+        )
+        base_time = datetime.fromisoformat(post["scheduled_for"])
+        crossposts = []
+        for i, subreddit in enumerate(selected):
+            cp = dict(post)
+            cp["id"] = f"cross_{int(time.time())}_{random.randint(1000, 9999)}"
+            cp["subreddit"] = subreddit
+            cp["crosspost_from"] = post.get("subreddit")
+            cp["title"] = post["title"]
+            cp["content"] = (
+                f"Cross-posted from r/{post.get('subreddit')} (original context below).\n\n"
+                f"{post['content']}"
+            )
+            cp["scheduled_for"] = (base_time + timedelta(minutes=delay_minutes * (i + 1))).isoformat()
+            cp["status"] = "scheduled"
+            cp["created_at"] = datetime.now().isoformat()
+            crossposts.append(cp)
+        return crossposts
     
     def load_schedule(self) -> List[Dict]:
         """Load scheduled posts from file"""
@@ -417,6 +606,8 @@ class MCRDSEPostScheduler(RedditAutomationBase):
         
         template_group = self.post_templates[post_type]
         template = random.choice(template_group["templates"])
+        template_id = template.get("template_id")
+        template_ai_assisted = template.get("ai_assisted")
         
         # Fill variables
         title = template["title"]
@@ -427,29 +618,55 @@ class MCRDSEPostScheduler(RedditAutomationBase):
             title = title.replace(f"{{{var_name}}}", replacement)
             content = content.replace(f"{{{var_name}}}", replacement)
         
-        # Add CTA if configured (inline URL in sentence)
-        cta_url = self.config.get("cta_url")
-        cta_text = self.config.get("cta_text", "Take the MCRDSE Movement Quiz")
-        if cta_url:
-            content += f"\n\nIf this topic resonates, {cta_text} at {cta_url}."
-        else:
-            if random.random() < 0.3:  # 30% chance
-                content += "\n\nFor research-based resources, check out the MCRDSE research portal."
+        # Apply A/B variants (before CTA)
+        ab_variants = self._choose_ab_variants()
+        if ab_variants.get("title_style"):
+            title = self._apply_title_variant(title, ab_variants["title_style"])
+        title = self._apply_seo_title_keywords(title)
+        if ab_variants.get("content_length"):
+            content = self._apply_length_variant(content, ab_variants["content_length"])
         
+        # Optional ML/heuristic optimization
+        if self.optimizer and getattr(self.optimizer, "enabled", False):
+            title = self.optimizer.optimize_title(title, {"type": post_type, "content": content, "subreddit": subreddit or ""})
+            suggestions = self.optimizer.suggest_improvements(content)
+            if suggestions:
+                content += "\n\nSuggestions:\n" + "\n".join([f"- {s}" for s in suggestions[:2]])
+
         # Select subreddit if not specified
         if not subreddit:
             subreddit = self.select_subreddit_for_post(post_type)
         
         # Generate scheduled time
         scheduled_time = self.generate_scheduled_time()
+        if ab_variants.get("post_timing"):
+            scheduled_time = self._apply_timing_variant(scheduled_time, ab_variants["post_timing"])
+
+        # Apply media inclusion variants (CTA can act as link)
+        cta_url = self.config.get("cta_url")
+        if ab_variants.get("media_inclusion"):
+            content = self._apply_media_variant(content, ab_variants["media_inclusion"], cta_url)
+
+        # Add CTA if configured (inline URL in sentence)
+        cta_text = self.config.get("cta_text", "Take the MCRDSE Movement Quiz")
+        if cta_url:
+            content += f"\n\nIf this topic resonates, {cta_text} at {cta_url}."
+        else:
+            if random.random() < 0.3:  # 30% chance
+                content += "\n\nFor research-based resources, check out the MCRDSE research portal."
         quality_score = min(1.0, max(0.0, len(content) / 500.0))
         
+        if template_ai_assisted is None:
+            ai_assisted_default = self.config.get("ai_assisted_default", True)
+        else:
+            ai_assisted_default = bool(template_ai_assisted)
         post = {
             "id": f"post_{int(time.time())}_{random.randint(1000, 9999)}",
             "type": post_type,
             "subreddit": subreddit,
             "title": title,
             "content": content,
+            "ai_assisted": bool(ai_assisted_default),
             "status": "scheduled",
             "created_at": datetime.now().isoformat(),
             "scheduled_for": scheduled_time.isoformat(),
@@ -459,8 +676,23 @@ class MCRDSEPostScheduler(RedditAutomationBase):
             "posted_at": None,
             "post_url": None,
             "error": None,
-            "quality_score": round(quality_score, 2)
+            "quality_score": round(quality_score, 2),
+            "ab_test": ab_variants,
+            "metrics": {
+                "views": None,
+                "upvotes": None,
+                "comments": None,
+                "retention": None,
+                "crosspost_effectiveness": None,
+            },
         }
+        if self.optimizer and getattr(self.optimizer, "enabled", False):
+            post["template_id"] = template_id or self.optimizer.template_id(post_type, title, content)
+            post["predicted_engagement"] = self.optimizer.predict_engagement(post)
+            post["predicted_risk"] = self.optimizer.predict_risk(post)
+
+        if ab_variants:
+            self._log_ab_event(post, "created")
         
         return post
     
@@ -661,6 +893,15 @@ class MCRDSEPostScheduler(RedditAutomationBase):
             subreddit = post_data["subreddit"]
             title = post_data["title"]
             content = post_data["content"]
+            if post_data.get("crosspost_from"):
+                require_manual = bool(
+                    self.config.get("subreddit_distribution", {}).get("crosspost_requires_manual", False)
+                )
+                if require_manual:
+                    if self.headless:
+                        logger.warning("Crosspost requires manual approval in headless mode; skipping.")
+                        return False, "crosspost_manual_required"
+                    input(f"Approve crosspost to r/{subreddit} from r/{post_data['crosspost_from']} and press Enter...")
             if os.getenv("BYPASS_POSTING_LIMITS", "").strip().lower() not in ("1", "true", "yes"):
                 if not self.status_tracker.can_perform_action(
                     self.account_name,
@@ -953,8 +1194,12 @@ class MCRDSEPostScheduler(RedditAutomationBase):
                         "resource": "Resource Share",
                         "experience": "Personal Experience",
                         "news": "Community News",
+                        "ai_assisted": "AI-Assisted",
                     }
-                    preferred = flair_map.get(post_data.get("type", ""), "")
+                    if post_data.get("ai_assisted", True):
+                        preferred = flair_map.get("ai_assisted")
+                    else:
+                        preferred = flair_map.get(post_data.get("type", ""), "")
                     chosen = False
                     if preferred:
                         try:
@@ -1159,7 +1404,14 @@ class MCRDSEPostScheduler(RedditAutomationBase):
             post_type = random.choices(post_types, weights=weights, k=1)[0]
             
             # Generate post
+            scheduled_time = self.generate_scheduled_time()
+            theme = self._pick_theme_for_date(scheduled_time)
+            themed_type = self._select_post_type_for_theme(theme)
+            if themed_type:
+                post_type = themed_type
             post = self.generate_post_from_template(post_type)
+            if theme:
+                post["theme"] = theme
             
             # Schedule at appropriate time (spread out over days)
             days_offset = random.randint(0, days_ahead - 1)
@@ -1173,6 +1425,10 @@ class MCRDSEPostScheduler(RedditAutomationBase):
             
             posts.append(post)
             schedule_data.append(post)
+
+            for cp in self._generate_crosspost_posts(post):
+                posts.append(cp)
+                schedule_data.append(cp)
         
         self.save_schedule(schedule_data)
         
@@ -1189,7 +1445,14 @@ class MCRDSEPostScheduler(RedditAutomationBase):
             post_types = list(self.config["content_strategy"]["content_mix"].keys())
             weights = list(self.config["content_strategy"]["content_mix"].values())
             post_type = random.choices(post_types, weights=weights, k=1)[0]
+            scheduled_time = self.generate_scheduled_time()
+            theme = self._pick_theme_for_date(scheduled_time)
+            themed_type = self._select_post_type_for_theme(theme)
+            if themed_type:
+                post_type = themed_type
             post = self.generate_post_from_template(post_type, subreddit=subreddit)
+            if theme:
+                post["theme"] = theme
             days_offset = random.randint(0, max(1, days) - 1)
             scheduled_time = datetime.fromisoformat(post["scheduled_for"])
             scheduled_time += timedelta(days=days_offset)
@@ -1197,10 +1460,19 @@ class MCRDSEPostScheduler(RedditAutomationBase):
             post["seeded"] = True
             posts.append(post)
             schedule_data.append(post)
+            for cp in self._generate_crosspost_posts(post):
+                cp["seeded"] = True
+                posts.append(cp)
+                schedule_data.append(cp)
         self.save_schedule(schedule_data)
         return posts
 
-    def seed_network_content(self, count_per_subreddit: Optional[int] = None, days: int = 30) -> Dict[str, int]:
+    def seed_network_content(
+        self,
+        count_per_subreddit: Optional[int] = None,
+        days: int = 30,
+        subreddits: Optional[List[str]] = None,
+    ) -> Dict[str, int]:
         network = self.load_network_config()
         if not network.get("enabled"):
             return {}
@@ -1208,10 +1480,13 @@ class MCRDSEPostScheduler(RedditAutomationBase):
         cross = network.get("cross_promotion", {})
         count = count_per_subreddit or int(network.get("seed_posts_per_subreddit", 10))
         seeded = {}
+        target = set([s for s in (subreddits or []) if s])
         for group in categories.values():
             if not isinstance(group, list):
                 continue
             for subreddit in group:
+                if target and subreddit not in target:
+                    continue
                 posts = self.seed_subreddit_content(subreddit, count=count, days=days)
                 seeded[subreddit] = len(posts)
                 # Optional weekly digest for hubs
@@ -1220,6 +1495,110 @@ class MCRDSEPostScheduler(RedditAutomationBase):
                     if digest:
                         self.schedule_post(digest)
         return seeded
+
+    def run_content_discovery(self, max_items: Optional[int] = None) -> int:
+        """Generate scheduled posts from local discovery queue (no external fetch)."""
+        try:
+            from scripts.content_discovery.content_discovery import ContentDiscovery
+        except Exception as exc:
+            logger.error("Content discovery module missing: %s", exc)
+            return 0
+        discovery = ContentDiscovery(config_path=Path("config/content_discovery.json"))
+        return discovery.generate_posts_from_queue(self, max_items=max_items)
+
+    def generate_ab_report(self, limit: int = 100) -> Dict[str, Any]:
+        """Create a summary of A/B performance from the schedule file."""
+        schedule = self.load_schedule()
+        rows = []
+        for post in schedule:
+            ab = post.get("ab_test") or {}
+            metrics = post.get("metrics") or {}
+            if not ab:
+                continue
+            views = metrics.get("views") or 0
+            upvotes = metrics.get("upvotes") or 0
+            comments = metrics.get("comments") or 0
+            cross = metrics.get("crosspost_effectiveness") or 0
+            if views:
+                upvote_rate = round((upvotes / views) * 100, 2)
+            else:
+                upvote_rate = None
+            row = {
+                "id": post.get("id"),
+                "subreddit": post.get("subreddit"),
+                "title": post.get("title"),
+                "type": post.get("type"),
+                "ab_test": ab,
+                "views": views,
+                "upvotes": upvotes,
+                "comments": comments,
+                "upvote_rate_per_100": upvote_rate,
+                "crosspost_effectiveness": cross,
+            }
+            rows.append(row)
+        rows = rows[:limit]
+        summary = {"total_ab_posts": len(rows), "rows": rows}
+        report_json = Path("logs/ab_test_report.json")
+        report_md = Path("logs/ab_test_report.md")
+        report_json.parent.mkdir(parents=True, exist_ok=True)
+        report_json.write_text(json.dumps(summary, indent=2))
+        lines = ["# A/B Test Report", f"Total A/B posts: {len(rows)}", ""]
+        for r in rows:
+            lines.append(
+                f"- {r['id']} | r/{r['subreddit']} | upvote/100 views: {r['upvote_rate_per_100']} | comments: {r['comments']} | ab: {r['ab_test']}"
+            )
+        report_md.write_text("\n".join(lines))
+        return summary
+
+    def generate_kpi_dashboard(self) -> Dict[str, Any]:
+        try:
+            from scripts.reporting.kpi_dashboard import generate_dashboard
+        except Exception as exc:
+            logger.error("KPI dashboard module missing: %s", exc)
+            return {}
+        return generate_dashboard()
+
+    def schedule_weekly_digest(self, weeks_ahead: int = 4) -> int:
+        """Schedule weekly digests for primary hubs."""
+        network = self.load_network_config()
+        if not network.get("enabled"):
+            return 0
+        categories = network.get("categories", {})
+        hubs = categories.get("primary_hubs", []) if isinstance(categories.get("primary_hubs", []), list) else []
+        if not hubs:
+            return 0
+        count = 0
+        now = datetime.now()
+        for hub in hubs:
+            for w in range(weeks_ahead):
+                scheduled_time = now + timedelta(days=7 * (w + 1))
+                digest = self.generate_weekly_digest(hub, related=hubs)
+                if not digest:
+                    continue
+                digest["scheduled_for"] = scheduled_time.isoformat()
+                self.schedule_post(digest)
+                count += 1
+        return count
+
+    def schedule_ab_title_variations(self, post_type: str, subreddit: Optional[str] = None, variations: int = 3) -> List[Dict]:
+        """Create multiple scheduled posts with different title variants."""
+        posts = []
+        base = self.generate_post_from_template(post_type, subreddit=subreddit)
+        base_id = base.get("id")
+        for _ in range(max(1, variations)):
+            variant = self._choose_ab_variants()
+            title = base["title"]
+            if variant.get("title_style"):
+                title = self._apply_title_variant(title, variant["title_style"])
+            title = self._apply_seo_title_keywords(title)
+            post = dict(base)
+            post["id"] = f"ab_{int(time.time())}_{random.randint(1000, 9999)}"
+            post["title"] = title
+            post["ab_test"] = variant
+            post["ab_group"] = base_id
+            self.schedule_post(post)
+            posts.append(post)
+        return posts
 
     def generate_weekly_digest(self, subreddit: str, related: Optional[List[str]] = None) -> Optional[Dict]:
         related = related or []
@@ -1324,6 +1703,7 @@ class MCRDSEPostScheduler(RedditAutomationBase):
                     post["error"] = None
                     success_count += 1
                     logger.info(f"Successfully posted: {post['title'][:50]}...")
+                    self._log_ab_event(post, "submitted", {"result": "success"})
                 else:
                     post["error"] = result
                     

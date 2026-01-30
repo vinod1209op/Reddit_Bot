@@ -39,6 +39,8 @@ class SeleniumModerationManager(RedditAutomationBase):
         self.headless = headless
         super().__init__(account_name=account_name, dry_run=dry_run, session=session, owns_session=owns_session)
         self.config = self.load_config()
+        self.moderation_templates = self._load_moderation_templates()
+        self.governance = self._load_governance_config()
         self.moderation_stats = {}
         self.activity_limits = self._load_activity_limits()
         self.moderation_ui_mode = "old"
@@ -240,7 +242,32 @@ message: |
             return {**default_config, **file_config}
         return default_config
 
+    def _load_moderation_templates(self) -> Dict:
+        path = Path("config/moderation_templates.json")
+        if not path.exists():
+            return {}
+        try:
+            return json.loads(path.read_text())
+        except Exception:
+            return {}
+
+    def _load_governance_config(self) -> Dict:
+        path = Path("config/community_governance.json")
+        if not path.exists():
+            return {}
+        try:
+            return json.loads(path.read_text())
+        except Exception:
+            return {}
+
     def _load_activity_limits(self) -> Dict:
+        if os.getenv("BYPASS_MODERATION_LIMITS", "").strip().lower() in ("1", "true", "yes"):
+            return {
+                "max_actions_per_run": 9999,
+                "auto_remove_reported": True,
+                "remove_spam": True,
+                "notify_on_flags": False,
+            }
         moderation_feature = (self.activity_schedule or {}).get("moderation", {})
         limits = {
             "max_actions_per_run": moderation_feature.get("max_actions_per_run", 10),
@@ -308,6 +335,8 @@ message: |
             return False
 
     def _can_moderate(self, subreddit_name: str) -> bool:
+        if os.getenv("BYPASS_MODERATION_LIMITS", "").strip().lower() in ("1", "true", "yes"):
+            return True
         if self.status_tracker.should_skip_account(self.account_name):
             return False
         if os.getenv("BYPASS_MODERATOR_CHECK", "").strip().lower() not in ("1", "true", "yes"):
@@ -377,7 +406,21 @@ message: |
                 time.sleep(2)
             
             # Get automod content from config
-            automod_content = self.config["automod_templates"].get(template, self.config["automod_templates"]["basic"])
+            base_content = self.config["automod_templates"].get(template, self.config["automod_templates"]["basic"])
+            advanced = self.config.get("advanced_automod_rules", {})
+            extra_blocks = []
+            for key in ("quality_enforcement", "conversation_starter", "resource_suggestions"):
+                block = advanced.get(key)
+                if block:
+                    extra_blocks.append(block.strip())
+            transparency = self.config.get("transparency_templates", {})
+            for key in ("automation_notice", "opt_out_ack"):
+                block = transparency.get(key)
+                if block:
+                    extra_blocks.append(block.strip())
+            automod_content = base_content
+            if extra_blocks:
+                automod_content = base_content.rstrip() + "\n\n" + "\n\n".join(extra_blocks) + "\n"
             
             # Find textarea and insert rules
             textarea = self._find_first(
@@ -792,6 +835,54 @@ message: |
         except Exception as e:
             logger.error(f"Error setting up user flairs for r/{subreddit_name}: {e}")
             return False
+
+    def setup_wiki_pages(self, subreddit_name: str) -> bool:
+        """Create or update basic wiki pages for SEO/discoverability."""
+        seo = self._load_seo_config()
+        default = seo.get("default", {})
+        specific = seo.get(subreddit_name, {})
+        pages = specific.get("wiki_pages") or default.get("wiki_pages") or {}
+        if not pages:
+            return True
+        if self.dry_run:
+            logger.info("[dry-run] Would update wiki pages for r/%s", subreddit_name)
+            return True
+        ok = True
+        for page, content in pages.items():
+            try:
+                edit_url = f"https://old.reddit.com/r/{subreddit_name}/wiki/edit/{page}"
+                self.driver.get(edit_url)
+                time.sleep(2)
+                textarea = self._find_first(
+                    [
+                        (By.CSS_SELECTOR, "textarea#content"),
+                        (By.CSS_SELECTOR, "textarea[name='content']"),
+                        (By.CSS_SELECTOR, "textarea"),
+                    ],
+                    wait_seconds=3,
+                )
+                if not textarea:
+                    logger.warning("Wiki textarea not found for %s", page)
+                    ok = False
+                    continue
+                textarea.clear()
+                textarea.send_keys(content)
+                saved = self._click_first(
+                    [
+                        (By.CSS_SELECTOR, "button[type='submit']"),
+                        (By.CSS_SELECTOR, "input[type='submit']"),
+                        (By.XPATH, "//button[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'save')]"),
+                    ],
+                    wait_seconds=2,
+                )
+                if not saved:
+                    logger.warning("Wiki save button not found for %s", page)
+                    ok = False
+                time.sleep(1)
+            except Exception as exc:
+                logger.warning("Wiki update failed for %s: %s", page, exc)
+                ok = False
+        return ok
     
     def setup_subreddit_rules(self, subreddit_name: str) -> bool:
         """Setup subreddit rules"""
@@ -990,7 +1081,9 @@ message: |
                 # Description
                 desc_field = self.driver.find_element(By.ID, "public_description")
                 desc_field.clear()
-                desc_field.send_keys("Evidence-based community for psychedelic microdosing research and discussion")
+                desc_text = "Evidence-based community for psychedelic microdosing research and discussion"
+                desc_text = self._apply_seo_description(subreddit_name, desc_text)
+                desc_field.send_keys(desc_text)
                 time.sleep(0.5)
             except:
                 pass
@@ -1000,9 +1093,18 @@ message: |
                 sidebar_field = self.driver.find_element(By.ID, "description")
                 current_sidebar = sidebar_field.get_attribute("value") or ""
                 if not current_sidebar.strip():
+                    sidebar = self.generate_sidebar_content(subreddit_name)
+                    sidebar = self._apply_seo_sidebar(subreddit_name, sidebar)
                     sidebar_field.clear()
-                    sidebar_field.send_keys(self.generate_sidebar_content(subreddit_name))
+                    sidebar_field.send_keys(sidebar)
                     time.sleep(0.5)
+                else:
+                    updated_sidebar = self._append_network_links(current_sidebar, subreddit_name)
+                    updated_sidebar = self._apply_seo_sidebar(subreddit_name, updated_sidebar)
+                    if updated_sidebar != current_sidebar:
+                        sidebar_field.clear()
+                        sidebar_field.send_keys(updated_sidebar)
+                        time.sleep(0.5)
             except:
                 pass
             
@@ -1072,10 +1174,39 @@ message: |
         except Exception as e:
             logger.error(f"Error configuring settings for r/{subreddit_name}: {e}")
             return False
+
+    def refresh_sidebar_network_links(self, subreddit_names: List[str]) -> Dict[str, bool]:
+        results = {}
+        for subreddit_name in subreddit_names:
+            try:
+                if not self.navigate_to_subreddit(subreddit_name, "about/edit"):
+                    logger.error("Cannot access edit settings for r/%s", subreddit_name)
+                    results[subreddit_name] = False
+                    continue
+                sidebar_field = self.driver.find_element(By.ID, "description")
+                current_sidebar = sidebar_field.get_attribute("value") or ""
+                updated_sidebar = self._append_network_links(current_sidebar, subreddit_name)
+                if updated_sidebar != current_sidebar:
+                    sidebar_field.clear()
+                    sidebar_field.send_keys(updated_sidebar)
+                    time.sleep(0.5)
+                    self._click_first(
+                        [
+                            (By.CSS_SELECTOR, "button[type='submit']"),
+                            (By.CSS_SELECTOR, "input[type='submit']"),
+                        ],
+                        wait_seconds=2,
+                    )
+                    time.sleep(2)
+                results[subreddit_name] = True
+            except Exception as exc:
+                logger.error("Sidebar refresh failed for r/%s: %s", subreddit_name, exc)
+                results[subreddit_name] = False
+        return results
     
     def generate_sidebar_content(self, subreddit_name: str) -> str:
         """Generate sidebar content for subreddit"""
-        return f"""**Welcome to r/{subreddit_name}!**
+        base = f"""**Welcome to r/{subreddit_name}!**
 
 ## About This Community
 This is a research-focused community for evidence-based discussions about psychedelic microdosing, mental health, and consciousness studies.
@@ -1097,6 +1228,63 @@ This community is for educational purposes only. Not medical advice.
 
 ---
 *Part of the MCRDSE network - Advancing psychedelic research and education.*"""
+        return self._append_network_links(base, subreddit_name)
+
+    def _append_network_links(self, sidebar: str, subreddit_name: str) -> str:
+        try:
+            path = Path("config/subreddit_network.json")
+            if not path.exists():
+                return sidebar
+            network = json.loads(path.read_text())
+            if not network.get("enabled"):
+                return sidebar
+            if "## Network Links" in sidebar:
+                return sidebar
+            cross = network.get("cross_promotion", {})
+            related_map = cross.get("related_map", {})
+            links_per = int(cross.get("links_per_sidebar", 3))
+            related = related_map.get(subreddit_name, [])
+            if not related:
+                return sidebar
+            related = related[:links_per]
+            links = "\n".join([f"- r/{name}" for name in related])
+            return sidebar + "\n\n## Network Links\n" + links
+        except Exception:
+            return sidebar
+
+    def _load_seo_config(self) -> Dict:
+        path = Path("config/seo/subreddit_seo.json")
+        if not path.exists():
+            return {}
+        try:
+            return json.loads(path.read_text())
+        except Exception:
+            return {}
+
+    def _apply_seo_description(self, subreddit_name: str, description: str) -> str:
+        seo = self._load_seo_config()
+        default = seo.get("default", {})
+        specific = seo.get(subreddit_name, {})
+        desc_keywords = (specific.get("description_keywords") or default.get("description_keywords") or [])[:6]
+        if not desc_keywords:
+            return description
+        keyword_line = "Keywords: " + ", ".join(desc_keywords)
+        if keyword_line.lower() in (description or "").lower():
+            return description
+        return f"{(description or '').strip()} {keyword_line}".strip()
+
+    def _apply_seo_sidebar(self, subreddit_name: str, sidebar: str) -> str:
+        seo = self._load_seo_config()
+        default = seo.get("default", {})
+        specific = seo.get(subreddit_name, {})
+        side_keywords = (specific.get("sidebar_keywords") or default.get("sidebar_keywords") or [])[:8]
+        if not side_keywords:
+            return sidebar
+        if "## Keywords" in (sidebar or ""):
+            return sidebar
+        sidebar = (sidebar or "").rstrip()
+        sidebar += "\n\n## Keywords\n" + "\n".join([f"- {kw}" for kw in side_keywords])
+        return sidebar
     
     def _process_queue_items(self, subreddit_name: str) -> Dict:
         if self.dry_run:
@@ -1121,6 +1309,16 @@ This community is for educational purposes only. Not medical advice.
         }
 
         queue_items = self.driver.find_elements(By.CSS_SELECTOR, ".thing")
+        if self.config.get("quality_scoring", {}).get("enabled"):
+            scored = []
+            for item in queue_items:
+                try:
+                    score = self._score_item_from_element(item)
+                except Exception:
+                    score = 0.0
+                scored.append((score, item))
+            scored.sort(key=lambda x: x[0], reverse=True)
+            queue_items = [i for _s, i in scored]
         max_items = self.config["moderation"].get("queue_processing_limit", 10)
         max_items = min(max_items, self.activity_limits.get("max_actions_per_run", max_items))
 
@@ -1194,6 +1392,17 @@ This community is for educational purposes only. Not medical advice.
                 item_info["reason"] = reason_elem.text
             except:
                 pass
+
+            # Optional: extract body and comment count
+            item_info["body"] = self._extract_body_text(item_element)
+            item_info["comment_count"] = self._extract_comment_count(item_element)
+
+            # Quality scoring
+            if self.config.get("quality_scoring", {}).get("enabled"):
+                item_info["scores"] = self._score_item(item_info)
+                item_info["priority"] = self._priority_from_scores(item_info["scores"])
+                if self._should_escalate(item_info):
+                    item_info["priority"] = "escalate"
             
             # Analyze content
             should_remove = self.should_remove_item(item_element, item_info)
@@ -1216,6 +1425,12 @@ This community is for educational purposes only. Not medical advice.
             else:
                 item_info["action"] = "ignored"
 
+            # Template suggestion (no auto-comment; for mod use)
+            item_info["template_suggestion"] = self._pick_moderation_template(item_info)
+            # Transparency log for significant actions
+            if item_info["action"] in ("approved", "removed") or item_info.get("priority") == "escalate":
+                self._write_transparency_log(item_info)
+
             self.status_tracker.record_moderation_activity(
                 self.account_name,
                 item_info.get("subreddit", "unknown"),
@@ -1227,6 +1442,175 @@ This community is for educational purposes only. Not medical advice.
             logger.warning(f"Error in process_queue_item: {e}")
         
         return item_info
+
+    def _extract_body_text(self, item_element) -> str:
+        selectors = [
+            ".usertext-body",
+            ".md",
+            "div[data-test-id='post-content']",
+        ]
+        for sel in selectors:
+            try:
+                el = item_element.find_element(By.CSS_SELECTOR, sel)
+                text = (el.text or "").strip()
+                if text:
+                    return text[:1000]
+            except Exception:
+                continue
+        return ""
+
+    def _extract_comment_count(self, item_element) -> int:
+        try:
+            links = item_element.find_elements(By.CSS_SELECTOR, "a.comments, a[href*='/comments/']")
+            for link in links:
+                text = (link.text or "").lower()
+                for token in text.split():
+                    if token.isdigit():
+                        return int(token)
+        except Exception:
+            pass
+        return 0
+
+    def _score_content_quality(self, item_info: Dict) -> float:
+        text = (item_info.get("title", "") + " " + item_info.get("body", "")).strip()
+        length = len(text)
+        min_len = int(self.config.get("quality_scoring", {}).get("min_quality_length", 120))
+        length_score = min(1.0, max(0.0, length / max(min_len, 1)))
+
+        # Readability proxy: average sentence length
+        sentences = [s for s in text.replace("\n", " ").split(".") if s.strip()]
+        avg_len = sum(len(s.split()) for s in sentences) / max(1, len(sentences))
+        readability = 1.0 if avg_len <= 20 else 0.7 if avg_len <= 30 else 0.4
+
+        # Source presence
+        source_keywords = self.config.get("quality_scoring", {}).get("source_keywords", [])
+        has_source = any(k.lower() in text.lower() for k in source_keywords)
+        source_score = 1.0 if has_source else 0.4
+
+        return round((0.5 * length_score) + (0.3 * readability) + (0.2 * source_score), 2)
+
+    def _score_user_trust(self, item_info: Dict) -> float:
+        author = item_info.get("author", "")
+        trusted = self.config["moderation"].get("trusted_authors", [])
+        if author and author in trusted:
+            return 0.9
+        reason = (item_info.get("reason") or "").lower()
+        if "new account" in reason or "low karma" in reason:
+            return 0.2
+        return 0.4
+
+    def _score_discussion_health(self, item_info: Dict) -> float:
+        comments = item_info.get("comment_count", 0) or 0
+        if comments >= 15:
+            return 0.9
+        if comments >= 5:
+            return 0.6
+        if comments >= 1:
+            return 0.4
+        return 0.2
+
+    def _score_item(self, item_info: Dict) -> Dict[str, float]:
+        qs = self._score_content_quality(item_info)
+        us = self._score_user_trust(item_info)
+        ds = self._score_discussion_health(item_info)
+        weights = self.config.get("quality_scoring", {}).get("weights", {})
+        score = (
+            qs * float(weights.get("content_quality", 0.4))
+            + us * float(weights.get("user_trust", 0.3))
+            + ds * float(weights.get("discussion_health", 0.3))
+        )
+        return {"content_quality": qs, "user_trust": us, "discussion_health": ds, "overall": round(score, 2)}
+
+    def _score_item_from_element(self, item_element) -> float:
+        info = {
+            "title": "",
+            "body": "",
+            "reason": "",
+            "author": "",
+            "comment_count": 0,
+        }
+        try:
+            info["title"] = (item_element.find_element(By.CSS_SELECTOR, "a.title").text or "")[:100]
+        except Exception:
+            pass
+        try:
+            info["author"] = (item_element.find_element(By.CSS_SELECTOR, ".author").text or "")
+        except Exception:
+            pass
+        try:
+            info["reason"] = (item_element.find_element(By.CSS_SELECTOR, ".report-reason").text or "")
+        except Exception:
+            pass
+        info["body"] = self._extract_body_text(item_element)
+        info["comment_count"] = self._extract_comment_count(item_element)
+        return self._score_item(info)["overall"]
+
+    def _priority_from_scores(self, scores: Dict[str, float]) -> str:
+        thresholds = self.config.get("quality_scoring", {}).get("priority_thresholds", {})
+        high = float(thresholds.get("high", 0.7))
+        medium = float(thresholds.get("medium", 0.45))
+        overall = scores.get("overall", 0.0)
+        if overall >= high:
+            return "high"
+        if overall >= medium:
+            return "medium"
+        return "low"
+
+    def _pick_moderation_template(self, item_info: Dict) -> str:
+        if not self.moderation_templates:
+            return ""
+        reason = (item_info.get("reason") or "").lower()
+        if "low detail" in reason or "short" in reason:
+            pool = self.moderation_templates.get("quality_enforcement", [])
+        elif "sourcing" in reason:
+            pool = self.moderation_templates.get("resource_suggestions", [])
+        else:
+            pool = self.moderation_templates.get("conversation_starter", []) or self.moderation_templates.get("default", [])
+        return random.choice(pool) if pool else ""
+
+    def _should_escalate(self, item_info: Dict) -> bool:
+        conflict = self.governance.get("conflict_resolution", {})
+        keywords = [k.lower() for k in conflict.get("auto_escalation_keywords", [])]
+        severe = [k.lower() for k in conflict.get("severe_keywords", [])]
+        text = " ".join(
+            [
+                (item_info.get("title") or ""),
+                (item_info.get("body") or ""),
+                (item_info.get("reason") or ""),
+            ]
+        ).lower()
+        if any(k in text for k in severe):
+            return True
+        hits = sum(1 for k in keywords if k in text)
+        threshold = int(conflict.get("escalation_threshold", 1))
+        return hits >= threshold
+
+    def _write_transparency_log(self, item_info: Dict) -> None:
+        conflict = self.governance.get("conflict_resolution", {})
+        if not conflict.get("public_log_enabled", True):
+            return
+        out_dir = Path("logs")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "timestamp": item_info.get("timestamp"),
+            "subreddit": item_info.get("subreddit"),
+            "title": item_info.get("title"),
+            "author": item_info.get("author"),
+            "action": item_info.get("action"),
+            "reason": item_info.get("reason"),
+            "priority": item_info.get("priority"),
+        }
+        # JSONL
+        with (out_dir / "moderation_transparency.jsonl").open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        # Markdown summary
+        md = out_dir / "moderation_transparency.md"
+        if not md.exists():
+            md.write_text("# Moderation Transparency Log\n\n")
+        with md.open("a", encoding="utf-8") as f:
+            f.write(
+                f"- {entry['timestamp']} | r/{entry['subreddit']} | {entry['action']} | {entry['title']}\n"
+            )
     
     def should_remove_item(self, item_element, item_info: Dict) -> bool:
         """Determine if an item should be removed"""
@@ -1328,6 +1712,7 @@ This community is for educational purposes only. Not medical advice.
         steps = [
             ("Configure settings", self.configure_subreddit_settings),
             ("Setup AutoModerator", self.setup_automoderator),
+            ("Setup wiki pages", self.setup_wiki_pages),
             ("Setup post flairs", self.setup_post_flairs),
             ("Setup user flairs", self.setup_user_flairs),
             ("Setup rules", self.setup_subreddit_rules)

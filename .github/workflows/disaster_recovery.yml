@@ -1,0 +1,35 @@
+name: Disaster Recovery Backups
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run backups and exports
+        run: |
+          set -euxo pipefail
+          python scripts/recovery/disaster_recovery.py
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: disaster-recovery-artifacts
+          path: |
+            backups
+            exports
+            logs/disaster_recovery_notes.md

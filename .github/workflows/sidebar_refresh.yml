@@ -1,0 +1,45 @@
+name: Sidebar Refresh
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  refresh_sidebars:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Refresh sidebars (dry run)
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
+        run: |
+          set -euxo pipefail
+          python - <<'PY'
+          from scripts.moderation.manage_moderation import SeleniumModerationManager
+          manager = SeleniumModerationManager(account_name="account4", headless=True, dry_run=True)
+          subs = ["MindWellBeing", "ClinicalMicrodosingHu", "Mental_Health_Hub"]
+          print(manager.refresh_sidebar_network_links(subs))
+          PY
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sidebar-refresh
+          path: |
+            logs/bot_*.log

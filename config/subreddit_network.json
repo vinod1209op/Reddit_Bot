@@ -4,6 +4,7 @@
   "seed_days": 30,
   "categories": {
     "primary_hubs": [
+      "MindWellBeing",
       "MCRDSE_Research",
       "PsychedelicScience",
       "MicrodosingStudies"
@@ -17,6 +18,7 @@
       "MicrodoseProtocols",
       "PsychedelicPolicy",
       "ClinicalMicrodosing",
+      "ClinicalMicrodosingHu",
       "TherapeuticOutcomes",
       "IntegrationPractices"
     ],
@@ -33,6 +35,9 @@
     "max_crossposts": 2,
     "weekly_digest": true,
     "related_map": {
+      "MindWellBeing": ["Mental_Health_Hub", "ClinicalMicrodosingHu", "PsychedelicIntegration"],
+      "Mental_Health_Hub": ["MindWellBeing", "ClinicalMicrodosingHu", "PsychedelicTherapyHelp"],
+      "ClinicalMicrodosingHu": ["MindWellBeing", "MicrodoseProtocols", "MicrodosingStudies"],
       "MCRDSE_Research": ["PsychedelicScience", "MicrodosingStudies", "NeuroplasticityResearch"],
       "PsychedelicScience": ["MCRDSE_Research", "MicrodosingStudies", "ClinicalMicrodosing"],
       "MicrodosingStudies": ["MCRDSE_Research", "PsychedelicScience", "MicrodoseProtocols"],

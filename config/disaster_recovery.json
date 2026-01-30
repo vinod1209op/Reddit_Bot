@@ -1,0 +1,33 @@
+{
+  "backup_root": "backups",
+  "backup_targets": [
+    "scripts/content_scheduling/schedule/post_schedule.json",
+    "scripts/content_scheduling/templates/post_templates.json",
+    "scripts/subreddit_creation/history/created_subreddits.json",
+    "scripts/moderation/history",
+    "logs"
+  ],
+  "exports": {
+    "post_export_json": "exports/posts.json",
+    "post_export_csv": "exports/posts.csv",
+    "post_export_rss": "exports/posts.xml",
+    "post_export_markdown_dir": "exports/markdown"
+  },
+  "account_replacement": {
+    "reserve_accounts": ["account4"],
+    "activation_steps": [
+      "Load cookies for reserve account",
+      "Verify account health and karma",
+      "Enable posting and moderation",
+      "Update account status to active"
+    ]
+  },
+  "community_migration": {
+    "targets": ["discord", "newsletter", "blog"],
+    "notes": [
+      "Keep an updated list of links in subreddit sidebar",
+      "Maintain exportable archives for continuity",
+      "Document the migration announcement template"
+    ]
+  }
+}

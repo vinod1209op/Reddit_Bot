@@ -1,0 +1,30 @@
+{
+  "default": {
+    "title_keywords": ["microdosing", "psychedelic research", "mental health"],
+    "description_keywords": ["psychedelic therapy", "integration", "harm reduction"],
+    "sidebar_keywords": ["neuroplasticity", "clinical trials", "evidence-based"],
+    "wiki_pages": {
+      "getting_started": "Getting Started\n\nWelcome to the MCRDSE network. Start here to understand safe participation, posting standards, and how to interpret research.\n\nRelated pages:\n- /wiki/resources\n- /wiki/safety\n- /wiki/faq\n- /wiki/rules",
+      "resources": "Resources\n\nCurated resources for psychedelic research, integration, and harm reduction.\n\nRelated pages:\n- /wiki/getting_started\n- /wiki/safety",
+      "safety": "Safety & Harm Reduction\n\nHigh-level safety guidance, screening considerations, and responsible discussion practices.\n\nRelated pages:\n- /wiki/getting_started\n- /wiki/resources",
+      "faq": "FAQ\n\nAnswers to common questions about microdosing, research standards, and posting norms.\n\nRelated pages:\n- /wiki/getting_started\n- /wiki/rules",
+      "rules": "Rules\n\nCommunity rules, sourcing policy, and reporting guidance.\n\nRelated pages:\n- /wiki/faq",
+      "automation": "Automation & Transparency\n\nThis community uses limited automation to assist with research discussions. Automated content is labeled with the AI-Assisted flair and bot replies include a bot icon.\n\nOpt-out: Comment !noautomation to avoid automated engagement on your content.\n\nRelated pages:\n- /wiki/rules\n- /wiki/faq"
+    }
+  },
+  "MindWellBeing": {
+    "title_keywords": ["mindfulness", "well-being", "mental health"],
+    "description_keywords": ["microdosing", "psychedelic therapy", "integration", "stress relief", "emotional resilience"],
+    "sidebar_keywords": ["support", "evidence-based", "harm reduction", "mindfulness practices", "well-being routines"]
+  },
+  "ClinicalMicrodosingHu": {
+    "title_keywords": ["clinical microdosing", "protocols", "research"],
+    "description_keywords": ["clinical trials", "safety", "outcomes", "dosage consistency", "treatment-resistant"],
+    "sidebar_keywords": ["protocols", "screening", "contraindications", "study design", "outcome measures"]
+  },
+  "Mental_Health_Hub": {
+    "title_keywords": ["mental health", "support", "research"],
+    "description_keywords": ["harm reduction", "integration", "community", "peer support", "therapy"],
+    "sidebar_keywords": ["resources", "peer support", "evidence", "support groups", "recovery"]
+  }
+}

@@ -86,9 +86,12 @@ pre-commit run --all-files
 
 ## GitHub Actions (humanized scheduled scan)
 To run scheduled humanized scans in GitHub Actions (using `.github/workflows/humanized_scan.yml`):
-- Store `data/cookies_*.pkl` in Supabase Storage.
-- Set GitHub Actions secrets: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_BUCKET`, and optional `SUPABASE_COOKIES_PATH` (default `cookies/cookies_bundle.zip`).
-- The workflow downloads the bundle at start and uploads refreshed cookies after the run via `scripts/ops/supabase_cookies_sync.py`.
+- Store per-account cookies (`data/cookies_account*.pkl`) in Supabase Storage.
+- Set GitHub Actions secrets: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_BUCKET`, and per-account paths:
+  - `SUPABASE_COOKIES_ACCOUNT1_PATH`
+  - `SUPABASE_COOKIES_ACCOUNT2_PATH`
+  - `SUPABASE_COOKIES_ACCOUNT3_PATH`
+- The workflow downloads the per-account cookie file at start and uploads refreshed cookies after the run.
 - Review/adjust the cron schedule in `.github/workflows/humanized_scan.yml` to match your desired time windows (cron is UTC; update for DST as needed).
 - Trigger the workflow once manually in GitHub Actions to verify cookies and Chromium setup.
 - The legacy `selenium_readonly_scan.yml` is manual-only unless you add schedules.

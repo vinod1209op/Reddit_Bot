@@ -1,0 +1,42 @@
+{
+  "default": [
+    "Thanks for sharing this. What outcomes would you want to see measured in future studies?",
+    "Appreciate this perspective. Are there any resources or studies you’d recommend on this topic?",
+    "Interesting point—what do you think is the most overlooked factor here?"
+  ],
+  "question_expander": [
+    "That’s a helpful point—what factors do you think influenced that outcome most?",
+    "If you had to summarize the key takeaway in one sentence, what would it be?",
+    "What would you want to see measured or tested next?"
+  ],
+  "resource_provider": [
+    "If it helps, we’ve compiled resources on this topic—want me to share the most relevant ones?",
+    "Here’s a curated resource list we’ve used for this discussion—happy to share more if useful.",
+    "If you’re looking for sources, I can share a few peer‑reviewed starting points."
+  ],
+  "clarification_seeker": [
+    "When you say that, do you mean from a clinical or personal experience lens?",
+    "Could you clarify which part you found most impactful?",
+    "What context would you add for someone new to this topic?"
+  ],
+  "experience_validator": [
+    "Thanks for sharing your experience—it’s valuable to hear this perspective.",
+    "Appreciate the honesty here. What helped you navigate the harder parts?",
+    "That sounds meaningful—what would you want others to know before they begin?"
+  ],
+  "research": [
+    "This is helpful—do you know if there’s follow‑up research planned?",
+    "Great summary. Which methodology do you think is most robust so far?",
+    "Thanks for the breakdown. Any key limitations we should watch for?"
+  ],
+  "experience": [
+    "Thank you for sharing. What helped you integrate the experience most?",
+    "Appreciate your honesty—what support resources were most useful?",
+    "Thanks for the story. What would you tell someone starting out?"
+  ],
+  "policy": [
+    "Interesting update—what do you think the biggest policy bottleneck is?",
+    "Thanks for sharing. Which jurisdictions are moving fastest?",
+    "Appreciate the context. Any recommended sources to track this?"
+  ]
+}

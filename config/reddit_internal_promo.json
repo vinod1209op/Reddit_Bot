@@ -1,0 +1,9 @@
+{
+  "enabled": true,
+  "targets": {
+    "newreddits": "newreddits",
+    "findareddit": "findareddit"
+  },
+  "max_items": 5,
+  "subreddits": ["MindWellBeing", "ClinicalMicrodosingHu", "Mental_Health_Hub"]
+}

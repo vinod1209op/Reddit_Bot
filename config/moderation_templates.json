@@ -1,0 +1,22 @@
+{
+  "quality_enforcement": [
+    "Thanks for posting. Could you add more context or sources so others can engage meaningfully?",
+    "This is a good start—can you expand on your reasoning or link a source?"
+  ],
+  "conversation_starter": [
+    "What would you want to see studied next on this topic?",
+    "Which part of this do you think is most misunderstood?"
+  ],
+  "resource_suggestions": [
+    "If it helps, we maintain a research portal and safety resources that cover this topic.",
+    "You may find these MCRDSE resources useful for deeper context."
+  ],
+  "clarification": [
+    "Could you clarify whether this is from personal experience or research?",
+    "When you say that, do you mean outcomes, mechanisms, or safety?"
+  ],
+  "appeal_process": [
+    "If you believe this was removed in error, please submit an appeal via modmail with context.",
+    "We review appeals via modmail—include links and a short explanation."
+  ]
+}

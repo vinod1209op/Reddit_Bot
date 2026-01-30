@@ -30,28 +30,20 @@ jobs:
         include:
           - account: account1
             windows: "05:00-07:00"
-            cron: "0 13 * * *"
           - account: account2
             windows: "12:00-14:00"
-            cron: "0 20 * * *"
     steps:
       - name: Gate run by schedule/account
         id: gate
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
-          EVENT_SCHEDULE: ${{ github.event.schedule }}
           DISPATCH_ACCOUNT: ${{ github.event.inputs.account }}
           MATRIX_ACCOUNT: ${{ matrix.account }}
-          MATRIX_CRON: ${{ matrix.cron }}
         run: |
           should_run=false
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             if [ -z "$DISPATCH_ACCOUNT" ] || [ "$DISPATCH_ACCOUNT" = "$MATRIX_ACCOUNT" ]; then
-              should_run=true
-            fi
-          elif [ "$EVENT_NAME" = "schedule" ]; then
-            if [ "$EVENT_SCHEDULE" = "$MATRIX_CRON" ]; then
               should_run=true
             fi
           fi
@@ -96,22 +88,38 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Restore cookie files
+      - name: Restore cookie files (Supabase per-account)
         if: steps.gate.outputs.should_run == 'true'
         env:
-          COOKIES_BUNDLE_BASE64: ${{ secrets.COOKIES_BUNDLE_BASE64 }}
-          REDDIT_COOKIES_BASE64: ${{ secrets.REDDIT_COOKIES_BASE64 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET }}
+          SUPABASE_COOKIES_ACCOUNT1_PATH: ${{ secrets.SUPABASE_COOKIES_ACCOUNT1_PATH }}
+          SUPABASE_COOKIES_ACCOUNT2_PATH: ${{ secrets.SUPABASE_COOKIES_ACCOUNT2_PATH }}
+          SUPABASE_COOKIES_ACCOUNT3_PATH: ${{ secrets.SUPABASE_COOKIES_ACCOUNT3_PATH }}
         run: |
           mkdir -p data
-          if [ -n "$COOKIES_BUNDLE_BASE64" ]; then
-            echo "$COOKIES_BUNDLE_BASE64" | base64 -d > /tmp/cookies_bundle.zip
-            unzip -q -o /tmp/cookies_bundle.zip -d .
-          elif [ -n "$REDDIT_COOKIES_BASE64" ]; then
-            echo "$REDDIT_COOKIES_BASE64" | base64 -d > data/gha_cookies.pkl
-          else
-            echo "Missing COOKIES_BUNDLE_BASE64 and REDDIT_COOKIES_BASE64 secrets" >&2
-            exit 1
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_BUCKET:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "Supabase env missing; skipping cookie download."
+            exit 0
           fi
+          remote_path=""
+          case "${{ matrix.account }}" in
+            account1) remote_path="${SUPABASE_COOKIES_ACCOUNT1_PATH:-}" ;;
+            account2) remote_path="${SUPABASE_COOKIES_ACCOUNT2_PATH:-}" ;;
+            account3) remote_path="${SUPABASE_COOKIES_ACCOUNT3_PATH:-}" ;;
+          esac
+          if [ -z "$remote_path" ]; then
+            echo "No per-account cookie path set for ${{ matrix.account }}; skipping download."
+            exit 0
+          fi
+          url="${SUPABASE_URL%/}/storage/v1/object/${SUPABASE_BUCKET}/${remote_path#/}"
+          curl -sS -X GET \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+            "$url" \
+            -o "data/cookies_${{ matrix.account }}.pkl"
+          ls -la "data/cookies_${{ matrix.account }}.pkl"
 
       - name: Create minimal env file
         if: steps.gate.outputs.should_run == 'true'

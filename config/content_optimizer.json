@@ -1,0 +1,11 @@
+{
+  "enabled": true,
+  "min_samples": 5,
+  "engagement_weights": {
+    "upvotes": 1.0,
+    "comments": 1.5
+  },
+  "risk_keywords": ["sourcing", "buy", "sell", "vendor", "suicide", "kill myself"],
+  "retire_threshold": 0.35,
+  "promote_threshold": 0.7
+}

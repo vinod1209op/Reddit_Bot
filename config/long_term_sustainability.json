@@ -1,0 +1,46 @@
+{
+  "financial_model": {
+    "community_supported": {
+      "enabled": true,
+      "notes": [
+        "Transparent operational costs (infra, moderation, tools)",
+        "Voluntary supporter program (no paywalls on core content)",
+        "Clear value exchange (reports, summaries, early access)"
+      ]
+    },
+    "research_funding": {
+      "grants": ["community health", "harm reduction", "public health"],
+      "academic_partnerships": ["pilot studies", "data sharing agreements"],
+      "sponsorships": ["non-profit aligned sponsors only"]
+    }
+  },
+  "governance_evolution": {
+    "phases": [
+      { "id": 1, "name": "Bot-led, human-overseen", "status": "current" },
+      { "id": 2, "name": "Human-led, bot-assisted", "status": "next" },
+      { "id": 3, "name": "Community-led, bot-supported", "status": "future" },
+      { "id": 4, "name": "Decentralized governance", "status": "long_term" }
+    ],
+    "handoff_triggers": [
+      "Stable moderation team in each subreddit",
+      "Consistent reporting + transparency logs",
+      "Community guidelines ratified"
+    ]
+  },
+  "exit_strategy": {
+    "platform_agnostic": {
+      "abstracted_platform_layer": true,
+      "multi_platform_distribution": true,
+      "data_portability": true
+    },
+    "migration_protocol": {
+      "targets": ["discord", "newsletter", "blog"],
+      "steps": [
+        "Publish migration announcement",
+        "Provide destination links in sidebar and wiki",
+        "Export content to markdown and RSS",
+        "Archive key resources for continuity"
+      ]
+    }
+  }
+}

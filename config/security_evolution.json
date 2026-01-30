@@ -1,0 +1,91 @@
+{
+  "behavioral_diversity": {
+    "enabled": true,
+    "personality_configs": {
+      "cautious_reader": {
+        "click_speed": "slow",
+        "scroll_pattern": "reader",
+        "scroll_distance_range": [200, 500],
+        "engagement_rate": 0.2,
+        "comment_style": "neutral",
+        "session_length_range": [15, 25],
+        "actions_per_minute_range": [1, 3],
+        "content_preferences": {
+          "research": 0.6,
+          "experience": 0.2,
+          "question": 0.1,
+          "other": 0.1
+        }
+      },
+      "enthusiastic_participant": {
+        "click_speed": "normal",
+        "scroll_pattern": "smooth",
+        "scroll_distance_range": [400, 900],
+        "engagement_rate": 0.5,
+        "comment_style": "enthusiast",
+        "session_length_range": [20, 40],
+        "actions_per_minute_range": [3, 7],
+        "content_preferences": {
+          "research": 0.3,
+          "experience": 0.4,
+          "question": 0.2,
+          "other": 0.1
+        }
+      },
+      "quick_browser": {
+        "click_speed": "fast",
+        "scroll_pattern": "jerky",
+        "scroll_distance_range": [600, 1200],
+        "engagement_rate": 0.1,
+        "comment_style": "skeptic",
+        "session_length_range": [5, 15],
+        "actions_per_minute_range": [5, 10],
+        "content_preferences": {
+          "research": 0.2,
+          "experience": 0.3,
+          "question": 0.4,
+          "other": 0.1
+        }
+      }
+    },
+    "switch_probability": 0.15,
+    "min_time_between_switches_hours": 6
+  },
+  "timing_obfuscation": {
+    "enabled": true,
+    "markov_delays": {
+      "states": {
+        "short": [1, 3],
+        "medium": [4, 8],
+        "long": [9, 15]
+      },
+      "transition_matrix": {
+        "short": {"short": 0.4, "medium": 0.4, "long": 0.2},
+        "medium": {"short": 0.3, "medium": 0.4, "long": 0.3},
+        "long": {"short": 0.2, "medium": 0.3, "long": 0.5}
+      },
+      "action_adjustments": {
+        "login": 1.5,
+        "navigation": 1.5,
+        "scroll": 0.8,
+        "view": 0.8
+      }
+    },
+    "vacation_simulation": {
+      "enabled": true,
+      "vacation_probability": 0.05,
+      "min_days_between_vacations": 21,
+      "vacation_length_range": [2, 7]
+    }
+  },
+  "pattern_analysis": {
+    "enabled": true,
+    "risk_thresholds": {
+      "critical": 0.8,
+      "high": 0.6,
+      "medium": 0.4
+    },
+    "save_history": true,
+    "max_history_entries": 100
+  }
+}

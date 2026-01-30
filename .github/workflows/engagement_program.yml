@@ -1,0 +1,58 @@
+name: Engagement Program
+
+on:
+  workflow_dispatch:
+    inputs:
+      months_ahead:
+        description: "Months ahead to schedule events"
+        required: false
+        default: "2"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  engagement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run engagement program
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
+        run: |
+          set -euxo pipefail
+          python scripts/engagement/engagement_program.py --events --months ${{ github.event.inputs.months_ahead || '2' }}
+          python scripts/engagement/engagement_program.py --recognition
+          python - <<'PY'
+          from scripts.content_scheduling.schedule_posts import MCRDSEPostScheduler
+          scheduler = MCRDSEPostScheduler(account_name="account4", headless=True, dry_run=True)
+          scheduler.generate_ab_report(limit=50)
+          scheduler.generate_kpi_dashboard()
+          PY
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: engagement-program-output
+          path: |
+            scripts/content_scheduling/schedule/post_schedule.json
+            logs/recognition_report.json
+            logs/recognition_report.md
+            logs/ab_test_report.json
+            logs/ab_test_report.md
+            logs/kpi_dashboard.json
+            logs/kpi_dashboard.md

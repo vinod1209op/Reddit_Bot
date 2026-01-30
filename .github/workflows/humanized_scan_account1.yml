@@ -1,9 +1,6 @@
 name: Reddit Humanized Scan (account1)
 
 on:
-  schedule:
-    # Late night local time per account (UTC values; DST shifts may apply)
-    - cron: "0 7 * * *" # account1 (PT 23:00)
   workflow_dispatch: {}
 
 concurrency:

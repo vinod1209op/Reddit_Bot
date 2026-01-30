@@ -240,6 +240,34 @@ class SubredditCreator(RedditAutomationBase):
         related = related[:links_per]
         links = "\n".join([f"- r/{name}" for name in related])
         return sidebar + "\n\n## Network Links\n" + links
+
+    def _load_seo_config(self) -> Dict:
+        path = Path("config/seo/subreddit_seo.json")
+        if not path.exists():
+            return {}
+        try:
+            return json.loads(path.read_text())
+        except Exception:
+            return {}
+
+    def _apply_seo(self, subreddit_name: str, description: str, sidebar: str) -> Tuple[str, str]:
+        seo = self._load_seo_config()
+        default = seo.get("default", {})
+        specific = seo.get(subreddit_name, {})
+        desc_keywords = (specific.get("description_keywords") or default.get("description_keywords") or [])[:6]
+        side_keywords = (specific.get("sidebar_keywords") or default.get("sidebar_keywords") or [])[:8]
+
+        if desc_keywords:
+            keyword_line = "Keywords: " + ", ".join(desc_keywords)
+            if keyword_line.lower() not in (description or "").lower():
+                description = (description or "").strip()
+                description = f"{description} {keyword_line}".strip()
+
+        if side_keywords:
+            if "## Keywords" not in (sidebar or ""):
+                sidebar = (sidebar or "").rstrip()
+                sidebar += "\n\n## Keywords\n" + "\n".join([f"- {kw}" for kw in side_keywords])
+        return description, sidebar
     
     def check_account_eligibility(self):
         """Check if account meets Reddit's subreddit creation requirements"""
@@ -1091,6 +1119,7 @@ Let's build a supportive, evidence-based community together!""",
                             f"This community does not provide medical advice. Consult healthcare professionals."
                         )
                 sidebar = self._append_network_links(sidebar, subreddit_name)
+                description, sidebar = self._apply_seo(subreddit_name, description, sidebar)
                 
                 # Create subreddit
                 creation_result = self.execute_safely(

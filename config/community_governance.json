@@ -1,0 +1,33 @@
+{
+  "moderation_team_building": {
+    "phase_1": "Automated moderation only",
+    "phase_2": "Recruit 1-2 trusted members per subreddit",
+    "phase_3": "Establish guidelines and escalation paths"
+  },
+  "guidelines_evolution": {
+    "start_conservative": true,
+    "track_changes": true
+  },
+  "conflict_resolution": {
+    "auto_escalation_keywords": [
+      "harassment",
+      "hate",
+      "threat",
+      "dox",
+      "self-harm",
+      "suicide",
+      "abuse",
+      "stalking",
+      "bullying",
+      "violence",
+      "rape",
+      "kill",
+      "exploit",
+      "coercion"
+    ],
+    "severe_keywords": ["dox", "suicide", "kill", "rape", "threat"],
+    "escalation_threshold": 2,
+    "public_log_enabled": true,
+    "appeal_process": "Submit an appeal via modmail with a brief explanation and relevant context."
+  }
+}

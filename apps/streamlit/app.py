@@ -566,6 +566,15 @@ def load_moderation_history(days: int = 7) -> list:
     return records
 
 
+def load_report(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return {}
+
+
 def get_account_health_report() -> dict:
     """Generate a health report from account status data."""
     status_data = load_account_status()
@@ -2139,6 +2148,9 @@ def main() -> None:
         created_subs = load_created_subreddits()
         post_schedule = load_post_schedule()
         moderation_records = load_moderation_history(days=7)
+        analytics_report = load_report(PROJECT_ROOT / "logs" / "analytics_report.json")
+        predictive_report = load_report(PROJECT_ROOT / "logs" / "predictive_insights.json")
+        risk_report = load_report(PROJECT_ROOT / "logs" / "risk_management_report.json")
 
         col_a, col_b, col_c = st.columns(3)
         with col_a:
@@ -2185,6 +2197,60 @@ def main() -> None:
             st.dataframe(moderation_records, width="stretch")
         else:
             st.caption("No moderation history records yet.")
+
+        st.markdown("### Analytics Overview")
+        if analytics_report:
+            g = analytics_report.get("growth", {})
+            e = analytics_report.get("engagement", {})
+            q = analytics_report.get("quality", {})
+            h = analytics_report.get("health", {})
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                st.metric("Posts (week)", g.get("posts_week", 0))
+                st.metric("Posts (total)", g.get("posts_total", 0))
+            with c2:
+                st.metric("Upvotes", e.get("upvotes", 0))
+                st.metric("Comments", e.get("comments", 0))
+            with c3:
+                st.metric("Avg length", q.get("avg_post_length", 0))
+                st.metric("Avg citations", q.get("avg_source_citations", 0))
+            with c4:
+                st.metric("Spam rate", h.get("spam_rate", 0))
+                st.metric("Moderation load", h.get("moderation_load", 0))
+            st.markdown("#### Charts")
+            st.bar_chart(
+                {
+                    "posts_week": g.get("posts_week", 0),
+                    "posts_total": g.get("posts_total", 0),
+                }
+            )
+            st.bar_chart(
+                {
+                    "upvotes": e.get("upvotes", 0),
+                    "comments": e.get("comments", 0),
+                }
+            )
+        else:
+            st.caption("No analytics report found yet.")
+
+        st.markdown("### Predictive Insights")
+        if predictive_report:
+            st.json(predictive_report)
+            top_topics = predictive_report.get("top_topics", [])
+            if top_topics:
+                st.bar_chart({topic: count for topic, count in top_topics})
+        else:
+            st.caption("No predictive insights found yet.")
+
+        st.markdown("### Risk Snapshot")
+        if risk_report:
+            st.json(risk_report)
+            disp = risk_report.get("activity_dispersion", {})
+            counts = disp.get("account_counts", {})
+            if counts:
+                st.bar_chart(counts)
+        else:
+            st.caption("No risk report found yet.")
     with accounts_tab:
         st.subheader("Account health")
         if not account_status:

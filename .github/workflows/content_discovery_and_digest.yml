@@ -1,0 +1,60 @@
+name: Content Discovery & Weekly Digest
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_items:
+        description: "Max discovery items to schedule"
+        required: false
+        default: "5"
+      weeks_ahead:
+        description: "Weeks ahead to schedule digests"
+        required: false
+        default: "4"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  discovery_digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run content discovery
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
+        run: |
+          set -euxo pipefail
+          python - <<'PY'
+          from scripts.content_scheduling.schedule_posts import MCRDSEPostScheduler
+          scheduler = MCRDSEPostScheduler(account_name="account4", headless=True, dry_run=True)
+          scheduler.run_content_discovery(max_items=int("${{ github.event.inputs.max_items || '5' }}"))
+          scheduler.schedule_weekly_digest(weeks_ahead=int("${{ github.event.inputs.weeks_ahead || '4' }}"))
+          scheduler.generate_ab_report(limit=50)
+          scheduler.generate_kpi_dashboard()
+          PY
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: content-discovery-output
+          path: |
+            scripts/content_scheduling/schedule/post_schedule.json
+            logs/ab_test_report.json
+            logs/ab_test_report.md
+            logs/kpi_dashboard.json
+            logs/kpi_dashboard.md

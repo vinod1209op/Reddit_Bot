@@ -1,0 +1,27 @@
+{
+  "topics": {
+    "microdosing": ["microdosing", "protocol", "dose", "schedule"],
+    "integration": ["integration", "reflection", "journaling", "aftercare"],
+    "clinical": ["clinical", "trial", "study", "randomized", "double blind"],
+    "harm_reduction": ["harm reduction", "safety", "screening", "contraindication"],
+    "policy": ["policy", "regulation", "legal", "decriminalization"]
+  },
+  "reporting": {
+    "monthly_health_report": "logs/research_monthly_health.md",
+    "quarterly_discourse_report": "logs/research_quarterly_discourse.md",
+    "yearly_trends_report": "logs/research_yearly_trends.md"
+  },
+  "portal_export": {
+    "output_dir": "exports/research_portal",
+    "include_sources": true
+  },
+  "journey_metrics": {
+    "stages": ["awareness", "learning", "integration", "contribution"],
+    "signals": {
+      "awareness": ["what is", "new to", "beginner"],
+      "learning": ["study", "paper", "evidence"],
+      "integration": ["integration", "journaling", "reflection"],
+      "contribution": ["resource", "summary", "guide"]
+    }
+  }
+}
