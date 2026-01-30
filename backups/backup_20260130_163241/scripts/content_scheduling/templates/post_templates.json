@@ -1,0 +1,120 @@
+{
+  "discussion": {
+    "templates": [
+      {
+        "title": "Perspective check: {topic}",
+        "content": "We\u2019re reviewing how this community thinks about {topic}.\n\nContext:\n- What has changed recently?\n- What\u2019s still unclear or debated?\n\nOpen questions:\n- What should we prioritize next?\n- Which claims deserve stronger evidence?",
+        "variables": {
+          "topic": [
+            "microdosing protocols",
+            "psychedelic integration",
+            "harm reduction practices",
+            "neuroplasticity research",
+            "therapeutic applications"
+          ]
+        },
+        "template_id": "discussion_1",
+        "ai_assisted": false
+      },
+      {
+        "title": "Community input needed: {topic}",
+        "content": "We\u2019re gathering practical perspectives on {topic}.\n\nWhy this matters:\n- It shapes how people make decisions\n- It affects what gets studied next\n\nWhat we\u2019d value from you:\n- One insight you trust\n- One misconception you keep seeing",
+        "variables": {
+          "topic": [
+            "integration practices",
+            "tracking outcomes",
+            "dosage consistency",
+            "safety routines",
+            "long\u2011term effects"
+          ]
+        },
+        "template_id": "discussion_2",
+        "ai_assisted": false
+      }
+    ]
+  },
+  "question": {
+    "templates": [
+      {
+        "title": "Question for experienced members: {topic}",
+        "content": "We\u2019re looking for grounded, experience\u2011based guidance on {topic}.\n\nKey questions:\n- What are the top considerations you\u2019d flag?\n- What resources or references actually helped?\n- What would you do differently in hindsight?",
+        "variables": {
+          "topic": [
+            "starting a microdosing protocol",
+            "psychedelic integration practices",
+            "tracking cognitive changes",
+            "balancing routine and flexibility"
+          ]
+        },
+        "template_id": "question_1",
+        "ai_assisted": false
+      }
+    ]
+  },
+  "resource": {
+    "templates": [
+      {
+        "title": "Resource roundup: {topic}",
+        "content": "We\u2019re curating a practical list of resources on {topic}.\n\nIf you have strong references, please share:\n- Peer\u2011reviewed studies\n- Clear, evidence\u2011based explainers\n- Reputable tools or frameworks",
+        "variables": {
+          "topic": [
+            "neuroplasticity exercises",
+            "integration frameworks",
+            "harm reduction guides",
+            "outcome tracking methods"
+          ]
+        },
+        "template_id": "resource_1",
+        "ai_assisted": false
+      }
+    ]
+  },
+  "experience": {
+    "templates": [
+      {
+        "title": "Reflection: {theme}",
+        "content": "Sharing a structured reflection for anyone thinking about {theme}.\n\nWhat stood out to me:\n- One practical takeaway\n- One risk or constraint\n- One question I\u2019m still exploring",
+        "variables": {
+          "theme": [
+            "personal growth work",
+            "integration routines",
+            "long\u2011term consistency",
+            "balancing expectations"
+          ]
+        },
+        "template_id": "experience_1",
+        "ai_assisted": false
+      }
+    ]
+  },
+  "news": {
+    "templates": [
+      {
+        "title": "Update: {development} in psychedelic research",
+        "content": "Quick summary we\u2019re tracking: {summary}.\n\nWhy it matters:\n- {significance}\n\nIf you have primary sources or critiques, please add them below.",
+        "variables": {
+          "development": [
+            "new clinical trial results",
+            "policy changes affecting research",
+            "breakthroughs in mechanisms",
+            "innovations in therapeutic approaches"
+          ],
+          "summary": [
+            "a recent study published in a major journal shows promising results",
+            "regulatory changes are opening new avenues for research",
+            "researchers reported new insights into how psychedelics work",
+            "early evidence suggests meaningful clinical outcomes"
+          ],
+          "significance": [
+            "this could expand treatment options",
+            "it may shift how future studies are designed",
+            "it strengthens the evidence base",
+            "it helps clarify risks and benefits"
+          ]
+        },
+        "template_id": "news_1",
+        "ai_assisted": false
+      }
+    ]
+  }
+}
