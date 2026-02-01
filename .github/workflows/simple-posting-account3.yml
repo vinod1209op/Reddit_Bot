@@ -52,6 +52,12 @@ jobs:
       - name: Validate required secrets
         run: |
           set -euo pipefail
+          if [ -n "${SUPABASE_COOKIES_ACCOUNT3:-}" ] && [ -z "${SUPABASE_COOKIES_ACCOUNT3_PATH:-}" ]; then
+            echo "SUPABASE_COOKIES_ACCOUNT3_PATH=${SUPABASE_COOKIES_ACCOUNT3}" >> "$GITHUB_ENV"
+          fi
+          if [ -n "${COOKIES_ACCOUNT3_PATH:-}" ] && [ -z "${SUPABASE_COOKIES_ACCOUNT3_PATH:-}" ]; then
+            echo "SUPABASE_COOKIES_ACCOUNT3_PATH=${COOKIES_ACCOUNT3_PATH}" >> "$GITHUB_ENV"
+          fi
           for var in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY SUPABASE_BUCKET SUPABASE_POST_SCHEDULE_PATH SUPABASE_COOKIES_ACCOUNT3_PATH; do
             if [ -z "${!var:-}" ]; then
               echo "Missing required secret: $var"
