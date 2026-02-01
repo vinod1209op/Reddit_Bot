@@ -1,15 +1,17 @@
-name: Engagement Replies (account1)
+name: Karma Comment (account1)
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 17 * * *"  # 17:00 UTC (09:00 PT)
+    - cron: "0 3 * * *"
+    - cron: "0 11 * * *"
+    - cron: "0 19 * * *"
 
 jobs:
-  engagement-replies:
+  karma-comment:
     runs-on: ubuntu-latest
     concurrency:
-      group: engagement-replies-account1
+      group: karma-comment-account1
       cancel-in-progress: false
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -59,7 +61,7 @@ jobs:
                -o data/cookies_account1.pkl \
                "$COOKIE_URL"
 
-      - name: Random jitter (0-180 minutes)
+      - name: Random jitter (0-120 minutes, skip on manual)
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "Manual run: skipping jitter."
@@ -67,20 +69,36 @@ jobs:
           fi
           python - <<'PY'
           import random, time
-          seconds = random.randint(0, 3 * 60 * 60)
+          seconds = random.randint(0, 120 * 60)
           print(f"Jitter sleep: {seconds//60} minutes")
           time.sleep(seconds)
           PY
 
-      - name: Run reply generator (account1)
+      - name: Load subreddit list
+        id: subs
+        run: |
+          python - <<'PY'
+          import json, pathlib
+          subs = json.loads(pathlib.Path("config/subreddits.json").read_text())
+          if isinstance(subs, dict):
+            subs = subs.get("subreddits") or subs.get("list") or []
+          subs = [s for s in subs if isinstance(s, str)]
+          print("subs=" + " ".join(subs))
+          print(f"SUBS={' '.join(subs)}")
+          with open("$GITHUB_OUTPUT", "a") as f:
+            f.write(f"subs={' '.join(subs)}\n")
+          PY
+
+      - name: Run karma comment (account1)
         run: |
           export CHROME_BIN="${CHROME_PATH:-/usr/bin/google-chrome}"
           export CHROMEDRIVER_PATH="${CHROMEDRIVER:-/usr/local/bin/chromedriver}"
           python scripts/engagement/reply_queue_runner.py \
             --account account1 \
             --role generate \
-            --count 3 \
+            --count 1 \
             --headless \
             --post \
             --use-llm \
-            --supabase-prefix "${SUPABASE_POST_SCHEDULE_PATH%/}"
+            --supabase-prefix "${SUPABASE_POST_SCHEDULE_PATH%/}" \
+            --subreddits ${{ steps.subs.outputs.subs }}

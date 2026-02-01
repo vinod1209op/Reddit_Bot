@@ -49,36 +49,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Setup Tor proxy
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y tor
-          sudo systemctl stop tor || true
-          sudo systemctl disable tor || true
-          sudo service tor stop || true
-          sudo pkill -f tor || true
-          PORT=9051
-          DATADIR="/tmp/tor_$PORT"
-          mkdir -p "$DATADIR"
-          chmod 700 "$DATADIR"
-          cat > "$DATADIR/torrc" << EOF
-          SocksPort 127.0.0.1:$PORT
-          DataDirectory $DATADIR
-          ControlPort $((PORT + 100))
-          CookieAuthentication 1
-          Log notice file $DATADIR/tor.log
-          ExitNodes {gb}
-          StrictNodes 1
-          EOF
-          tor -f "$DATADIR/torrc" --RunAsDaemon 1
-          for i in {1..60}; do
-            if [ -f "$DATADIR/tor.log" ] && grep -q "Bootstrapped 100%" "$DATADIR/tor.log"; then
-              break
-            fi
-            sleep 1
-          done
-          echo "TOR_SOCKS_PORT=$PORT" >> "$GITHUB_ENV"
-
       - name: Download account2 cookies from Supabase
         run: |
           set -euo pipefail
@@ -103,9 +73,6 @@ jobs:
           PY
 
       - name: Run reply consumer (account2)
-        env:
-          USE_TOR_PROXY: "1"
-          TOR_SOCKS_PORT: "9051"
         run: |
           export CHROME_BIN="${CHROME_PATH:-/usr/bin/google-chrome}"
           export CHROMEDRIVER_PATH="${CHROMEDRIVER:-/usr/local/bin/chromedriver}"
