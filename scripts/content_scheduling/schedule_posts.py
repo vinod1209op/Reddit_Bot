@@ -1829,7 +1829,10 @@ class MCRDSEPostScheduler(RedditAutomationBase):
                 continue
             
             try:
-                scheduled_time = datetime.fromisoformat(post["scheduled_for"])
+                scheduled_time_raw = post.get("scheduled_for")
+                if not scheduled_time_raw:
+                    continue
+                scheduled_time = datetime.fromisoformat(scheduled_time_raw)
                 if scheduled_time.tzinfo:
                     now = datetime.now(tz=scheduled_time.tzinfo)
                 else:

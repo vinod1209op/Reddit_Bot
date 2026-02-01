@@ -159,12 +159,31 @@ def main():
     parser.add_argument("--months", type=int, default=2)
     parser.add_argument("--account", default="account4")
     parser.add_argument("--subreddits", nargs="*", default=["MindWellBeing", "ClinicalMicrodosingHu", "Mental_Health_Hub"])
+    parser.add_argument("--queue", action="store_true", help="Write generated replies to a local queue file")
+    parser.add_argument("--queue-path", default="data/engagement_reply_queue.json")
     args = parser.parse_args()
 
     program = EngagementProgram()
     if args.replies:
-        for r in program.generate_comment_replies(count=args.count):
-            print(f"- {r}")
+        replies = program.generate_comment_replies(count=args.count)
+        if args.queue:
+            queue_path = Path(args.queue_path)
+            existing = _load_json(queue_path, [])
+            for r in replies:
+                existing.append(
+                    {
+                        "generated_at": datetime.now().isoformat(),
+                        "reply": r,
+                        "source": "template",
+                        "status": "draft",
+                    }
+                )
+            queue_path.parent.mkdir(parents=True, exist_ok=True)
+            queue_path.write_text(json.dumps(existing, indent=2))
+            print(f"Wrote {len(replies)} replies to {queue_path}")
+        else:
+            for r in replies:
+                print(f"- {r}")
     if args.events:
         scheduler = MCRDSEPostScheduler(account_name=args.account, headless=True, dry_run=True)
         count = program.schedule_monthly_events(scheduler, args.subreddits, months_ahead=args.months)

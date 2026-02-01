@@ -1,0 +1,117 @@
+name: Engagement Replies (account2)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 10 * * *"  # 10:00 UTC (10:00 UK)
+
+jobs:
+  engagement-replies:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: engagement-replies-account2
+      cancel-in-progress: false
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET }}
+      SUPABASE_POST_SCHEDULE_PATH: ${{ secrets.SUPABASE_POST_SCHEDULE_PATH }}
+      SUPABASE_COOKIES_ACCOUNT2_PATH: ${{ secrets.SUPABASE_COOKIES_ACCOUNT2_PATH }}
+      PYTHONPATH: ${{ github.workspace }}:src:.
+      SELENIUM_USE_UNDETECTED: "0"
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Google Chrome
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Install matching ChromeDriver
+        run: |
+          set -euo pipefail
+          VERSION="${CHROME_VERSION:-$(google-chrome --version | awk '{print $3}')}"
+          BASE="https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/${VERSION}/linux64"
+          URL="${BASE}/chromedriver-linux64.zip"
+          curl -fSL "$URL" -o /tmp/chromedriver.zip
+          unzip -o /tmp/chromedriver.zip -d /tmp
+          sudo mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver
+          sudo chmod +x /usr/local/bin/chromedriver
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Setup Tor proxy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tor
+          sudo systemctl stop tor || true
+          sudo systemctl disable tor || true
+          sudo service tor stop || true
+          sudo pkill -f tor || true
+          PORT=9051
+          DATADIR="/tmp/tor_$PORT"
+          mkdir -p "$DATADIR"
+          chmod 700 "$DATADIR"
+          cat > "$DATADIR/torrc" << EOF
+          SocksPort 127.0.0.1:$PORT
+          DataDirectory $DATADIR
+          ControlPort $((PORT + 100))
+          CookieAuthentication 1
+          Log notice file $DATADIR/tor.log
+          ExitNodes {gb}
+          StrictNodes 1
+          EOF
+          tor -f "$DATADIR/torrc" --RunAsDaemon 1
+          for i in {1..60}; do
+            if [ -f "$DATADIR/tor.log" ] && grep -q "Bootstrapped 100%" "$DATADIR/tor.log"; then
+              break
+            fi
+            sleep 1
+          done
+          echo "TOR_SOCKS_PORT=$PORT" >> "$GITHUB_ENV"
+
+      - name: Download account2 cookies from Supabase
+        run: |
+          set -euo pipefail
+          mkdir -p data
+          COOKIE_URL="${SUPABASE_URL%/}/storage/v1/object/${SUPABASE_BUCKET}/${SUPABASE_COOKIES_ACCOUNT2_PATH}"
+          curl -fsS -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+               -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+               -o data/cookies_account2.pkl \
+               "$COOKIE_URL"
+
+      - name: Random jitter (0-180 minutes)
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual run: skipping jitter."
+            exit 0
+          fi
+          python - <<'PY'
+          import random, time
+          seconds = random.randint(0, 3 * 60 * 60)
+          print(f"Jitter sleep: {seconds//60} minutes")
+          time.sleep(seconds)
+          PY
+
+      - name: Run reply consumer (account2)
+        env:
+          USE_TOR_PROXY: "1"
+          TOR_SOCKS_PORT: "9051"
+        run: |
+          export CHROME_BIN="${CHROME_PATH:-/usr/bin/google-chrome}"
+          export CHROMEDRIVER_PATH="${CHROMEDRIVER:-/usr/local/bin/chromedriver}"
+          python scripts/engagement/reply_queue_runner.py \
+            --account account2 \
+            --role consume \
+            --headless \
+            --post \
+            --supabase-prefix "${SUPABASE_POST_SCHEDULE_PATH%/}"
