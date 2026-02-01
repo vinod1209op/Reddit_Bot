@@ -79,7 +79,7 @@ def main() -> None:
     parser.add_argument("--days", type=int, default=3, help="Days ahead to schedule generated posts")
     parser.add_argument("--supabase-prefix", default="posting", help="Supabase folder/prefix for schedules")
     parser.add_argument("--shared-schedule", action="store_true", help="Use a single shared post_schedule.json for all accounts")
-    parser.add_argument("--force-due", action="store_true", help="Force newly generated posts to be due now (for manual runs)")
+    parser.add_argument("--force-due", action="store_true", help="Force a post to be due now (used for manual runs)")
     parser.add_argument("--jitter-minutes", type=int, default=45, help="Max minutes to jitter scheduled time (+/-)")
     args = parser.parse_args()
 
@@ -189,11 +189,8 @@ def main() -> None:
                 post = scheduler.generate_post_from_template(post_type, subreddit=subreddit)
                 if theme:
                     post["theme"] = theme
-                if args.force_due:
-                    scheduled_time = datetime.now(scheduled_time.tzinfo) if scheduled_time.tzinfo else datetime.now()
-                else:
-                    days_offset = random.randint(0, max(1, args.days) - 1)
-                    scheduled_time = scheduled_time + timedelta(days=days_offset)
+                days_offset = random.randint(0, max(1, args.days) - 1)
+                scheduled_time = scheduled_time + timedelta(days=days_offset)
                 # per-account posting window
                 start_h, end_h, start_m, end_m = 8, 22, 0, 0
                 window = acct_cfg.get("post_window_local")
@@ -205,42 +202,41 @@ def main() -> None:
                         end_h, end_m = eh, em
                     except Exception:
                         start_h, end_h, start_m, end_m = 8, 22, 0, 0
-                if args.force_due:
-                    hour = (scheduled_time.hour)
-                    minute = (scheduled_time.minute)
-                else:
-                    hour = random.randint(start_h, max(start_h, end_h - 1))
-                    minute = random.randint(0, 59)
-                    # wobble within +/- jitter minutes
-                    jitter = max(0, args.jitter_minutes)
-                    delta_minutes = random.randint(-jitter, jitter)
-                    base_dt = scheduled_time.replace(hour=hour, minute=minute)
-                    base_dt = base_dt + timedelta(minutes=delta_minutes)
-                    hour, minute = base_dt.hour, base_dt.minute
-                try:
-                    tz = None
-                    tz_name = acct_cfg.get("timezone")
-                    if tz_name and ZoneInfo:
-                        tz = ZoneInfo(tz_name)
-                    if tz:
-                        scheduled_time = scheduled_time.replace(tzinfo=tz)
-                    post["scheduled_for"] = scheduled_time.replace(hour=hour, minute=minute).isoformat()
-                except Exception:
-                    post["scheduled_for"] = scheduled_time.replace(hour=hour, minute=minute).isoformat()
+                hour = random.randint(start_h, max(start_h, end_h - 1))
+                minute = random.randint(0, 59)
+                # wobble within +/- jitter minutes
+                jitter = max(0, args.jitter_minutes)
+                delta_minutes = random.randint(-jitter, jitter)
+                base_dt = scheduled_time.replace(hour=hour, minute=minute)
+                base_dt = base_dt + timedelta(minutes=delta_minutes)
+                hour, minute = base_dt.hour, base_dt.minute
+                # Queue-only mode: do not assign per-post scheduled time
                 schedule_data.append(post)
             generated = True
     if generated:
         scheduler.save_schedule(schedule_data)
 
-    # Process due posts
-    due = scheduler.check_due_posts()
-    if not due:
-        logger.info("No posts due right now (%s).", datetime.now().isoformat())
+    # Queue-only mode: pick one random scheduled post and make it due now
+    schedule_data = scheduler.load_schedule()
+    candidates = [
+        p for p in schedule_data
+        if p.get("status") == "scheduled" and (not p.get("account") or p.get("account") == account)
+    ]
+    if not candidates:
+        logger.info("No scheduled posts available to publish for %s.", account)
         scheduler.cleanup()
         return
+    chosen = random.choice(candidates)
+    now_iso = datetime.now().isoformat()
+    for post in schedule_data:
+        if post is chosen:
+            post["scheduled_for"] = now_iso
+        else:
+            post.pop("scheduled_for", None)
+    scheduler.save_schedule(schedule_data)
 
     if args.dry_run:
-        logger.info("[dry-run] Would process %s due posts", len(due))
+        logger.info("[dry-run] Would process 1 post now for %s", account)
         scheduler.cleanup()
         return
 
