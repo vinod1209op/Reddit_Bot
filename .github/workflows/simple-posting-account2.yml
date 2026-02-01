@@ -55,6 +55,40 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Setup Tor proxy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tor
+          sudo systemctl stop tor || true
+          sudo systemctl disable tor || true
+          sudo service tor stop || true
+          sudo pkill -f tor || true
+          PORT=9051
+          DATADIR="/tmp/tor_$PORT"
+          mkdir -p "$DATADIR"
+          chmod 700 "$DATADIR"
+          cat > "$DATADIR/torrc" << EOF
+          SocksPort 127.0.0.1:$PORT
+          DataDirectory $DATADIR
+          ControlPort $((PORT + 100))
+          CookieAuthentication 1
+          Log notice file $DATADIR/tor.log
+          ExitNodes {gb}
+          StrictNodes 1
+          EOF
+          tor -f "$DATADIR/torrc" --RunAsDaemon 1
+          for i in {1..60}; do
+            if [ -f "$DATADIR/tor.log" ] && grep -q "Bootstrapped 100%" "$DATADIR/tor.log"; then
+              echo "Tor bootstrapped."
+              break
+            fi
+            sleep 1
+          done
+          echo "TOR_DATA_DIR=$DATADIR" >> "$GITHUB_ENV"
+          echo "TOR_SOCKS_PORT=$PORT" >> "$GITHUB_ENV"
+          echo "TOR_CONTROL_PORT=$((PORT + 100))" >> "$GITHUB_ENV"
+          curl --socks5-hostname 127.0.0.1:$PORT https://check.torproject.org/api/ip || true
+
       - name: Validate required secrets
         run: |
           set -euo pipefail
@@ -97,10 +131,18 @@ jobs:
           fi
 
       - name: Run simple posting (templates only)
+        env:
+          USE_TOR_PROXY: "1"
+          TOR_SOCKS_PORT: "9051"
+          FORCE_DUE: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
         run: |
           export CHROME_BIN="${CHROME_PATH:-/usr/bin/google-chrome}"
           export CHROMEDRIVER_PATH="${CHROMEDRIVER:-/usr/local/bin/chromedriver}"
-          python scripts/content_scheduling/simple_posting.py --accounts account2 --headless --target 6 --days 3 --supabase-prefix "${SUPABASE_POST_SCHEDULE_PATH%/}" --shared-schedule
+          FORCE_FLAG=""
+          if [ "${FORCE_DUE:-0}" = "1" ]; then
+            FORCE_FLAG="--force-due"
+          fi
+          python scripts/content_scheduling/simple_posting.py --accounts account2 --headless --target 6 --days 3 --supabase-prefix "${SUPABASE_POST_SCHEDULE_PATH%/}" --shared-schedule $FORCE_FLAG
 
       - name: Upload post schedule to Supabase (shared)
         if: always()

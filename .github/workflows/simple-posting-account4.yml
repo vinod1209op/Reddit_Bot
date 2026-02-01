@@ -101,7 +101,11 @@ jobs:
         run: |
           export CHROME_BIN="${CHROME_PATH:-/usr/bin/google-chrome}"
           export CHROMEDRIVER_PATH="${CHROMEDRIVER:-/usr/local/bin/chromedriver}"
-          python scripts/content_scheduling/simple_posting.py --accounts account4 --headless --target 6 --days 3 --supabase-prefix "${SUPABASE_POST_SCHEDULE_PATH%/}" --shared-schedule
+          FORCE_FLAG=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            FORCE_FLAG="--force-due"
+          fi
+          python scripts/content_scheduling/simple_posting.py --accounts account4 --headless --target 6 --days 3 --supabase-prefix "${SUPABASE_POST_SCHEDULE_PATH%/}" --shared-schedule $FORCE_FLAG
 
       - name: Upload post schedule to Supabase (shared)
         if: always()

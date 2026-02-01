@@ -79,6 +79,8 @@ def main() -> None:
     parser.add_argument("--days", type=int, default=3, help="Days ahead to schedule generated posts")
     parser.add_argument("--supabase-prefix", default="posting", help="Supabase folder/prefix for schedules")
     parser.add_argument("--shared-schedule", action="store_true", help="Use a single shared post_schedule.json for all accounts")
+    parser.add_argument("--force-due", action="store_true", help="Force newly generated posts to be due now (for manual runs)")
+    parser.add_argument("--jitter-minutes", type=int, default=45, help="Max minutes to jitter scheduled time (+/-)")
     args = parser.parse_args()
 
     accounts = [a.strip() for a in args.accounts.split(",") if a.strip()]
@@ -187,8 +189,11 @@ def main() -> None:
                 post = scheduler.generate_post_from_template(post_type, subreddit=subreddit)
                 if theme:
                     post["theme"] = theme
-                days_offset = random.randint(0, max(1, args.days) - 1)
-                scheduled_time = scheduled_time + timedelta(days=days_offset)
+                if args.force_due:
+                    scheduled_time = datetime.now(scheduled_time.tzinfo) if scheduled_time.tzinfo else datetime.now()
+                else:
+                    days_offset = random.randint(0, max(1, args.days) - 1)
+                    scheduled_time = scheduled_time + timedelta(days=days_offset)
                 # per-account posting window
                 start_h, end_h, start_m, end_m = 8, 22, 0, 0
                 window = acct_cfg.get("post_window_local")
@@ -200,8 +205,18 @@ def main() -> None:
                         end_h, end_m = eh, em
                     except Exception:
                         start_h, end_h, start_m, end_m = 8, 22, 0, 0
-                hour = random.randint(start_h, max(start_h, end_h - 1))
-                minute = random.randint(0, 59)
+                if args.force_due:
+                    hour = (scheduled_time.hour)
+                    minute = (scheduled_time.minute)
+                else:
+                    hour = random.randint(start_h, max(start_h, end_h - 1))
+                    minute = random.randint(0, 59)
+                    # wobble within +/- jitter minutes
+                    jitter = max(0, args.jitter_minutes)
+                    delta_minutes = random.randint(-jitter, jitter)
+                    base_dt = scheduled_time.replace(hour=hour, minute=minute)
+                    base_dt = base_dt + timedelta(minutes=delta_minutes)
+                    hour, minute = base_dt.hour, base_dt.minute
                 try:
                     tz = None
                     tz_name = acct_cfg.get("timezone")
