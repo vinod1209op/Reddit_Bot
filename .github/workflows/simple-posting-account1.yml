@@ -16,6 +16,7 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET }}
       SUPABASE_POST_SCHEDULE_PATH: ${{ secrets.SUPABASE_POST_SCHEDULE_PATH }}
+      SUPABASE_COOKIES_ACCOUNT1_PATH: ${{ secrets.SUPABASE_COOKIES_ACCOUNT1_PATH }}
       PYTHONPATH: ${{ github.workspace }}:src:.
       SELENIUM_USE_UNDETECTED: "0"
       HTTP_PROXY: ""
@@ -23,6 +24,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Init dirs
+        run: |
+          mkdir -p logs scripts/content_scheduling/schedule
+          touch scripts/content_scheduling/schedule/post_schedule.json
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -75,38 +81,38 @@ jobs:
                -o data/cookies_account1.pkl \
                "$COOKIE_URL"
 
-      - name: Download post schedule from Supabase (if present)
+      - name: Download post schedule from Supabase (shared)
         run: |
           set -euo pipefail
           mkdir -p scripts/content_scheduling/schedule
-          SCHEDULE_URL="${SUPABASE_URL%/}/storage/v1/object/${SUPABASE_BUCKET}/${SUPABASE_POST_SCHEDULE_PATH%/}/post_schedule_account1.json"
+          SCHEDULE_URL="${SUPABASE_URL%/}/storage/v1/object/${SUPABASE_BUCKET}/${SUPABASE_POST_SCHEDULE_PATH%/}/post_schedule.json"
           if curl -fSL -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
                       -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
-                      -o scripts/content_scheduling/schedule/post_schedule_account1.json \
+                      -o scripts/content_scheduling/schedule/post_schedule.json \
                       "$SCHEDULE_URL"; then
             echo "Schedule downloaded."
           else
             echo "No existing schedule; starting fresh."
-            echo "[]" > scripts/content_scheduling/schedule/post_schedule_account1.json
+            echo "[]" > scripts/content_scheduling/schedule/post_schedule.json
           fi
 
       - name: Run simple posting (templates only)
         run: |
           export CHROME_BIN="${CHROME_PATH:-/usr/bin/google-chrome}"
           export CHROMEDRIVER_PATH="${CHROMEDRIVER:-/usr/local/bin/chromedriver}"
-          python scripts/content_scheduling/simple_posting.py --accounts account1 --headless --target 6 --days 3 --supabase-prefix "${SUPABASE_POST_SCHEDULE_PATH%/}"
+          python scripts/content_scheduling/simple_posting.py --accounts account1 --headless --target 6 --days 3 --supabase-prefix "${SUPABASE_POST_SCHEDULE_PATH%/}" --shared-schedule
 
-      - name: Upload post schedule to Supabase
+      - name: Upload post schedule to Supabase (shared)
         if: always()
         run: |
           set -euo pipefail
-          if [ -f scripts/content_scheduling/schedule/post_schedule_account1.json ]; then
-            SCHEDULE_URL="${SUPABASE_URL%/}/storage/v1/object/${SUPABASE_BUCKET}/${SUPABASE_POST_SCHEDULE_PATH%/}/post_schedule_account1.json"
+          if [ -f scripts/content_scheduling/schedule/post_schedule.json ]; then
+            SCHEDULE_URL="${SUPABASE_URL%/}/storage/v1/object/${SUPABASE_BUCKET}/${SUPABASE_POST_SCHEDULE_PATH%/}/post_schedule.json"
             curl -fSL -X PUT \
                  -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
                  -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
                  -H "Content-Type: application/json" \
-                 --data-binary @scripts/content_scheduling/schedule/post_schedule_account1.json \
+                 --data-binary @scripts/content_scheduling/schedule/post_schedule.json \
                  "$SCHEDULE_URL"
           fi
 
@@ -117,4 +123,4 @@ jobs:
           name: simple-posting-logs-account1-${{ github.run_attempt }}
           path: |
             logs/
-            scripts/content_scheduling/schedule/post_schedule_account1.json
+            scripts/content_scheduling/schedule/post_schedule.json

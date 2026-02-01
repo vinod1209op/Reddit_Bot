@@ -78,6 +78,7 @@ def main() -> None:
     parser.add_argument("--target", type=int, default=6, help="Target scheduled posts to keep queued")
     parser.add_argument("--days", type=int, default=3, help="Days ahead to schedule generated posts")
     parser.add_argument("--supabase-prefix", default="posting", help="Supabase folder/prefix for schedules")
+    parser.add_argument("--shared-schedule", action="store_true", help="Use a single shared post_schedule.json for all accounts")
     args = parser.parse_args()
 
     accounts = [a.strip() for a in args.accounts.split(",") if a.strip()]
@@ -122,14 +123,20 @@ def main() -> None:
         except Exception:
             pass
 
-    # Per-account schedule files
+    # Schedule files (shared or per-account)
     sched_dir = Path("scripts/content_scheduling/schedule")
     sched_dir.mkdir(parents=True, exist_ok=True)
-    schedule_file = sched_dir / f"post_schedule_{account}.json"
-    legacy_file = sched_dir / f"post_schedule_{account}_legacy.json"
+    if args.shared_schedule:
+        schedule_file = sched_dir / "post_schedule.json"
+        legacy_file = sched_dir / "post_schedule_legacy.json"
+        sb_key = f"{args.supabase_prefix}/post_schedule.json"
+    else:
+        schedule_file = sched_dir / f"post_schedule_{account}.json"
+        legacy_file = sched_dir / f"post_schedule_{account}_legacy.json"
+        sb_key = f"{args.supabase_prefix}/post_schedule_{account}.json"
 
     # Supabase schedule sync
-    content = sb_download(f"{args.supabase_prefix}/post_schedule_{account}.json")
+    content = sb_download(sb_key)
     if content:
         try:
             schedule_file.write_text(content.decode() if isinstance(content, bytes) else content)
@@ -206,7 +213,7 @@ def main() -> None:
                 except Exception:
                     post["scheduled_for"] = scheduled_time.replace(hour=hour, minute=minute).isoformat()
                 schedule_data.append(post)
-            scheduler.save_schedule(schedule_data)
+    scheduler.save_schedule(schedule_data)
 
     # Process due posts
     due = scheduler.check_due_posts()
@@ -237,6 +244,12 @@ def main() -> None:
     if len(filtered) != len(schedule):
         scheduler.save_schedule(filtered)
         logger.info("Removed %s posted items from queue", len(schedule) - len(filtered))
+
+    # Upload updated schedule back to Supabase (best effort, mirrors download key)
+    try:
+        sb_upload(sb_key, schedule_file.read_bytes())
+    except Exception:
+        logger.warning("Supabase upload skipped/failed for %s", sb_key)
 
     # Upload updated schedule back to Supabase
     try:
