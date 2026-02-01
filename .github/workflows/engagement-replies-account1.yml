@@ -83,4 +83,5 @@ jobs:
             --headless \
             --post \
             --use-llm \
+            --force \
             --supabase-prefix "${SUPABASE_POST_SCHEDULE_PATH%/}"

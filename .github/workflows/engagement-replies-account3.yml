@@ -81,4 +81,5 @@ jobs:
             --role consume \
             --headless \
             --post \
+            --force \
             --supabase-prefix "${SUPABASE_POST_SCHEDULE_PATH%/}"
