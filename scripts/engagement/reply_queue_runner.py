@@ -229,6 +229,7 @@ def main() -> int:
     parser.add_argument("--supabase-prefix", default="posting")
     parser.add_argument("--subreddits", nargs="*", default=["ClinicalMicrodosingHu", "MindWellBeing"])
     parser.add_argument("--use-llm", action="store_true", help="Use LLM to draft replies (falls back to templates)")
+    parser.add_argument("--force", action="store_true", help="Do not skip when queue has pending; consume or generate anyway")
     args = parser.parse_args()
 
     queue_path = Path(args.queue_path)
@@ -247,8 +248,27 @@ def main() -> int:
     queue = _load_json(queue_path, [])
 
     if args.role == "generate":
-        # Only generate when queue empty
+        # If pending exists and force, post one pending instead of skipping
         pending = [q for q in queue if q.get("status") == "pending"]
+        if pending and args.force:
+            item = pending[0]
+            bot = _init_bot(args.account, args.headless)
+            # Ensure no double-reply
+            if item.get("post_url") in set(_load_replied_map(args.supabase_prefix).get(args.account, [])):
+                queue = [q for q in queue if q.get("id") != item.get("id")]
+                _save_json(queue_path, queue)
+                sb_upload(queue_key, queue_path.read_bytes())
+                return 0
+            result = bot.reply_to_post(item["post_url"], item["reply"], dry_run=not args.post)
+            logger.info("Force-consumed pending reply (dry_run=%s): %s", str(not args.post), result.get("success"))
+            if result.get("success") or not args.post:
+                queue = [q for q in queue if q.get("id") != item.get("id")]
+                _save_json(queue_path, queue)
+                sb_upload(queue_key, queue_path.read_bytes())
+                if args.post and result.get("success"):
+                    replied_map.setdefault(args.account, []).append(item["post_url"])
+                    _save_replied_map(args.supabase_prefix, replied_map)
+            return 0
         if pending:
             logger.info("Queue already has %s pending replies; skipping generation.", len(pending))
             return 0
