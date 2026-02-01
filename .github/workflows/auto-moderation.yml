@@ -31,10 +31,18 @@ jobs:
 
       - name: Install Google Chrome
         uses: browser-actions/setup-chrome@v1
-      - name: Install Chromedriver
-        uses: nanasess/setup-chromedriver@v1
-        with:
-          chromedriver-version: 'latest'
+
+      - name: Install matching ChromeDriver
+        run: |
+          set -euo pipefail
+          VERSION="${CHROME_VERSION:-$(google-chrome --version | awk '{print $3}')}"
+          BASE="https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/${VERSION}/linux64"
+          URL="${BASE}/chromedriver-linux64.zip"
+          echo "Downloading ChromeDriver ${VERSION} from ${URL}"
+          curl -fSL "$URL" -o /tmp/chromedriver.zip
+          unzip -o /tmp/chromedriver.zip -d /tmp
+          sudo mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver
+          sudo chmod +x /usr/local/bin/chromedriver
 
       - name: Install dependencies
         run: |
@@ -63,8 +71,8 @@ jobs:
 
       - name: Run auto moderation setup (account4 only)
         run: |
-          export CHROME_BIN="${CHROME_PATH}"
-          export CHROMEDRIVER_PATH="${CHROMEDRIVER}"
+          export CHROME_BIN="${CHROME_PATH:-/usr/bin/google-chrome}"
+          export CHROMEDRIVER_PATH="${CHROMEDRIVER:-/usr/local/bin/chromedriver}"
           python scripts/moderation/auto_setup.py --headless --max-new 1
 
       - name: Upload logs on failure
