@@ -168,14 +168,14 @@ def main() -> None:
         scheduler.cleanup()
         return
 
-    schedule = scheduler.load_schedule()
-    scheduled_count = sum(1 for p in schedule if p.get("status") == "scheduled")
+    schedule_data = scheduler.load_schedule()
+    scheduled_count = sum(1 for p in schedule_data if p.get("status") == "scheduled")
     logger.info("Scheduled posts in queue for %s: %s", account, scheduled_count)
+    generated = False
     if scheduled_count < args.target:
         to_generate = max(0, args.target - scheduled_count)
         logger.info("Generating %s posts to reach target for %s", to_generate, account)
         if to_generate:
-            schedule_data = scheduler.load_schedule()
             for _ in range(to_generate):
                 post_types = list(scheduler.config["content_strategy"]["content_mix"].keys())
                 weights = list(scheduler.config["content_strategy"]["content_mix"].values())
@@ -228,7 +228,9 @@ def main() -> None:
                 except Exception:
                     post["scheduled_for"] = scheduled_time.replace(hour=hour, minute=minute).isoformat()
                 schedule_data.append(post)
-    scheduler.save_schedule(schedule_data)
+            generated = True
+    if generated:
+        scheduler.save_schedule(schedule_data)
 
     # Process due posts
     due = scheduler.check_due_posts()
