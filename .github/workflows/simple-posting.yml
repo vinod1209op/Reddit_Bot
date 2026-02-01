@@ -3,11 +3,23 @@ name: Simple Template Posting
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 */12 * * *"  # every 12 hours
+    # account1: 17:00 UTC (09:00 PT)
+    - cron: "0 17 * * *"
+    # account2: 10:00 UTC (10:00 UK)
+    - cron: "0 10 * * *"
+    # account3: 09:00 UTC (10:00 CET-1)
+    - cron: "0 9 * * *"
+    # account4: 14:00 UTC (09:00 ET)
+    - cron: "0 14 * * *"
 
 jobs:
   simple-posting:
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' ||
+            (github.event_name == 'schedule' && github.event.schedule == '0 17 * * *' && matrix.account == 'account1') ||
+            (github.event_name == 'schedule' && github.event.schedule == '0 10 * * *' && matrix.account == 'account2') ||
+            (github.event_name == 'schedule' && github.event.schedule == '0 9 * * *'  && matrix.account == 'account3') ||
+            (github.event_name == 'schedule' && github.event.schedule == '0 14 * * *' && matrix.account == 'account4') }}
     strategy:
       matrix:
         include:
@@ -123,7 +135,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: simple-posting-logs
+          name: simple-posting-logs-${{ matrix.account }}-${{ github.run_attempt }}
           path: |
             logs/
-            scripts/content_scheduling/schedule/post_schedule.json
+            scripts/content_scheduling/schedule/post_schedule_${{ matrix.account }}.json

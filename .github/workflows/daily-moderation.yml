@@ -79,7 +79,7 @@ jobs:
         run: |
           export CHROME_BIN="${CHROME_PATH:-/usr/bin/google-chrome}"
           export CHROMEDRIVER_PATH="${CHROMEDRIVER:-/usr/local/bin/chromedriver}"
-          python apps/cli/cli.py moderation -- --account account4 --all --daily --headless
+          python scripts/moderation/manage_moderation.py --account account4 --all --daily --headless
 
       - name: Upload logs on failure
         if: failure()

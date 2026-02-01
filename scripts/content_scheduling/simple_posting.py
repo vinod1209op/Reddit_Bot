@@ -10,6 +10,8 @@ from datetime import datetime, timedelta
 import random
 import os
 from pathlib import Path
+import json
+import requests
 try:
     from zoneinfo import ZoneInfo
 except Exception:  # pragma: no cover
@@ -17,14 +19,12 @@ except Exception:  # pragma: no cover
 
 from microdose_study_bot.core.logging import UnifiedLogger
 from scripts.content_scheduling.schedule_posts import MCRDSEPostScheduler
-from microdose_study_bot.core.supabase_client import SupabaseClient
 
 logger = UnifiedLogger("SimplePosting").get_logger()
 
 
 def load_account_config(name: str) -> dict:
     try:
-        import json
         acct_path = Path("config/accounts.json")
         if acct_path.exists():
             data = json.loads(acct_path.read_text())
@@ -95,12 +95,32 @@ def main() -> None:
         acct_cfg["post_window_local"] = derive_window_from_persona(acct_cfg)
     set_account_proxy(acct_cfg)
 
-    # Supabase client (best-effort)
-    sb = None
-    try:
-        sb = SupabaseClient()
-    except Exception:
-        sb = None
+    # Supabase helpers (best-effort)
+    def sb_download(key: str):
+        url = f"{os.environ.get('SUPABASE_URL','').rstrip('/')}/storage/v1/object/{os.environ.get('SUPABASE_BUCKET','')}/{key}"
+        headers = {
+            "Authorization": f"Bearer {os.environ.get('SUPABASE_SERVICE_ROLE_KEY','')}",
+            "apikey": os.environ.get("SUPABASE_SERVICE_ROLE_KEY",""),
+        }
+        try:
+            resp = requests.get(url, headers=headers, timeout=15)
+            if resp.status_code == 200:
+                return resp.content
+        except Exception:
+            return None
+        return None
+
+    def sb_upload(key: str, data: bytes, content_type: str = "application/json"):
+        url = f"{os.environ.get('SUPABASE_URL','').rstrip('/')}/storage/v1/object/{os.environ.get('SUPABASE_BUCKET','')}/{key}"
+        headers = {
+            "Authorization": f"Bearer {os.environ.get('SUPABASE_SERVICE_ROLE_KEY','')}",
+            "apikey": os.environ.get("SUPABASE_SERVICE_ROLE_KEY",""),
+            "Content-Type": content_type,
+        }
+        try:
+            requests.put(url, headers=headers, data=data, timeout=15)
+        except Exception:
+            pass
 
     # Per-account schedule files
     sched_dir = Path("scripts/content_scheduling/schedule")
@@ -109,15 +129,13 @@ def main() -> None:
     legacy_file = sched_dir / f"post_schedule_{account}_legacy.json"
 
     # Supabase schedule sync
-    if sb:
+    content = sb_download(f"{args.supabase_prefix}/post_schedule_{account}.json")
+    if content:
         try:
-            remote_key = f"{args.supabase_prefix}/post_schedule_{account}.json"
-            content = sb.download_file(remote_key)
-            if content:
-                schedule_file.write_text(content)
-                logger.info("Downloaded schedule for %s from Supabase", account)
+            schedule_file.write_text(content.decode() if isinstance(content, bytes) else content)
+            logger.info("Downloaded schedule for %s from Supabase", account)
         except Exception as e:
-            logger.warning("Supabase download failed: %s", e)
+            logger.warning("Failed to write downloaded schedule: %s", e)
 
     scheduler = MCRDSEPostScheduler(
         account_name=account,
@@ -221,13 +239,12 @@ def main() -> None:
         logger.info("Removed %s posted items from queue", len(schedule) - len(filtered))
 
     # Upload updated schedule back to Supabase
-    if sb:
-        try:
-            remote_key = f"{args.supabase_prefix}/post_schedule_{account}.json"
-            sb.upload_file(remote_key, scheduler.schedule_file.read_bytes(), content_type="application/json")
-            logger.info("Uploaded schedule for %s to Supabase", account)
-        except Exception as e:
-            logger.warning("Supabase upload failed: %s", e)
+    try:
+        remote_key = f"{args.supabase_prefix}/post_schedule_{account}.json"
+        sb_upload(remote_key, scheduler.schedule_file.read_bytes(), content_type="application/json")
+        logger.info("Uploaded schedule for %s to Supabase", account)
+    except Exception as e:
+        logger.warning("Supabase upload failed: %s", e)
 
     scheduler.cleanup()
 
