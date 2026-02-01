@@ -2,6 +2,15 @@ name: Auto Moderation Setup
 
 on:
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Reapply even if already processed"
+        required: false
+        default: "false"
+      max_new:
+        description: "Max subreddits to process this run"
+        required: false
+        default: "1"
   schedule:
     - cron: "0 7 * * *"  # daily at 07:00 UTC
 
@@ -16,6 +25,7 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET }}
       SUPABASE_COOKIES_ACCOUNT4_PATH: ${{ secrets.SUPABASE_COOKIES_ACCOUNT4_PATH }}
+      SUPABASE_MODERATED_KNOWN_PATH: ${{ secrets.SUPABASE_MODERATED_KNOWN_PATH }}
       PYTHONPATH: src:.
       SELENIUM_USE_UNDETECTED: "0"
       HTTP_PROXY: ""
@@ -52,7 +62,7 @@ jobs:
       - name: Validate required secrets
         run: |
           set -euo pipefail
-          for var in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY SUPABASE_BUCKET SUPABASE_COOKIES_ACCOUNT4_PATH; do
+          for var in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY SUPABASE_BUCKET SUPABASE_COOKIES_ACCOUNT4_PATH SUPABASE_MODERATED_KNOWN_PATH; do
             if [ -z "${!var:-}" ]; then
               echo "Missing required secret: $var"
               exit 1
@@ -69,11 +79,50 @@ jobs:
                -o data/cookies_account4.pkl \
                "$COOKIE_URL"
 
+      - name: Download moderated_known cache from Supabase (if present)
+        run: |
+          set -euo pipefail
+          mkdir -p data
+          CACHE_URL="${SUPABASE_URL%/}/storage/v1/object/${SUPABASE_BUCKET}/${SUPABASE_MODERATED_KNOWN_PATH}"
+          echo "Fetching moderated_known.json from Supabase..."
+          if curl -fSL -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+                      -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+                      -o data/moderated_known.json \
+                      "$CACHE_URL"; then
+            echo "Cache downloaded."
+          else
+            echo "No existing cache; starting fresh."
+            echo '{"subreddits":[]}' > data/moderated_known.json
+          fi
+
       - name: Run auto moderation setup (account4 only)
         run: |
           export CHROME_BIN="${CHROME_PATH:-/usr/bin/google-chrome}"
           export CHROMEDRIVER_PATH="${CHROMEDRIVER:-/usr/local/bin/chromedriver}"
-          python scripts/moderation/auto_setup.py --headless --max-new 1
+          FORCE_FLAG=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.force }}" = "true" ]; then
+            FORCE_FLAG="--force"
+          fi
+          MAX_NEW="${{ github.event.inputs.max_new }}"
+          if [ -z "$MAX_NEW" ]; then MAX_NEW=1; fi
+          python scripts/moderation/auto_setup.py --headless --max-new "$MAX_NEW" $FORCE_FLAG
+
+      - name: Upload moderated_known cache to Supabase
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -f data/moderated_known.json ]; then
+            CACHE_URL="${SUPABASE_URL%/}/storage/v1/object/${SUPABASE_BUCKET}/${SUPABASE_MODERATED_KNOWN_PATH}"
+            echo "Uploading moderated_known.json to Supabase..."
+            curl -fSL -X PUT \
+                 -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+                 -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+                 -H "Content-Type: application/json" \
+                 --data-binary @data/moderated_known.json \
+                 "$CACHE_URL"
+          else
+            echo "Cache file missing; nothing to upload."
+          fi
 
       - name: Upload logs on failure
         if: failure()

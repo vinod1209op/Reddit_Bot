@@ -557,11 +557,20 @@ message: |
             
             # Get flairs from config
             flairs = self.config["flairs"]["post_flairs"]
-            existing_names = set(
-                (el.get_attribute("value") or "").strip().lower()
-                for el in self.driver.find_elements(By.NAME, "text")
-                if (el.get_attribute("value") or "").strip()
-            )
+            existing_names = set()
+            # Inputs (old UI editable rows)
+            for el in self.driver.find_elements(By.NAME, "text"):
+                val = (el.get_attribute("value") or "").strip()
+                if val:
+                    existing_names.add(val.lower())
+            # Visible flair labels in table/list (covers non-editable rows)
+            for el in self.driver.find_elements(
+                By.CSS_SELECTOR,
+                ".flairrow .text, .flair-row .text, .flairtemplate .text, .linkflairlabel, td.flair-text, .flair-template .text",
+            ):
+                val = (el.text or "").strip()
+                if val:
+                    existing_names.add(val.lower())
             
             for flair in flairs:
                 if flair["name"].strip().lower() in existing_names:
@@ -680,11 +689,18 @@ message: |
             
             # Get flairs from config
             flairs = self.config["flairs"]["user_flairs"]
-            existing_names = set(
-                (el.get_attribute("value") or "").strip().lower()
-                for el in self.driver.find_elements(By.NAME, "text")
-                if (el.get_attribute("value") or "").strip()
-            )
+            existing_names = set()
+            for el in self.driver.find_elements(By.NAME, "text"):
+                val = (el.get_attribute("value") or "").strip()
+                if val:
+                    existing_names.add(val.lower())
+            for el in self.driver.find_elements(
+                By.CSS_SELECTOR,
+                ".flairrow .text, .flair-row .text, .flairtemplate .text, .userflairlabel, td.flair-text, .flair-template .text",
+            ):
+                val = (el.text or "").strip()
+                if val:
+                    existing_names.add(val.lower())
 
             for flair in flairs:
                 if flair["name"].strip().lower() in existing_names:
