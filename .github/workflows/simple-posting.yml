@@ -39,7 +39,7 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET }}
       SUPABASE_POST_SCHEDULE_PATH: ${{ secrets.SUPABASE_POST_SCHEDULE_PATH }}
-      PYTHONPATH: src:.
+      PYTHONPATH: ${{ github.workspace }}:src:.
       SELENIUM_USE_UNDETECTED: "0"
       HTTP_PROXY: ""
       HTTPS_PROXY: ""
