@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-Purpose: Scheduled multi-account scanner with human-like browsing behavior.
+Purpose: Scheduled multi-account scanner with human-like browsing behavior
+         and advanced anti-detection measures.
 """
-
-# Imports
 
 import argparse
 import copy
@@ -15,12 +14,12 @@ import json
 import socket
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 try:
     from zoneinfo import ZoneInfo
-except Exception:  # pragma: no cover - fallback for older Python
-    ZoneInfo = None  # type: ignore
+except Exception:
+    ZoneInfo = None
 
 # Constants
 ROOT = Path(__file__).resolve().parents[2]
@@ -28,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[2]
 from selenium.webdriver.common.by import By
 from microdose_study_bot.reddit_selenium.utils.human_simulator import HumanSimulator
 from microdose_study_bot.reddit_selenium.utils.engagement_actions import EngagementActions
+from microdose_study_bot.reddit_selenium.utils.anti_detection.detection_evasion import DetectionEvasionCoordinator
 from microdose_study_bot.reddit_selenium.login import LoginManager
 from microdose_study_bot.reddit_selenium.utils.browser_manager import BrowserManager
 from microdose_study_bot.core.config import ConfigManager
@@ -77,6 +77,18 @@ LOGIN_METHOD_ALIASES = {
     "auto": "cookies_then_google",
 }
 
+# Mapping from scanner activities to detection evasion action types
+ACTIVITY_TO_ACTION_TYPE = {
+    'browse_subreddit': 'browse',
+    'view_posts': 'view',
+    'scroll_comments': 'scroll',
+    'vote': 'vote',
+    'save': 'save',
+    'follow': 'follow',
+    'check_notifications': 'navigation',
+    'login': 'login',
+    'tor_rotation': 'navigation'
+}
 
 def _env_flag(name: str, default: bool) -> bool:
     value = os.getenv(name)
@@ -84,20 +96,17 @@ def _env_flag(name: str, default: bool) -> bool:
         return default
     return str(value).strip().lower() in ("1", "true", "yes", "y", "on")
 
-
 def resolve_headless(activity_config: Dict[str, Any]) -> bool:
     headless = activity_config.get("headless")
     if headless is not None:
         return bool(headless)
     return _env_flag("SELENIUM_HEADLESS", True)
 
-
 def resolve_use_undetected(activity_config: Dict[str, Any]) -> bool:
     use_undetected = activity_config.get("use_undetected")
     if use_undetected is not None:
         return bool(use_undetected)
     return _env_flag("SELENIUM_USE_UNDETECTED", True)
-
 
 def normalize_action_names(actions: Any) -> List[str]:
     if isinstance(actions, str):
@@ -113,13 +122,11 @@ def normalize_action_names(actions: Any) -> List[str]:
             normalized.append(name)
     return normalized
 
-
 def normalize_login_method(value: Optional[str]) -> str:
     if not value:
         return "cookies_then_google"
     key = str(value).strip().lower()
     return LOGIN_METHOD_ALIASES.get(key, "cookies_then_google")
-
 
 def _rate_from_config(value: Any, default_min: float, default_max: float) -> float:
     if isinstance(value, dict):
@@ -134,7 +141,6 @@ def _rate_from_config(value: Any, default_min: float, default_max: float) -> flo
     if isinstance(value, (int, float)):
         return max(0.0, min(float(value), 1.0))
     return random.uniform(default_min, default_max)
-
 
 def _jitter_activity_mix(
     base_mix: Dict[str, float],
@@ -155,12 +161,10 @@ def _jitter_activity_mix(
         randomized[key] = max(floor, w * jitter)
     return randomized
 
-
 def in_time_window(current_time, start_time, end_time) -> bool:
     if start_time <= end_time:
         return start_time <= current_time <= end_time
     return current_time >= start_time or current_time <= end_time
-
 
 def _vpn_enabled() -> bool:
     if not _env_flag("USE_VPN", False):
@@ -168,7 +172,6 @@ def _vpn_enabled() -> bool:
     if _env_flag("CI", False) and not _env_flag("USE_VPN_IN_CI", False):
         return False
     return True
-
 
 def parse_windows_arg(windows: str, tz_name: str) -> List[Dict[str, Any]]:
     parsed: List[Dict[str, Any]] = []
@@ -187,7 +190,6 @@ def parse_windows_arg(windows: str, tz_name: str) -> List[Dict[str, Any]]:
         )
     return parsed
 
-
 def _load_subreddit_coverage(path: Path) -> Dict[str, str]:
     if not path.exists():
         return {}
@@ -200,7 +202,6 @@ def _load_subreddit_coverage(path: Path) -> Dict[str, str]:
         return {}
     return {}
 
-
 def _save_subreddit_coverage(path: Path, coverage: Dict[str, str]) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -208,7 +209,6 @@ def _save_subreddit_coverage(path: Path, coverage: Dict[str, str]) -> None:
             json.dump(coverage, f, indent=2)
     except Exception:
         pass
-
 
 def _days_since(timestamp: Optional[str]) -> int:
     if not timestamp:
@@ -219,7 +219,6 @@ def _days_since(timestamp: Optional[str]) -> int:
         return max(int(delta.total_seconds() // 86400), 0)
     except Exception:
         return 9999
-
 
 def select_subreddits_for_run(
     subreddits: Sequence[str],
@@ -257,7 +256,6 @@ def select_subreddits_for_run(
     random.shuffle(selected)
     return selected
 
-
 def get_active_window(activity_config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     windows = activity_config.get("time_windows") or []
     if not isinstance(windows, list) or not windows:
@@ -288,7 +286,6 @@ def get_active_window(activity_config: Dict[str, Any]) -> Optional[Dict[str, Any
 
     return None
 
-
 class HumanizedNightScanner:
     def __init__(self, account_config, activity_config):
         self.account = account_config
@@ -316,7 +313,15 @@ class HumanizedNightScanner:
             'mouse_movements': 0
         }
 
+        # Initialize Detection Evasion Coordinator
+        self.detection_evasion = DetectionEvasionCoordinator(
+            account_name=self.account.get('name', 'unknown'),
+            account_config=self.account,
+            activity_config=self.activity_config
+        )
         
+        self.logger.info(f"HumanizedNightScanner initialized for {self.account.get('name', 'unknown')} with anti-detection measures")
+    
     def setup_humanized_browser(self):
         """Setup browser with randomized fingerprint using BrowserManager"""
         try:
@@ -343,8 +348,8 @@ class HumanizedNightScanner:
             
             # Create LoginManager
             self.login_manager = LoginManager()
-            self.login_manager.driver = self.driver  # Set the driver we created
-            self.login_manager.browser_manager = self.browser_manager  # Share browser manager
+            self.login_manager.driver = self.driver
+            self.login_manager.browser_manager = self.browser_manager
             
             # Initialize human simulator and engagement actions
             self.human_sim = HumanSimulator(self.driver, browser_manager=self.browser_manager)
@@ -382,15 +387,13 @@ class HumanizedNightScanner:
         if not tor_port:
             return False
         
-        control_port = tor_port + 100  # Control port is SOCKS port + 100
+        control_port = tor_port + 100
         account_name = self.account.get("name", "unknown")
         
-        # Log IP before rotation
         self.logger.info(f"🔄 Rotating Tor circuit for {account_name}...")
         before_ip = self._log_tor_exit_ip(tor_port)
         
         try:
-            # Read Tor control cookie
             tor_data_dir = os.getenv("TOR_DATA_DIR", f"/tmp/tor_{tor_port}")
             cookie_file = os.path.join(tor_data_dir, "control_auth_cookie")
             
@@ -398,16 +401,13 @@ class HumanizedNightScanner:
                 self.logger.warning(f"Tor control cookie not found at {cookie_file}")
                 return False
             
-            # Read cookie as hex
             with open(cookie_file, "rb") as f:
                 cookie_hex = f.read().hex()
             
-            # Connect to Tor control port and send NEWNYM
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(10)
             sock.connect(("127.0.0.1", control_port))
             
-            # Authenticate
             sock.send(f"AUTHENTICATE {cookie_hex}\r\n".encode())
             response = sock.recv(1024).decode()
             
@@ -416,7 +416,6 @@ class HumanizedNightScanner:
                 sock.close()
                 return False
             
-            # Send NEWNYM signal
             sock.send(b"SIGNAL NEWNYM\r\n")
             response = sock.recv(1024).decode()
             
@@ -428,10 +427,8 @@ class HumanizedNightScanner:
             sock.close()
             self.logger.info(f"✅ NEWNYM requested for {account_name}")
             
-            # Wait for circuit to rebuild
             time.sleep(5)
             
-            # Log new IP
             after_ip = self._log_tor_exit_ip(tor_port)
             if before_ip and after_ip:
                 if before_ip == after_ip:
@@ -454,22 +451,18 @@ class HumanizedNightScanner:
 
     def should_rotate_tor(self) -> bool:
         """Determine if we should rotate Tor circuit based on config and randomness"""
-        # Check if Tor is enabled
         tor_port = self.account.get("tor_socks_port")
         if not tor_port:
             return False
         
-        # Check if rotation is disabled via config
         humanization_config = self.activity_config.get("humanization", {})
         if not humanization_config.get("enable_tor_rotation", True):
             return False
 
-        # Wait at least 10 minutes from session start before first rotation
         if self.session_start_time:
             if time.time() - self.session_start_time < 600:
                 return False
         
-        # Check time since last rotation (minimum interval from config)
         min_interval_minutes = float(humanization_config.get("tor_rotation_interval_minutes", 10) or 10)
         min_interval_seconds = max(600.0, min_interval_minutes * 60.0)
         if self.last_tor_rotation_time:
@@ -477,7 +470,6 @@ class HumanizedNightScanner:
             if time_since_last < min_interval_seconds:
                 return False
         
-        # Random chance per check during session
         chance = _rate_from_config(
             humanization_config.get("tor_rotation_chance_per_action"),
             0.10,
@@ -486,7 +478,6 @@ class HumanizedNightScanner:
         if random.random() < chance:
             return True
         
-        # Rotate after 20 actions
         if self.action_count > 0 and self.action_count % 20 == 0:
             return True
         
@@ -529,24 +520,26 @@ class HumanizedNightScanner:
     def login(self, cookie_file: str, google_email: str, google_password: str, login_method: Optional[str] = None):
         """
         Login using specified method and return (success, status) tuple.
-        
-        Returns:
-            tuple: (success_bool, status_string)
         """
         method = normalize_login_method(login_method)
+        
+        # Record login action with anti-detection system
+        if self.detection_evasion:
+            self.detection_evasion.record_action("login", {
+                "method": method,
+                "timestamp": datetime.now().isoformat()
+            })
         
         if method == "cookies_only":
             success, status = self._login_with_cookies(cookie_file)
         elif method == "google_only":
             success, status = self._login_with_google(google_email, google_password)
-        else:  # cookies_then_google (default)
+        else:
             success, status = self._login_with_cookies(cookie_file)
             if not success and status != "active":
-                # Try Google fallback only if cookie login failed with a non-active status
                 self.logger.info(f"Cookie login failed ({status}), trying Google fallback...")
                 success, status = self._login_with_google(google_email, google_password)
         
-        # Log the result
         account_name = self.account.get('name', 'unknown')
         if success:
             self.logger.info(f"✅ Login successful for {account_name}, status: {status}")
@@ -558,15 +551,12 @@ class HumanizedNightScanner:
     def set_custom_fingerprint(self):
         """Set custom browser fingerprint from account config"""
         try:
-            # Get fingerprint settings from account config
             fingerprint = self.account.get('browser_fingerprint', {})
             
-            # Set user agent if specified
             user_agent = fingerprint.get('user_agent')
             if user_agent and self.browser_manager:
                 self.browser_manager.user_agents = [user_agent]
             
-            # Set viewport if specified
             viewport = fingerprint.get('viewport')
             if viewport and self.driver:
                 try:
@@ -575,15 +565,14 @@ class HumanizedNightScanner:
                 except:
                     pass
             
-            # Apply additional randomization
             if self.browser_manager:
                 self.browser_manager.randomize_fingerprint(self.driver)
                 
         except Exception as e:
             self.logger.warning(f"Could not set custom fingerprint: {e}")
     
-    def perform_activity_session(self):
-        """Execute one session of human-like activity"""
+    def perform_activity_session(self) -> Optional[Dict[str, Any]]:
+        """Execute one session of human-like activity with anti-detection measures."""
         try:
             # Get session settings
             session_length = random.randint(
@@ -597,8 +586,12 @@ class HumanizedNightScanner:
                 jitter_pct = random.uniform(0.35, 0.75)
                 self.activity_config["activity_mix"] = _jitter_activity_mix(base_mix, jitter_pct=jitter_pct)
             
-            start_time = time.time()
-            self.session_start_time = start_time
+            # Start anti-detection session
+            if not self.detection_evasion.start_session():
+                self.logger.info("Session skipped (vacation or other anti-detection measure)")
+                return None
+            
+            self.session_start_time = time.time()
             self.action_count = 0
             
             actions_performed = {
@@ -612,7 +605,7 @@ class HumanizedNightScanner:
             }
             rate_limits = self.activity_config.get("rate_limits", {})
             
-            # Load target subreddits (allow per-account sharding)
+            # Load target subreddits
             subreddits = self.account.get("subreddits")
             if not isinstance(subreddits, list) or not subreddits:
                 config_manager = ConfigManager()
@@ -620,17 +613,26 @@ class HumanizedNightScanner:
             if not isinstance(subreddits, list):
                 subreddits = []
             
-            self.logger.info(f"Starting {session_length} minute session for {self.account.get('name')}")
+            self.logger.info(f"Starting {session_length} minute session for {self.account.get('name')} with anti-detection measures")
             
-            while time.time() - start_time < session_length * 60:
+            while time.time() - self.session_start_time < session_length * 60:
                 # Check if we should rotate Tor circuit
                 if self.should_rotate_tor():
                     if self.rotate_tor_circuit():
                         actions_performed['tor_rotations'] += 1
                         self.humanization_metrics['tor_rotations'] += 1
+                        # Record Tor rotation action
+                        self.detection_evasion.record_action("tor_rotation", {
+                            "success": True,
+                            "timestamp": datetime.now().isoformat()
+                        })
                 
                 # Choose random activity based on mix
                 activity = self.choose_random_activity()
+                action_type = ACTIVITY_TO_ACTION_TYPE.get(activity, 'wait')
+                
+                # Get behavior parameters for this action
+                behavior = self.detection_evasion.get_behavior_for_action(action_type)
                 
                 humanization_config = self.activity_config.get("humanization", {})
                 mouse_chance = _rate_from_config(
@@ -638,100 +640,195 @@ class HumanizedNightScanner:
                     0.40,
                     0.60,
                 )
-                # Add mouse movement before activity
+                
+                # Apply behavior-based mouse movement
                 if self.human_sim and random.random() < mouse_chance:
-                    self.human_sim.human_mouse_movement()
+                    mouse_intensity = behavior.get("mouse_intensity", "medium")
+                    self.human_sim.human_mouse_movement(intensity=mouse_intensity)
+                
+                # Perform the activity with behavior parameters
+                activity_success = False
+                activity_details = {}
                 
                 if activity == 'browse_subreddit':
                     if subreddits:
                         subreddit = random.choice(subreddits)
                         self.logger.info(f"Browsing r/{subreddit}")
-                        self.browse_subreddit_humanly(subreddit)
+                        scroll_distance = self.browse_subreddit_humanly(subreddit, behavior)
+                        activity_details = {
+                            "subreddit": subreddit,
+                            "scroll_distance": scroll_distance,
+                            "click_speed": behavior.get("click_speed", "normal")
+                        }
                         actions_performed['subreddits_browsed'] += 1
+                        activity_success = True
                 
                 elif activity == 'view_posts':
-                    self.view_random_posts()
+                    scroll_distance = self.view_random_posts(behavior)
+                    activity_details = {
+                        "scroll_distance": scroll_distance,
+                        "click_speed": behavior.get("click_speed", "normal")
+                    }
                     actions_performed['posts_viewed'] += 1
+                    activity_success = True
 
                 elif activity == 'scroll_comments':
-                    self.scroll_comments()
+                    scroll_distance = self.scroll_comments(behavior)
+                    activity_details = {
+                        "scroll_distance": scroll_distance
+                    }
+                    activity_success = True
                     
                 elif activity == 'vote' and actions_performed['votes'] < self.activity_config['safety_limits']['max_votes_per_session']:
-                    allowed, _wait = self.rate_limiter.check_rate_limit(self.account.get("name", "account"), "vote", rate_limits)
-                    if allowed and self.safe_vote():
-                        self.rate_limiter.record_action(self.account.get("name", "account"), "vote")
-                        actions_performed['votes'] += 1
-                        self.logger.debug(f"Voted (total: {actions_performed['votes']})")
+                    allowed, _wait = self.rate_limiter.check_rate_limit(
+                        self.account.get("name", "account"), "vote", rate_limits
+                    )
+                    if allowed:
+                        vote_success = self.safe_vote(behavior)
+                        if vote_success:
+                            self.rate_limiter.record_action(self.account.get("name", "account"), "vote")
+                            actions_performed['votes'] += 1
+                            activity_details = {
+                                "click_speed": behavior.get("click_speed", "normal"),
+                                "engagement_chance": behavior.get("engagement_chance", 0.3)
+                            }
+                            self.logger.debug(f"Voted (total: {actions_performed['votes']})")
+                            activity_success = True
                 
                 elif activity == 'save' and actions_performed['saves'] < self.activity_config['safety_limits']['max_saves_per_session']:
-                    allowed, _wait = self.rate_limiter.check_rate_limit(self.account.get("name", "account"), "save", rate_limits)
-                    if allowed and self.safe_save():
-                        self.rate_limiter.record_action(self.account.get("name", "account"), "save")
-                        actions_performed['saves'] += 1
-                        self.logger.debug(f"Saved post (total: {actions_performed['saves']})")
+                    allowed, _wait = self.rate_limiter.check_rate_limit(
+                        self.account.get("name", "account"), "save", rate_limits
+                    )
+                    if allowed and self.engagement:
+                        save_success = self.safe_save()
+                        if save_success:
+                            self.rate_limiter.record_action(self.account.get("name", "account"), "save")
+                            actions_performed['saves'] += 1
+                            activity_details = {
+                                "click_speed": behavior.get("click_speed", "normal")
+                            }
+                            self.logger.debug(f"Saved post (total: {actions_performed['saves']})")
+                            activity_success = True
                 
                 elif activity == 'follow' and actions_performed['follows'] < self.activity_config['safety_limits']['max_follows_per_session']:
-                    allowed, _wait = self.rate_limiter.check_rate_limit(self.account.get("name", "account"), "follow", rate_limits)
-                    if allowed and self.safe_follow():
-                        self.rate_limiter.record_action(self.account.get("name", "account"), "follow")
-                        actions_performed['follows'] += 1
-                        self.logger.debug(f"Followed user (total: {actions_performed['follows']})")
+                    allowed, _wait = self.rate_limiter.check_rate_limit(
+                        self.account.get("name", "account"), "follow", rate_limits
+                    )
+                    if allowed and self.engagement:
+                        follow_success = self.safe_follow()
+                        if follow_success:
+                            self.rate_limiter.record_action(self.account.get("name", "account"), "follow")
+                            actions_performed['follows'] += 1
+                            self.logger.debug(f"Followed user (total: {actions_performed['follows']})")
+                            activity_success = True
                 
                 elif activity == 'check_notifications':
                     self.check_notifications()
+                    activity_success = True
                 
+                # Record action with anti-detection system
+                if activity_success:
+                    self.detection_evasion.record_action(action_type, activity_details)
+                    self.action_count += 1
+                
+                # Simulate navigation error
                 nav_error_chance = _rate_from_config(
                     humanization_config.get("navigation_error_rate"),
                     0.08,
                     0.12,
                 )
-                # Simulate navigation error after each action
                 if self.human_sim and random.random() < nav_error_chance:
                     if self.human_sim.simulate_navigation_error(self.driver):
                         actions_performed['navigation_errors'] += 1
+                        # Record navigation error
+                        self.detection_evasion.record_action("navigation_error", {
+                            "type": "simulated_error",
+                            "timestamp": datetime.now().isoformat()
+                        })
                 
-                # Increment action counter
-                self.action_count += 1
+                # Get Markov chain delay for next action
+                delay = self.detection_evasion.get_session_delay(action_type)
+                time.sleep(delay)
+            
+            # End anti-detection session
+            analysis = self.detection_evasion.end_session(success=True)
+            
+            # Log anti-detection analysis
+            if analysis:
+                risk_level = analysis.get("overall_risk", "unknown")
+                self.logger.info(f"📊 Anti-detection analysis: {risk_level.upper()} risk")
                 
-                # Random delay between actions
-                self.random_delay()
+                if risk_level in ["high", "critical"]:
+                    self.logger.warning("⚠️ High risk patterns detected!")
+                    for suggestion in analysis.get("suggestions", []):
+                        self.logger.info(f"  💡 {suggestion}")
+            
+            # Combine session results
+            session_results = actions_performed.copy()
+            if analysis:
+                session_results["anti_detection_analysis"] = analysis
             
             self.logger.info(f"📊 Session complete. Actions: {actions_performed}")
-            return actions_performed
+            return session_results
             
         except Exception as e:
             self.logger.error(f"Error during activity session: {e}")
+            # End session with failure
+            if self.detection_evasion:
+                self.detection_evasion.end_session(success=False)
             return None
     
-    def browse_subreddit_humanly(self, subreddit_name):
-        """Browse a subreddit with human-like behavior"""
+    def browse_subreddit_humanly(self, subreddit_name: str, behavior: Dict[str, Any]) -> int:
+        """Browse a subreddit with human-like behavior and anti-detection measures."""
+        total_scroll = 0
         try:
             # Navigate to subreddit
             self.driver.get(f"https://old.reddit.com/r/{subreddit_name}")
             
-            # Human-like delay
-            self.browser_manager.add_human_delay(2, 4)
+            # Use Markov chain delay
+            delay = self.detection_evasion.get_session_delay("navigation")
+            time.sleep(delay)
             
-            # Random scrolling
+            # Get scroll pattern from behavior
+            scroll_pattern = behavior.get("scroll_pattern", "smooth")
+            click_speed = behavior.get("click_speed", "normal")
+            
+            # Random scrolling with behavior-based parameters
             scrolls = random.randint(2, 5)
             for _ in range(scrolls):
-                pixels = random.randint(300, 800)
+                # Get scroll distance from behavior or random
+                if scroll_pattern == "smooth":
+                    pixels = random.randint(400, 900)
+                elif scroll_pattern == "jerky":
+                    pixels = random.randint(600, 1200)
+                else:  # reader
+                    pixels = random.randint(200, 500)
+                
                 self.browser_manager.scroll_down(self.driver, pixels)
-                self.browser_manager.add_human_delay(1, 3)
+                total_scroll += pixels
+                
+                # Use Markov chain delay
+                delay = self.detection_evasion.get_session_delay("scroll")
+                time.sleep(delay)
             
-            # Mouse wander while reading (50% chance)
+            # Mouse wander with behavior-based intensity
             if self.human_sim and random.random() < 0.5:
-                self.human_sim.mouse_wander()
+                mouse_intensity = behavior.get("mouse_intensity", "medium")
+                self.human_sim.mouse_wander(duration_seconds=random.uniform(1, 3))
             
-            # Occasionally view a post (30% chance)
+            # Occasionally view a post
             if random.random() > 0.7:
-                self.view_random_post_in_current_subreddit()
+                self.view_random_post_in_current_subreddit(behavior)
+            
+            return total_scroll
             
         except Exception as e:
             self.logger.warning(f"Error browsing subreddit {subreddit_name}: {e}")
+            return total_scroll
     
-    def view_random_posts(self):
-        """Find and view random posts on current page"""
+    def view_random_posts(self, behavior: Dict[str, Any]) -> int:
+        """Find and view random posts on current page with anti-detection measures."""
+        total_scroll = 0
         try:
             posts = self.driver.find_elements(By.CSS_SELECTOR, "div.thing")
             if posts:
@@ -745,47 +842,80 @@ class HumanizedNightScanner:
                         continue
                 target = target or post
 
-                # Human-like reading sequence with mouse movement
+                # Human-like reading sequence with behavior-based mouse movement
                 if self.human_sim:
-                    # Add mouse movement before clicking
-                    self.human_sim.human_mouse_movement(target)
-                    self.human_sim.read_post_sequence(target)
+                    mouse_intensity = behavior.get("mouse_intensity", "medium")
+                    self.human_sim.human_mouse_movement(target, intensity=mouse_intensity)
+                    
+                    # Get reading time from behavior
+                    read_time_factor = 1.0
+                    if behavior.get("engagement_rate", 0.3) > 0.5:  # Enthusiastic readers read longer
+                        read_time_factor = 1.5
+                    
+                    self.human_sim.read_post_sequence(target, read_time_factor)
                 else:
                     # Fallback
                     self.browser_manager.safe_click(self.driver, target)
-                    self.browser_manager.add_human_delay(3, 8)
+                    delay = self.detection_evasion.get_session_delay("view")
+                    time.sleep(delay)
                     self.driver.back()
-                    self.browser_manager.add_human_delay(1, 2)
+                    delay = self.detection_evasion.get_session_delay("navigation")
+                    time.sleep(delay)
                 
-                return True
-            return False
+                # Scroll after viewing
+                scroll_distance = random.randint(200, 600)
+                self.browser_manager.scroll_down(self.driver, scroll_distance)
+                total_scroll += scroll_distance
+                
+                return total_scroll
+            return total_scroll
             
         except Exception as e:
             self.logger.debug(f"Error viewing random post: {e}")
-            return False
+            return total_scroll
 
-    def scroll_comments(self):
-        """Scroll through comments section if present"""
+    def scroll_comments(self, behavior: Dict[str, Any]) -> int:
+        """Scroll through comments section with anti-detection measures."""
+        total_scroll = 0
         try:
             if self.human_sim:
-                self.human_sim.view_comments_section()
-                return True
+                scroll_pattern = behavior.get("scroll_pattern", "smooth")
+                
+                # Adjust scroll based on pattern
+                if scroll_pattern == "smooth":
+                    scrolls = random.randint(2, 4)
+                    for _ in range(scrolls):
+                        pixels = random.randint(300, 600)
+                        self.browser_manager.scroll_down(self.driver, pixels)
+                        total_scroll += pixels
+                        delay = self.detection_evasion.get_session_delay("scroll")
+                        time.sleep(delay)
+                else:
+                    # Use human simulator's method
+                    self.human_sim.view_comments_section()
+                    total_scroll = random.randint(400, 800)
+                
+                return total_scroll
+            
             # Fallback: simple scroll
             for _ in range(random.randint(2, 4)):
                 if self.browser_manager and self.driver:
-                    self.browser_manager.scroll_down(self.driver, random.randint(250, 600))
-                    self.browser_manager.add_human_delay(0.8, 1.6)
-            return True
+                    pixels = random.randint(250, 600)
+                    self.browser_manager.scroll_down(self.driver, pixels)
+                    total_scroll += pixels
+                    delay = self.detection_evasion.get_session_delay("scroll")
+                    time.sleep(delay)
+            return total_scroll
         except Exception as e:
             self.logger.debug(f"Error scrolling comments: {e}")
-            return False
+            return total_scroll
     
-    def view_random_post_in_current_subreddit(self):
-        """View a random post in the current subreddit"""
+    def view_random_post_in_current_subreddit(self, behavior: Dict[str, Any]) -> bool:
+        """View a random post in the current subreddit with anti-detection measures."""
         try:
             posts = self.driver.find_elements(By.CSS_SELECTOR, "div.thing")
             if posts:
-                post = random.choice(posts[:5])  # Only from top 5
+                post = random.choice(posts[:5])
                 target = None
                 for selector in ("a.title", "a.comments"):
                     try:
@@ -795,64 +925,69 @@ class HumanizedNightScanner:
                         continue
                 target = target or post
                 
-                # Add mouse movement before clicking
+                # Add mouse movement with behavior-based intensity
                 if self.human_sim:
-                    self.human_sim.human_mouse_movement(target)
+                    mouse_intensity = behavior.get("mouse_intensity", "medium")
+                    self.human_sim.human_mouse_movement(target, intensity=mouse_intensity)
                 
                 self.browser_manager.safe_click(self.driver, target)
-                self.browser_manager.add_human_delay(3, 6)
+                delay = self.detection_evasion.get_session_delay("view")
+                time.sleep(delay)
                 
                 # Scroll through the post
-                self.browser_manager.scroll_down(self.driver, random.randint(200, 600))
-                self.browser_manager.add_human_delay(1, 2)
+                pixels = random.randint(200, 600)
+                self.browser_manager.scroll_down(self.driver, pixels)
+                delay = self.detection_evasion.get_session_delay("scroll")
+                time.sleep(delay)
                 
-                # Mouse wander while reading
-                if self.human_sim and random.random() < 0.4:
+                # Mouse wander with behavior-based frequency
+                if self.human_sim and random.random() < behavior.get("engagement_rate", 0.3):
                     self.human_sim.mouse_wander()
                 
                 # Go back
                 self.driver.back()
-                self.browser_manager.add_human_delay(1, 2)
+                delay = self.detection_evasion.get_session_delay("navigation")
+                time.sleep(delay)
                 return True
         except Exception as e:
             self.logger.debug(f"Error viewing post: {e}")
         
         return False
     
-    def safe_vote(self):
-        """Safely upvote a random post (if enabled)"""
+    def safe_vote(self, behavior: Dict[str, Any]) -> bool:
+        """Safely upvote a random post with anti-detection behavior."""
         try:
-            # Check if voting is allowed in config
             if not self.activity_config.get('allow_voting', False):
                 return False
             
-            # Find upvote buttons
             upvote_buttons = self.driver.find_elements(By.CSS_SELECTOR, "div.thing div.arrow.up")
             upvote_buttons = [
                 btn for btn in upvote_buttons
                 if "upmod" not in (btn.get_attribute("class") or "")
             ]
             if upvote_buttons:
-                # Random chance to vote (30%)
-                if random.random() > 0.7:
-                    button = random.choice(upvote_buttons[:3])  # Only from top 3
+                # Use engagement rate from behavior
+                engagement_rate = behavior.get("engagement_rate", 0.3)
+                if random.random() > (1 - engagement_rate):
+                    button = random.choice(upvote_buttons[:3])
                     
-                    # Add mouse movement before clicking
+                    # Add mouse movement with behavior-based intensity
                     if self.human_sim:
-                        self.human_sim.human_mouse_movement(button)
+                        mouse_intensity = behavior.get("mouse_intensity", "low")
+                        self.human_sim.human_mouse_movement(button, intensity=mouse_intensity)
                     
                     self.browser_manager.safe_click(self.driver, button)
-                    self.browser_manager.add_human_delay(0.5, 1)
+                    delay = self.detection_evasion.get_session_delay("vote")
+                    time.sleep(delay)
                     return True
         except Exception as e:
             self.logger.debug(f"Error voting: {e}")
         
         return False
     
-    def safe_save(self):
-        """Safely save a random post (if enabled)"""
+    def safe_save(self) -> bool:
+        """Safely save a random post (if enabled)."""
         try:
-            # Check if saving is allowed
             if not self.activity_config.get('allow_saving', False):
                 return False
             if not self.engagement:
@@ -864,7 +999,8 @@ class HumanizedNightScanner:
             random.shuffle(posts)
             for post in posts[:5]:
                 if self.engagement.save_post(post):
-                    self.browser_manager.add_human_delay(0.7, 1.4)
+                    delay = self.detection_evasion.get_session_delay("save")
+                    time.sleep(delay)
                     return True
             return False
             
@@ -872,10 +1008,9 @@ class HumanizedNightScanner:
             self.logger.debug(f"Error saving: {e}")
             return False
     
-    def safe_follow(self):
-        """Safely follow a random user (if enabled)"""
+    def safe_follow(self) -> bool:
+        """Safely follow a random user (if enabled)."""
         try:
-            # Check if following is allowed
             if not self.activity_config.get('allow_following', False):
                 return False
             if not self.engagement:
@@ -902,10 +1037,12 @@ class HumanizedNightScanner:
                 current_url = ""
 
             followed = self.engagement.follow_user(author)
-            self.browser_manager.add_human_delay(1, 2)
+            delay = self.detection_evasion.get_session_delay("follow")
+            time.sleep(delay)
             if current_url:
                 self.driver.get(current_url)
-                self.browser_manager.add_human_delay(1, 2)
+                delay = self.detection_evasion.get_session_delay("navigation")
+                time.sleep(delay)
             return followed
             
         except Exception as e:
@@ -913,38 +1050,22 @@ class HumanizedNightScanner:
             return False
     
     def check_notifications(self):
-        """Check notifications (if enabled)"""
+        """Check notifications (if enabled)."""
         try:
-            # Check if notifications checking is allowed
             if not self.activity_config.get('allow_notifications_check', True):
                 return
             self.driver.get("https://old.reddit.com/message/unread")
-            self.browser_manager.add_human_delay(2, 4)
+            delay = self.detection_evasion.get_session_delay("navigation")
+            time.sleep(delay)
             self.driver.back()
-            self.browser_manager.add_human_delay(1, 2)
+            delay = self.detection_evasion.get_session_delay("navigation")
+            time.sleep(delay)
                     
         except Exception as e:
             self.logger.debug(f"Error checking notifications: {e}")
     
-    def random_delay(self):
-        """Realistic delay between actions"""
-        try:
-            mean_delay = self.activity_config['randomization']['delay_between_actions']['mean_seconds']
-            delay = random.expovariate(1.0 / mean_delay)
-            delay = min(delay, self.activity_config['randomization']['delay_between_actions']['max_seconds'])
-            delay = max(delay, self.activity_config['randomization']['delay_between_actions']['min_seconds'])
-            
-            if self.browser_manager:
-                self.browser_manager.add_human_delay(delay, delay)  # Use min=max for exact delay
-            else:
-                time.sleep(delay)
-                
-        except Exception as e:
-            # Fallback to random delay
-            time.sleep(random.uniform(2, 5))
-    
-    def choose_random_activity(self):
-        """Choose activity based on weighted distribution"""
+    def choose_random_activity(self) -> str:
+        """Choose activity based on weighted distribution."""
         try:
             mix = self.activity_config.get("activity_mix", {})
             activities = list(mix.keys())
@@ -959,8 +1080,13 @@ class HumanizedNightScanner:
             return random.choice(default_activities)
     
     def cleanup(self):
-        """Cleanup resources"""
+        """Cleanup resources."""
         try:
+            # Get anti-detection status report before cleanup
+            if self.detection_evasion:
+                report = self.detection_evasion.get_status_report()
+                self.logger.info(f"Anti-detection status before cleanup: {report.get('current_state', {})}")
+            
             if self.driver and self.browser_manager:
                 self.browser_manager.close_driver(self.driver)
             elif self.driver:
@@ -1006,7 +1132,7 @@ class MultiAccountOrchestrator:
         self.logger.info(f"Account status tracker initialized. Tracking {len(self.status_tracker.status_data)} accounts")
 
     def load_accounts(self):
-        """Load accounts from config"""
+        """Load accounts from config."""
         try:
             accounts = self.config_manager.load_json('config/accounts.json')
             if not isinstance(accounts, list):
@@ -1111,6 +1237,13 @@ class MultiAccountOrchestrator:
                 "mouse_wander_frequency": 0.3
             }
         
+        # Ensure security evolution config is present
+        if "security_evolution" not in config:
+            config["security_evolution"] = {
+                "enabled": True,
+                "config_path": "config/security_evolution.json"
+            }
+        
         return config
 
     def handle_login_status(self, account_name: str, success: bool, status: str) -> bool:
@@ -1118,7 +1251,6 @@ class MultiAccountOrchestrator:
         Handle login status and take appropriate action.
         Returns True if scanning should proceed, False otherwise.
         """
-        # Prepare details for status update
         details = {
             "success": success,
             "status": status,
@@ -1126,7 +1258,6 @@ class MultiAccountOrchestrator:
             "scan_window": self.scan_window
         }
         
-        # Update status tracker
         self.status_tracker.update_account_status(account_name, status, details)
         
         if success:
@@ -1137,46 +1268,35 @@ class MultiAccountOrchestrator:
                 self.logger.warning(f"🔒 Account {account_name} has CAPTCHA but login succeeded. Proceeding carefully.")
                 return True
             else:
-                # Other successful but non-active status
                 self.logger.info(f"Account {account_name} login successful with status: {status}")
                 return True
         
-        # Login failed
         self.logger.warning(f"❌ Login failed for {account_name} with status: {status}")
         
-        # Handle specific failure cases
         if status == "suspended":
             self.logger.error(f"🚨 ACCOUNT SUSPENDED: {account_name}. Skipping all future scans.")
-            # Don't wait, just skip
             return False
-            
         elif status == "rate_limited":
             self.logger.warning(f"⏳ Account {account_name} is rate limited. Skipping for 24 hours.")
-            # Status tracker will handle the cooldown
             return False
-            
         elif status == "captcha":
             self.logger.warning(f"🔒 CAPTCHA detected for {account_name}. Skipping for 6 hours.")
             return False
-            
         elif status == "security_check":
             self.logger.warning(f"🛡️ Security check required for {account_name}. Manual intervention needed.")
             return False
-            
         elif status in ["no_cookies", "cookie_file_not_found", "missing_cookie_file"]:
             self.logger.warning(f"🍪 No valid cookies for {account_name}. Trying Google login or manual refresh needed.")
             return False
-            
         elif status == "login_manager_not_initialized":
             self.logger.error(f"🔧 Login manager not initialized for {account_name}. Browser setup issue.")
             return False
-            
         else:
             self.logger.warning(f"⚠️ Unknown login failure for {account_name}: {status}")
             return False
 
     def run_rotation(self):
-        """Run sessions for all accounts in rotation"""
+        """Run sessions for all accounts in rotation with anti-detection measures."""
         if not self.accounts:
             self.logger.error("No accounts configured")
             return
@@ -1185,7 +1305,6 @@ class MultiAccountOrchestrator:
         active_accounts = 0
         skipped_accounts = 0
         
-        # Print account status report at start
         report = self.status_tracker.get_status_report()
         self.logger.info(f"📊 Account Status Report:")
         self.logger.info(f"   Total accounts: {report['total_accounts']}")
@@ -1197,7 +1316,6 @@ class MultiAccountOrchestrator:
         for idx, account in enumerate(self.accounts):
             account_name = account.get('name', 'unknown')
             
-            # Check if account should be skipped based on status
             if self.status_tracker.should_skip_account(account_name):
                 self.logger.info(f"⏭️ Skipping account {account_name} due to previous status")
                 skipped_accounts += 1
@@ -1205,7 +1323,7 @@ class MultiAccountOrchestrator:
             
             scanner = None
             try:
-                self.logger.info(f"🚀 Starting session for {account_name} ({idx+1}/{total_accounts})")
+                self.logger.info(f"🚀 Starting session for {account_name} ({idx+1}/{total_accounts}) with anti-detection measures")
 
                 if _vpn_enabled():
                     location = account.get("vpn_location") or os.getenv("VPN_LOCATION", "").strip()
@@ -1216,7 +1334,6 @@ class MultiAccountOrchestrator:
                         except Exception as exc:
                             self.logger.warning(f"VPN connection failed for {account_name}: {exc}")
                 
-                # Create scanner
                 profile_name = account.get("activity_profile", "") or ""
                 activity_config = self.build_activity_config(profile_name)
 
@@ -1247,19 +1364,25 @@ class MultiAccountOrchestrator:
                 # Login and handle status
                 success, status = scanner.login(cookie_file, google_email, google_password, login_method)
                 
-                # Check if we should proceed based on login status
                 should_proceed = self.handle_login_status(account_name, success, status)
                 
                 if should_proceed:
                     self.logger.info(f"✅ Logged in to {account_name}, proceeding with activities")
                     active_accounts += 1
                     
-                    # Perform activity session
+                    # Perform activity session with anti-detection
                     actions = scanner.perform_activity_session()
                     
                     if actions:
                         self.logger.info(f"🎉 Session completed for {account_name}: {actions}")
+                        
+                        # Log anti-detection status
+                        if scanner.detection_evasion:
+                            status_report = scanner.detection_evasion.get_status_report()
+                            risk_level = status_report.get("patterns", {}).get("last_risk_level", "unknown")
+                            self.logger.info(f"🛡️ Anti-detection status for {account_name}: {risk_level} risk")
 
+                    # Run session scan
                     account_subreddits = account.get("subreddits") or (
                         self.scan_config.bot_settings.get("subreddits") or self.scan_config.default_subreddits
                     )
@@ -1274,12 +1397,14 @@ class MultiAccountOrchestrator:
                         page_offset = int(account.get("scan_page_offset") or 0)
                     else:
                         page_offset = default_offset
+                    
                     self.logger.info(
                         f"📊 Scan shard for {account_name}: sort={sort}, time={time_range or 'none'}, page_offset={page_offset}"
                     )
                     self.logger.info(
                         f"🔍 Subreddits for {account_name}: {', '.join(account_subreddits)}"
                     )
+                    
                     run_session_scan(
                         driver=scanner.driver,
                         browser_manager=scanner.browser_manager,
@@ -1306,10 +1431,11 @@ class MultiAccountOrchestrator:
                         page_offset=page_offset,
                     )
                     
-                    # Save cookies for next time
+                    # Save cookies
                     if scanner.login_manager and cookie_file:
                         scanner.login_manager.save_login_cookies(cookie_file)
 
+                    # Update subreddit coverage
                     for subreddit in account_subreddits:
                         self.subreddit_coverage[subreddit] = datetime.utcnow().isoformat()
                     _save_subreddit_coverage(SUBREDDIT_COVERAGE_PATH, self.subreddit_coverage)
@@ -1318,30 +1444,26 @@ class MultiAccountOrchestrator:
                     self.logger.warning(f"⏸️ Skipping scan for {account_name} due to login status")
                     skipped_accounts += 1
                 
-                # Cleanup
                 scanner.cleanup()
                 
-                # Wait between accounts (5-15 minutes)
-                if idx < len(self.accounts) - 1:  # Don't wait after last account
+                # Wait between accounts with anti-detection delay simulation
+                if idx < len(self.accounts) - 1:
                     wait_time = random.randint(300, 900)
                     self.logger.info(f"⏳ Waiting {wait_time//60} minutes before next account")
                     time.sleep(wait_time)
                 
             except Exception as e:
                 self.logger.error(f"❌ Error with account {account_name}: {e}")
-                # Update status to unknown error
                 self.status_tracker.update_account_status(account_name, "error", {"error": str(e), "traceback": "see logs"})
                 if scanner:
                     scanner.cleanup()
                 continue
         
-        # Final summary
         self.logger.info(f"📈 Rotation Complete:")
         self.logger.info(f"   Total accounts: {total_accounts}")
         self.logger.info(f"   Active sessions: {active_accounts}")
         self.logger.info(f"   Skipped accounts: {skipped_accounts}")
         
-        # Save final status report
         final_report = self.status_tracker.get_status_report()
         report_file = Path("logs/account_status_report.json")
         report_file.parent.mkdir(parents=True, exist_ok=True)
@@ -1350,8 +1472,6 @@ class MultiAccountOrchestrator:
         
         self.logger.info(f"📄 Account status report saved to {report_file}")
 
-
-# Helpers
 def check_time_window(activity_config: Optional[Dict[str, Any]] = None) -> bool:
     """Check if current time is within scheduled windows."""
     try:
@@ -1361,17 +1481,15 @@ def check_time_window(activity_config: Optional[Dict[str, Any]] = None) -> bool:
         logger.info(f"Error checking time window: {e}")
         return False
 
-
-# Public API
 if __name__ == "__main__":
     enforce_readonly_env()
     cleanup_state()
     enable_console_tee(os.getenv("CONSOLE_LOG_PATH", "logs/selenium_automation.log"))
     logger.info("=" * 60)
-    logger.info("Humanized Night Scanner")
+    logger.info("Humanized Night Scanner with Anti-Detection Measures")
     logger.info("=" * 60)
 
-    parser = argparse.ArgumentParser(description="Humanized night scanner")
+    parser = argparse.ArgumentParser(description="Humanized night scanner with anti-detection")
     parser.add_argument(
         "--windows",
         default=os.getenv("HUMANIZED_WINDOWS", ""),
@@ -1391,7 +1509,6 @@ if __name__ == "__main__":
 
     force_run_env = os.getenv("HUMANIZED_FORCE_RUN", "").lower() in ("1", "true", "yes")
 
-    # Check time window
     os.environ["ENABLE_POSTING"] = "0"
     os.environ["USE_LLM"] = "0"
 
@@ -1412,7 +1529,7 @@ if __name__ == "__main__":
         active_window = get_active_window(activity_config)
 
     if active_window:
-        logger.info("✓ In scheduled time window. Starting scanner...")
+        logger.info("✓ In scheduled time window. Starting scanner with anti-detection...")
         
         try:
             orchestrator = MultiAccountOrchestrator(
@@ -1423,7 +1540,7 @@ if __name__ == "__main__":
             if orchestrator.accounts:
                 logger.info(f"Found {len(orchestrator.accounts)} accounts")
                 orchestrator.run_rotation()
-                logger.info("✓ Rotation complete")
+                logger.info("✓ Rotation complete with anti-detection measures")
             else:
                 logger.info("✗ No accounts configured")
                 

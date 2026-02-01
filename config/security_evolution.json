@@ -3,6 +3,8 @@
     "enabled": true,
     "personality_configs": {
       "cautious_reader": {
+        "name": "cautious_reader",
+        "description": "Slow, careful reader who engages minimally",
         "click_speed": "slow",
         "scroll_pattern": "reader",
         "scroll_distance_range": [200, 500],
@@ -15,9 +17,18 @@
           "experience": 0.2,
           "question": 0.1,
           "other": 0.1
+        },
+        "behavioral_traits": {
+          "mouse_intensity": "low",
+          "typing_speed": "slow",
+          "reading_time_multiplier": 1.3,
+          "error_probability_multiplier": 0.7,
+          "preferred_security_level": "conservative"
         }
       },
       "enthusiastic_participant": {
+        "name": "enthusiastic_participant",
+        "description": "Active participant who engages frequently",
         "click_speed": "normal",
         "scroll_pattern": "smooth",
         "scroll_distance_range": [400, 900],
@@ -30,9 +41,18 @@
           "experience": 0.4,
           "question": 0.2,
           "other": 0.1
+        },
+        "behavioral_traits": {
+          "mouse_intensity": "medium",
+          "typing_speed": "normal",
+          "reading_time_multiplier": 1.0,
+          "error_probability_multiplier": 1.0,
+          "preferred_security_level": "balanced"
         }
       },
       "quick_browser": {
+        "name": "quick_browser",
+        "description": "Fast browser who skims content",
         "click_speed": "fast",
         "scroll_pattern": "jerky",
         "scroll_distance_range": [600, 1200],
@@ -45,11 +65,46 @@
           "experience": 0.3,
           "question": 0.4,
           "other": 0.1
+        },
+        "behavioral_traits": {
+          "mouse_intensity": "high",
+          "typing_speed": "fast",
+          "reading_time_multiplier": 0.7,
+          "error_probability_multiplier": 1.3,
+          "preferred_security_level": "aggressive"
         }
       }
     },
     "switch_probability": 0.15,
-    "min_time_between_switches_hours": 6
+    "min_time_between_switches_hours": 6,
+    "force_switch_after_consecutive_sessions": 7,
+    "personality_weights": {
+      "cautious_reader": 0.4,
+      "enthusiastic_participant": 0.4,
+      "quick_browser": 0.2
+    },
+    "action_specific_adjustments": {
+      "vote": {
+        "click_speed": "slow",
+        "engagement_chance_multiplier": 0.7
+      },
+      "comment": {
+        "click_speed": "normal",
+        "typing_speed_adjustment": {
+          "enthusiast": "fast",
+          "skeptic": "slow",
+          "neutral": "normal"
+        }
+      },
+      "save": {
+        "click_speed": "normal",
+        "engagement_chance_multiplier": 0.9
+      },
+      "follow": {
+        "click_speed": "normal",
+        "engagement_chance_multiplier": 0.8
+      }
+    }
   },
   "timing_obfuscation": {
     "enabled": true,
@@ -68,24 +123,185 @@
         "login": 1.5,
         "navigation": 1.5,
         "scroll": 0.8,
-        "view": 0.8
+        "view": 0.8,
+        "vote": 1.2,
+        "comment": 1.3,
+        "save": 1.1,
+        "follow": 1.1,
+        "browse": 0.9
+      },
+      "hour_adjustments": {
+        "night": [1.3, 1.7],
+        "morning": [0.9, 1.2],
+        "day": [0.8, 1.2],
+        "evening": [1.0, 1.4],
+        "late_night": [1.4, 2.0]
+      },
+      "randomization": {
+        "probability_variation": 0.1,
+        "delay_jitter": 0.15
       }
     },
     "vacation_simulation": {
       "enabled": true,
       "vacation_probability": 0.05,
       "min_days_between_vacations": 21,
-      "vacation_length_range": [2, 7]
+      "vacation_length_range": [2, 7],
+      "vacation_types": {
+        "weekend_trip": {"probability": 0.4, "length_range": [2, 3]},
+        "business_trip": {"probability": 0.2, "length_range": [3, 5]},
+        "family_visit": {"probability": 0.25, "length_range": [4, 7]},
+        "holiday": {"probability": 0.15, "length_range": [5, 10]}
+      },
+      "emergency_vacation": {
+        "enabled": true,
+        "trigger_on_consecutive_high_risk": 3,
+        "length_range": [7, 14]
+      }
+    },
+    "timezone_consistency": {
+      "enabled": true,
+      "timezone_offsets": {
+        "America/Los_Angeles": -8,
+        "America/New_York": -5,
+        "UTC": 0,
+        "Europe/London": 0,
+        "Europe/Berlin": 1,
+        "Asia/Tokyo": 9,
+        "Australia/Sydney": 11
+      },
+      "activity_hours": {
+        "work_hours": [9, 17],
+        "evening_hours": [18, 22],
+        "night_hours": [23, 8]
+      }
     }
   },
   "pattern_analysis": {
     "enabled": true,
+    "config_path": "config/pattern_analysis.json",
     "risk_thresholds": {
       "critical": 0.8,
       "high": 0.6,
-      "medium": 0.4
+      "medium": 0.4,
+      "low": 0.2
     },
-    "save_history": true,
-    "max_history_entries": 100
+    "analysis_window": 20,
+    "save_frequency": 5,
+    "max_history_entries": 100,
+    "alert_on_risk": ["critical", "high"],
+    "auto_mitigation": {
+      "enabled": true,
+      "apply_on_critical": true,
+      "apply_on_high": false,
+      "suggestions_only": false
+    },
+    "real_time_analysis": {
+      "enabled": true,
+      "check_frequency": 0.3,
+      "min_actions_for_analysis": 3,
+      "auto_apply_immediate_mitigations": true
+    },
+    "reference_behavior": {
+      "avg_click_speed": 0.5,
+      "avg_scroll_distance": 400,
+      "browse_ratio": 0.4,
+      "vote_ratio": 0.1,
+      "comment_ratio": 0.05,
+      "save_ratio": 0.03,
+      "follow_ratio": 0.02
+    },
+    "detection_algorithms": {
+      "timing_regularity_weight": 0.30,
+      "action_repetition_weight": 0.25,
+      "behavior_fingerprint_weight": 0.25,
+      "session_consistency_weight": 0.10,
+      "click_speed_variance_weight": 0.05,
+      "scroll_pattern_variance_weight": 0.05
+    }
+  },
+  "adaptive_security": {
+    "enabled": true,
+    "auto_adjust": true,
+    "security_levels": {
+      "conservative": {
+        "switch_probability": 0.10,
+        "min_delay_multiplier": 1.3,
+        "pattern_check_frequency": 0.5,
+        "vacation_probability_multiplier": 1.5,
+        "engagement_rate_multiplier": 0.8
+      },
+      "balanced": {
+        "switch_probability": 0.15,
+        "min_delay_multiplier": 1.0,
+        "pattern_check_frequency": 0.3,
+        "vacation_probability_multiplier": 1.0,
+        "engagement_rate_multiplier": 1.0
+      },
+      "aggressive": {
+        "switch_probability": 0.20,
+        "min_delay_multiplier": 0.7,
+        "pattern_check_frequency": 0.1,
+        "vacation_probability_multiplier": 0.7,
+        "engagement_rate_multiplier": 1.2
+      }
+    },
+    "risk_based_adjustment": {
+      "high_risk_threshold": 0.5,
+      "medium_risk_threshold": 0.2,
+      "adjustment_delay_hours": 6
+    }
+  },
+  "emergency_features": {
+    "enabled": true,
+    "auto_vacation_on_critical": true,
+    "force_personality_switch": true,
+    "maximum_consecutive_high_risk": 3,
+    "emergency_cooldown_hours": 24
+  },
+  "integration_settings": {
+    "human_simulator_integration": {
+      "enabled": true,
+      "behavior_sync_frequency": "per_action",
+      "metric_recording": true
+    },
+    "session_coordination": {
+      "pre_session_check": true,
+      "post_session_analysis": true,
+      "real_time_monitoring": true
+    },
+    "logging": {
+      "level": "INFO",
+      "save_pattern_history": true,
+      "save_behavioral_history": true,
+      "save_timing_state": true,
+      "save_vacation_state": true
+    }
+  },
+  "performance": {
+    "state_persistence": {
+      "enabled": true,
+      "save_frequency": "per_session",
+      "max_file_size_mb": 10
+    },
+    "memory_management": {
+      "max_history_entries": 100,
+      "cleanup_frequency": 10
+    },
+    "real_time_processing": {
+      "enabled": true,
+      "max_processing_time_ms": 100
+    }
+  },
+  "testing": {
+    "dry_run_mode": false,
+    "simulation_mode": false,
+    "debug_logging": false,
+    "component_testing": {
+      "test_personality_switching": false,
+      "test_markov_delays": false,
+      "test_vacation_simulation": false,
+      "test_pattern_analysis": false
+    }
   }
 }

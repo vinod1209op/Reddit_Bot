@@ -122,6 +122,70 @@
     "Use appropriate post flair for your content",
     "No spam, self-promotion, or low-effort content"
   ],
+  "profiles": {
+    "research": {
+      "subreddit_rules": [
+        "Research-first discussion: cite studies, protocols, or datasets.",
+        "No sourcing or dosing advice; keep to evidence and methodology.",
+        "Use study/resource flair so readers can triage quickly.",
+        "Stay respectful, precise, and on-topic for research."
+      ],
+      "flairs": {
+        "post_flairs": [
+          {"name": "Study / Data", "color": "#0DD3BB"},
+          {"name": "Methods / Stats", "color": "#7E53C1"},
+          {"name": "Protocol / SOP", "color": "#46D160"},
+          {"name": "Meta-analysis", "color": "#FF6B6B"},
+          {"name": "Preprint / Draft", "color": "#FFB000"},
+          {"name": "Question (Research)", "color": "#FFD635"},
+          {"name": "Resource (Paper/Data)", "color": "#0079D3"}
+        ]
+      }
+    },
+    "wellbeing": {
+      "subreddit_rules": [
+        "Focus on practical wellbeing practices and personal safety.",
+        "No sourcing or buying/selling of substances.",
+        "No medical advice; share experiences, not prescriptions.",
+        "Tag posts with the closest flair so readers know what to expect."
+      ],
+      "flairs": {
+        "post_flairs": [
+          {"name": "Wellbeing Routine", "color": "#0DD3BB"},
+          {"name": "Question", "color": "#FFD635"},
+          {"name": "Experience", "color": "#FFB000"},
+          {"name": "Resource", "color": "#0079D3"},
+          {"name": "Science/Study", "color": "#46D160"},
+          {"name": "Integration / Reflection", "color": "#7E53C1"},
+          {"name": "Daily Check-in", "color": "#FF6B6B"}
+        ]
+      }
+    },
+    "clinical": {
+      "subreddit_rules": [
+        "Clinical microdosing discussion only; cite protocols, trials, or case data.",
+        "No sourcing, dosing advice, or treatment recommendations.",
+        "Use clinical flair tags (Case, Trial Update, Protocol, Safety, Methodology) so readers can triage quickly.",
+        "De-identify any case details; no personal health information.",
+        "Keep tone professional and evidence-based."
+      ],
+      "moderation": {
+        "min_post_length": 120
+      },
+      "flairs": {
+        "post_flairs": [
+          {"name": "Clinical Case", "color": "#FF6B6B"},
+          {"name": "Trial Update", "color": "#0DD3BB"},
+          {"name": "Protocol / SOP", "color": "#46D160"},
+          {"name": "Safety / Contraindications", "color": "#FFB000"},
+          {"name": "Methodology / Stats", "color": "#7E53C1"},
+          {"name": "Resource (Paper/Data)", "color": "#0079D3"},
+          {"name": "Question (Clinical)", "color": "#FFD635"},
+          {"name": "Policy / Ethics", "color": "#FF4500"}
+        ]
+      }
+    }
+  },
   "scheduled_tasks": {
     "check_queue_interval_minutes": 60,
     "daily_report_time": "22:00",

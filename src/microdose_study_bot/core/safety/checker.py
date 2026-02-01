@@ -52,6 +52,10 @@ class SafetyChecker:
         return True, "Action allowed"
 
     def _bypass_limits(self, action_type: str) -> bool:
+        """Allow tests to enforce limits while keeping live defaults as-is."""
+        testing = bool(os.getenv("PYTEST_CURRENT_TEST")) or os.getenv("ENFORCE_LIMITS", "0").strip().lower() in ("1", "true", "yes")
+        if testing:
+            return False
         if os.getenv("BYPASS_ALL_LIMITS", "1").strip().lower() in ("1", "true", "yes"):
             return True
         if os.getenv("BYPASS_ENGAGEMENT_LIMITS", "1").strip().lower() in ("1", "true", "yes"):

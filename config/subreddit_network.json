@@ -35,17 +35,71 @@
     "max_crossposts": 2,
     "weekly_digest": true,
     "related_map": {
-      "MindWellBeing": ["Mental_Health_Hub", "ClinicalMicrodosingHu", "PsychedelicIntegration"],
-      "Mental_Health_Hub": ["MindWellBeing", "ClinicalMicrodosingHu", "PsychedelicTherapyHelp"],
-      "ClinicalMicrodosingHu": ["MindWellBeing", "MicrodoseProtocols", "MicrodosingStudies"],
-      "MCRDSE_Research": ["PsychedelicScience", "MicrodosingStudies", "NeuroplasticityResearch"],
-      "PsychedelicScience": ["MCRDSE_Research", "MicrodosingStudies", "ClinicalMicrodosing"],
-      "MicrodosingStudies": ["MCRDSE_Research", "PsychedelicScience", "MicrodoseProtocols"],
-      "NeuroplasticityResearch": ["ConsciousnessStudies", "MCRDSE_Research", "TherapeuticOutcomes"],
-      "ConsciousnessStudies": ["NeuroplasticityResearch", "PsychedelicIntegration", "IntegrationPractices"],
-      "PlantMedicineTherapy": ["PsychedelicTherapyHelp", "PsychedelicIntegration", "HarmReductionPsychedelics"],
-      "PsychedelicIntegration": ["IntegrationCircle", "IntegrationPractices", "PlantMedicineTherapy"],
-      "HarmReductionPsychedelics": ["MicrodoseProtocols", "PsychedelicPolicy", "MicrodosingSupport"]
+      "MindWellBeing": [
+        "Mental_Health_Hub",
+        "ClinicalMicrodosingHu",
+        "PsychedelicIntegration"
+      ],
+      "Mental_Health_Hub": [
+        "MindWellBeing",
+        "ClinicalMicrodosingHu",
+        "PsychedelicTherapyHelp"
+      ],
+      "ClinicalMicrodosingHu": [
+        "MindWellBeing",
+        "MicrodoseProtocols",
+        "MicrodosingStudies"
+      ],
+      "MCRDSE_Research": [
+        "PsychedelicScience",
+        "MicrodosingStudies",
+        "NeuroplasticityResearch"
+      ],
+      "PsychedelicScience": [
+        "MCRDSE_Research",
+        "MicrodosingStudies",
+        "ClinicalMicrodosing"
+      ],
+      "MicrodosingStudies": [
+        "MCRDSE_Research",
+        "PsychedelicScience",
+        "MicrodoseProtocols"
+      ],
+      "NeuroplasticityResearch": [
+        "ConsciousnessStudies",
+        "MCRDSE_Research",
+        "TherapeuticOutcomes"
+      ],
+      "ConsciousnessStudies": [
+        "NeuroplasticityResearch",
+        "PsychedelicIntegration",
+        "IntegrationPractices"
+      ],
+      "PlantMedicineTherapy": [
+        "PsychedelicTherapyHelp",
+        "PsychedelicIntegration",
+        "HarmReductionPsychedelics"
+      ],
+      "PsychedelicIntegration": [
+        "IntegrationCircle",
+        "IntegrationPractices",
+        "PlantMedicineTherapy"
+      ],
+      "HarmReductionPsychedelics": [
+        "MicrodoseProtocols",
+        "PsychedelicPolicy",
+        "MicrodosingSupport"
+      ]
     }
+  },
+  "profile_map": {
+    "MCRDSE_Research": "research",
+    "PsychedelicScience": "research",
+    "MicrodosingStudies": "research",
+    "ClinicalMicrodosing": "clinical",
+    "ClinicalMicrodosingHu": "clinical",
+    "MindWellBeing": "wellbeing",
+    "Mental_Health_Hub": "wellbeing",
+    "MicrodosingSupport": "wellbeing"
   }
 }

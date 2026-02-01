@@ -38,7 +38,9 @@ class ContentOptimizer:
         by_sub = {}
         for p in history:
             m = p.get("metrics") or {}
-            score = (m.get("upvotes", 0) * 1.0) + (m.get("comments", 0) * 1.5)
+            upvotes = m.get("upvotes") or 0
+            comments = m.get("comments") or 0
+            score = (upvotes * 1.0) + (comments * 1.5)
             ptype = p.get("type", "unknown")
             sub = p.get("subreddit", "unknown")
             by_type.setdefault(ptype, []).append(score)

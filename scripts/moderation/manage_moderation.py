@@ -45,6 +45,7 @@ class SeleniumModerationManager(RedditAutomationBase):
         self.activity_limits = self._load_activity_limits()
         self.moderation_ui_mode = "old"
         self.moderation_urls_used = []
+        self.profile_map = {}
         
         # Load account-specific settings
         self.account_config = self.account
@@ -78,6 +79,18 @@ class SeleniumModerationManager(RedditAutomationBase):
                 return True
             except Exception:
                 return False
+
+    def _sanitize_wiki_text(self, value: str) -> str:
+        """
+        Reddit wiki rejects some unicode (e.g., emoji). Keep it ASCII-only to
+        avoid YAML parse errors and silent save failures.
+        """
+        if value is None:
+            return ""
+        try:
+            return value.encode("ascii", "ignore").decode("ascii")
+        except Exception:
+            return ""
 
     def _click_first(self, selectors: List[Tuple[str, str]], wait_seconds: int = 6) -> bool:
         """Click the first visible element that matches any selector."""
@@ -405,7 +418,7 @@ message: |
                 self.driver.get(edit_url)
                 time.sleep(2)
             
-            # Get automod content from config
+            # Get automod content from config (sanitized)
             base_content = self.config["automod_templates"].get(template, self.config["automod_templates"]["basic"])
             advanced = self.config.get("advanced_automod_rules", {})
             extra_blocks = []
@@ -421,6 +434,7 @@ message: |
             automod_content = base_content
             if extra_blocks:
                 automod_content = base_content.rstrip() + "\n\n" + "\n\n".join(extra_blocks) + "\n"
+            automod_content = self._sanitize_wiki_text(automod_content)
             
             # Find textarea and insert rules
             textarea = self._find_first(
@@ -448,7 +462,13 @@ message: |
                 logger.error("AutoModerator textarea not found on old Reddit page")
                 return False
 
-            # Clear and insert (JS fallback for invalid element state)
+            # If existing matches desired, skip
+            existing_val = (textarea.get_attribute("value") or "").strip()
+            if existing_val == automod_content.strip():
+                logger.info("AutoModerator content already up to date; skipping write")
+                return True
+
+            textarea.clear()
             if not self._set_field_value(textarea, automod_content):
                 logger.error("Failed to set AutoModerator content")
                 return False
@@ -472,6 +492,7 @@ message: |
             # Save
             save_button = self._find_first(
                 [
+                    (By.CSS_SELECTOR, "#wiki_save_button"),
                     (By.CSS_SELECTOR, "button[type='submit']"),
                     (By.CSS_SELECTOR, "input[type='submit']"),
                     (By.CSS_SELECTOR, "input[name='save']"),
@@ -494,112 +515,16 @@ message: |
                 logger.warning("AutoModerator save button not found on old UI page")
             time.sleep(3)
 
-            # If edit/create page no longer shows "not found", treat as success
-            if "page \"config/automoderator\" was not found" not in self.driver.page_source.lower():
-                logger.info("AutoModerator edit page indicates content exists")
-            # Verify page exists after save (poll a few times)
+            # Single verification pass: ensure page exists once after save
             view_url = f"https://old.reddit.com/r/{subreddit_name}/wiki/config/automoderator"
-            ok = False
-            for _ in range(3):
-                self.moderation_urls_used.append(view_url)
-                logger.info("Using old Reddit URL: %s", view_url)
-                self.driver.get(view_url)
-                time.sleep(2)
-                if "page \"config/automoderator\" was not found" not in self.driver.page_source.lower():
-                    ok = True
-                    break
-            if not ok:
-                logger.warning("AutoModerator save may have failed (url=%s title=%s)", self.driver.current_url, self.driver.title)
-                logger.warning("AutoModerator page still not created after save")
-                # Retry once via explicit form submit on create URL
-                create_url = f"https://old.reddit.com/r/{subreddit_name}/wiki/create/config/automoderator"
-                self.moderation_urls_used.append(create_url)
-                logger.info("Retrying AutoModerator create via URL: %s", create_url)
-                self.driver.get(create_url)
-                time.sleep(2)
-                textarea = self._find_first(
-                    [
-                        (By.NAME, "content"),
-                        (By.ID, "wiki_page_content"),
-                        (By.CSS_SELECTOR, "textarea[name='content']"),
-                        (By.CSS_SELECTOR, "textarea"),
-                    ],
-                    wait_seconds=6,
-                )
-                if textarea and self._set_field_value(textarea, automod_content):
-                    try:
-                        reason_input = self._find_first(
-                            [
-                                (By.NAME, "reason"),
-                                (By.NAME, "reasonforrevision"),
-                                (By.CSS_SELECTOR, "input[name*='reason']"),
-                            ],
-                            wait_seconds=1,
-                        )
-                        if reason_input:
-                            self._set_field_value(reason_input, "initial automod setup")
-                    except Exception:
-                        pass
-                    try:
-                        form = textarea.find_element(By.XPATH, "./ancestor::form[1]")
-                        form.submit()
-                    except Exception:
-                        self._click_first(
-                            [
-                                (By.CSS_SELECTOR, "input[type='submit']"),
-                                (By.CSS_SELECTOR, "button[type='submit']"),
-                                (By.CSS_SELECTOR, "input[name='save']"),
-                            ],
-                            wait_seconds=2,
-                        )
-                    time.sleep(3)
-                    self.driver.get(view_url)
-                    time.sleep(2)
-                    if "page \"config/automoderator\" was not found" in self.driver.page_source.lower():
-                        logger.warning("AutoModerator page still not created after retry")
-                        return False
-                else:
-                    return False
-
-            # Final verification: ensure content is non-empty in edit view
-            edit_url = f"https://old.reddit.com/r/{subreddit_name}/wiki/edit/config/automoderator"
-            self.moderation_urls_used.append(edit_url)
-            logger.info("Using old Reddit URL: %s", edit_url)
-            self.driver.get(edit_url)
+            self.moderation_urls_used.append(view_url)
+            logger.info("Using old Reddit URL: %s", view_url)
+            self.driver.get(view_url)
             time.sleep(2)
-            textarea = self._find_first(
-                [
-                    (By.NAME, "content"),
-                    (By.ID, "wiki_page_content"),
-                    (By.CSS_SELECTOR, "textarea[name='content']"),
-                    (By.CSS_SELECTOR, "textarea"),
-                ],
-                wait_seconds=6,
-            )
-            current_value = (textarea.get_attribute("value") or "").strip() if textarea else ""
-            if textarea:
-                if not current_value:
-                    logger.warning("AutoModerator content empty after save; rewriting")
-                else:
-                    logger.info("AutoModerator content present; re-saving to ensure persistence")
-                if not self._set_field_value(textarea, automod_content):
-                    logger.error("Failed to rewrite AutoModerator content")
-                    return False
-                try:
-                    form = textarea.find_element(By.XPATH, "./ancestor::form[1]")
-                    form.submit()
-                except Exception:
-                    self._click_first(
-                        [
-                            (By.CSS_SELECTOR, "input[type='submit']"),
-                            (By.CSS_SELECTOR, "button[type='submit']"),
-                            (By.CSS_SELECTOR, "input[name='save']"),
-                            (By.CSS_SELECTOR, "input[value='save page']"),
-                        ],
-                        wait_seconds=2,
-                    )
-                time.sleep(3)
-            
+            if "page \"config/automoderator\" was not found" in self.driver.page_source.lower():
+                logger.warning("AutoModerator page not found after save (url=%s title=%s)", self.driver.current_url, self.driver.title)
+                return False
+
             logger.info(f"AutoModerator configured for r/{subreddit_name}")
             return True
             
@@ -632,8 +557,15 @@ message: |
             
             # Get flairs from config
             flairs = self.config["flairs"]["post_flairs"]
+            existing_names = set(
+                (el.get_attribute("value") or "").strip().lower()
+                for el in self.driver.find_elements(By.NAME, "text")
+                if (el.get_attribute("value") or "").strip()
+            )
             
             for flair in flairs:
+                if flair["name"].strip().lower() in existing_names:
+                    continue
                 try:
                     def find_link_form_with_empty():
                         for f in self.driver.find_elements(By.CSS_SELECTOR, "form"):
@@ -748,8 +680,15 @@ message: |
             
             # Get flairs from config
             flairs = self.config["flairs"]["user_flairs"]
+            existing_names = set(
+                (el.get_attribute("value") or "").strip().lower()
+                for el in self.driver.find_elements(By.NAME, "text")
+                if (el.get_attribute("value") or "").strip()
+            )
 
             for flair in flairs:
+                if flair["name"].strip().lower() in existing_names:
+                    continue
                 try:
                     def find_user_form_with_empty():
                         for f in self.driver.find_elements(By.CSS_SELECTOR, "form"):
@@ -895,8 +834,26 @@ message: |
                 return False
             
             rules = self.config["subreddit_rules"]
+
+            # Collect existing short names so we don't duplicate
+            existing_names = set()
+            try:
+                existing_inputs = self.driver.find_elements(By.CSS_SELECTOR, "input[type='text'], input[name*='short'], input[name*='title']")
+                for inp in existing_inputs:
+                    val = (inp.get_attribute("value") or "").strip().lower()
+                    if val:
+                        existing_names.add(val)
+                # New UI sometimes shows rule chips/text
+                for label in self.driver.find_elements(By.CSS_SELECTOR, ".rule-name, .RuleCard__title, .rule-title"):
+                    text = (label.text or "").strip().lower()
+                    if text:
+                        existing_names.add(text)
+            except Exception:
+                pass
             
             for i, rule_text in enumerate(rules, 1):
+                if rule_text.strip().lower() in existing_names:
+                    continue
                 try:
                     # Click "Add rule" button (old or new UI)
                     add_clicked = self._click_first(
@@ -1065,56 +1022,15 @@ message: |
                 logger.error(f"Cannot access edit settings for r/{subreddit_name}")
                 return False
             
-            # Fill in basic settings
-            try:
-                # Title (append "MCRDSE" if not already there)
-                title_field = self.driver.find_element(By.ID, "title")
-                current_title = title_field.get_attribute("value") or ""
-                if "MCRDSE" not in current_title.upper():
-                    title_field.clear()
-                    title_field.send_keys(f"MCRDSE {subreddit_name.replace('_', ' ')}")
-                    time.sleep(0.5)
-            except:
-                pass
-            
-            try:
-                # Description
-                desc_field = self.driver.find_element(By.ID, "public_description")
-                desc_field.clear()
-                desc_text = "Evidence-based community for psychedelic microdosing research and discussion"
-                desc_text = self._apply_seo_description(subreddit_name, desc_text)
-                desc_field.send_keys(desc_text)
-                time.sleep(0.5)
-            except:
-                pass
-            
-            try:
-                # Sidebar
-                sidebar_field = self.driver.find_element(By.ID, "description")
-                current_sidebar = sidebar_field.get_attribute("value") or ""
-                if not current_sidebar.strip():
-                    sidebar = self.generate_sidebar_content(subreddit_name)
-                    sidebar = self._apply_seo_sidebar(subreddit_name, sidebar)
-                    sidebar_field.clear()
-                    sidebar_field.send_keys(sidebar)
-                    time.sleep(0.5)
-                else:
-                    updated_sidebar = self._append_network_links(current_sidebar, subreddit_name)
-                    updated_sidebar = self._apply_seo_sidebar(subreddit_name, updated_sidebar)
-                    if updated_sidebar != current_sidebar:
-                        sidebar_field.clear()
-                        sidebar_field.send_keys(updated_sidebar)
-                        time.sleep(0.5)
-            except:
-                pass
-            
-            # Set content options
+            changes_made = False
+
             try:
                 # Allow images
                 images_checkbox = self.driver.find_element(By.NAME, "allow_images")
                 if not images_checkbox.is_selected():
                     images_checkbox.click()
                     time.sleep(0.5)
+                    changes_made = True
             except:
                 pass
             
@@ -1124,6 +1040,7 @@ message: |
                 if not videos_checkbox.is_selected():
                     videos_checkbox.click()
                     time.sleep(0.5)
+                    changes_made = True
             except:
                 pass
             
@@ -1133,6 +1050,7 @@ message: |
                 if not public_radio.is_selected():
                     public_radio.click()
                     time.sleep(0.5)
+                    changes_made = True
             except:
                 pass
 
@@ -1149,26 +1067,29 @@ message: |
                 if wiki_radio and not wiki_radio.is_selected():
                     wiki_radio.click()
                     time.sleep(0.2)
+                    changes_made = True
             except Exception:
                 pass
             
-            # Save settings (old Reddit uses input[type=submit])
-            save_clicked = self._click_first(
-                [
-                    (By.CSS_SELECTOR, "button[type='submit']"),
-                    (By.CSS_SELECTOR, "input[type='submit']"),
-                    (By.XPATH, "//button[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'save')]"),
-                    (By.XPATH, "//input[@type='submit' and contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'save')]"),
-                ],
-                wait_seconds=2,
-            )
-            if save_clicked:
-                time.sleep(3)
-                logger.info(f"Settings saved for r/{subreddit_name}")
+            if changes_made:
+                save_clicked = self._click_first(
+                    [
+                        (By.CSS_SELECTOR, "button[type='submit']"),
+                        (By.CSS_SELECTOR, "input[type='submit']"),
+                        (By.XPATH, "//button[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'save')]"),
+                        (By.XPATH, "//input[@type='submit' and contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'save')]"),
+                    ],
+                    wait_seconds=2,
+                )
+                if save_clicked:
+                    time.sleep(3)
+                    logger.info(f"Settings saved for r/{subreddit_name}")
+                else:
+                    logger.warning("Could not find save button")
             else:
-                logger.warning("Could not find save button")
+                logger.info(f"No setting changes needed for r/{subreddit_name}; skipping save")
             
-            logger.info(f"Configured basic settings for r/{subreddit_name}")
+            logger.info(f"Configured minimal settings for r/{subreddit_name}")
             return True
             
         except Exception as e:
@@ -1712,7 +1633,6 @@ This community is for educational purposes only. Not medical advice.
         steps = [
             ("Configure settings", self.configure_subreddit_settings),
             ("Setup AutoModerator", self.setup_automoderator),
-            ("Setup wiki pages", self.setup_wiki_pages),
             ("Setup post flairs", self.setup_post_flairs),
             ("Setup user flairs", self.setup_user_flairs),
             ("Setup rules", self.setup_subreddit_rules)

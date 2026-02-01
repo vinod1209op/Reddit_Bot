@@ -81,11 +81,15 @@ def main() -> None:
                 print("4) Back to main menu")
                 mod_choice = input("Select option (1-4): ").strip()
                 if mod_choice == "1":
-                    moderator.setup_complete_moderation("Mental_Health_Hub")
+                    sub = input("Subreddit to set up (default Mental_Health_Hub): ").strip() or "Mental_Health_Hub"
+                    moderator.setup_complete_moderation(sub)
                 elif mod_choice == "2":
-                    moderator.run_daily_moderation(["Mental_Health_Hub"])
+                    subs_raw = input("Comma-separated subreddits (default Mental_Health_Hub): ").strip()
+                    subs = [s.strip() for s in subs_raw.split(",") if s.strip()] or ["Mental_Health_Hub"]
+                    moderator.run_daily_moderation(subs)
                 elif mod_choice == "3":
-                    subs = ["MindWellBeing", "ClinicalMicrodosingHu", "Mental_Health_Hub"]
+                    subs_raw = input("Comma-separated subreddits for sidebar refresh (default MindWellBeing, ClinicalMicrodosingHu, Mental_Health_Hub): ").strip()
+                    subs = [s.strip() for s in subs_raw.split(",") if s.strip()] or ["MindWellBeing", "ClinicalMicrodosingHu", "Mental_Health_Hub"]
                     results = moderator.refresh_sidebar_network_links(subs)
                     print(f"Sidebar refresh results: {results}")
                 elif mod_choice == "4":

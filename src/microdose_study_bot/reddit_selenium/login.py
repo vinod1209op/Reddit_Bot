@@ -152,12 +152,16 @@ class LoginManager:
                 if captcha_detected:
                     logger.warning("CAPTCHA detected while logged in; continuing as active")
                 return "active"
-            
-            # If we're on reddit.com but none of the above, it's probably active
-            if "reddit.com" in current_url and "login" not in current_url:
-                if captcha_detected:
-                    logger.warning("CAPTCHA detected on Reddit page; continuing as active")
-                return "active"
+
+            # Explicit logged-out cues
+            logged_out_indicators = [
+                "log in",
+                "sign up",
+                "signup",
+                "login"
+            ]
+            if any(indicator in page_source for indicator in logged_out_indicators):
+                return "logged_out"
 
             if captcha_detected:
                 return "captcha"
@@ -493,11 +497,21 @@ return null;
                 logger.info("Found logout or profile in page source")
                 return True
             
-            # If we're not on login page and not getting errors, assume success
-            if "reddit.com" in current_url and "login" not in current_url:
-                logger.info("Assuming login successful (on Reddit, not login page)")
-                return True
-            
+            # If we explicitly see a login button, treat as failure
+            try:
+                login_btn = self.browser_manager.wait_for_element(
+                    self.driver,
+                    By.XPATH,
+                    "//button[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'log in')]",
+                    timeout=2,
+                )
+                if login_btn:
+                    logger.info("Login button visible; treating as not logged in")
+                    self._log_security_challenge("verify_login_success")
+                    return False
+            except Exception:
+                pass
+
             self._log_security_challenge("verify_login_success")
             return False
             
