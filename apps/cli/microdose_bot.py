@@ -14,6 +14,11 @@ import signal
 from pathlib import Path
 from typing import Optional, Tuple, Any
 
+# Ensure repo root on sys.path so "apps" and "microdose_study_bot" imports work in CI
+repo_root = Path(__file__).resolve().parents[2]
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
+
 from apps.cli.cli import main as unified_main
 
 # Constants
