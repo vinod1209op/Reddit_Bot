@@ -1,0 +1,91 @@
+name: Daily Moderation
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_daily:
+        description: "Run daily moderation (override guard)"
+        required: false
+        default: "true"
+  schedule:
+    - cron: "30 9 * * *"  # daily at 09:30 UTC
+
+jobs:
+  daily-moderation:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.inputs.run_daily != 'false' }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: daily-moderation
+      cancel-in-progress: false
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_BUCKET: ${{ secrets.SUPABASE_BUCKET }}
+      SUPABASE_COOKIES_ACCOUNT4_PATH: ${{ secrets.SUPABASE_COOKIES_ACCOUNT4_PATH }}
+      PYTHONPATH: src:.
+      SELENIUM_USE_UNDETECTED: "0"
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Google Chrome
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Install matching ChromeDriver
+        run: |
+          set -euo pipefail
+          VERSION="${CHROME_VERSION:-$(google-chrome --version | awk '{print $3}')}"
+          BASE="https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/${VERSION}/linux64"
+          URL="${BASE}/chromedriver-linux64.zip"
+          echo "Downloading ChromeDriver ${VERSION} from ${URL}"
+          curl -fSL "$URL" -o /tmp/chromedriver.zip
+          unzip -o /tmp/chromedriver.zip -d /tmp
+          sudo mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver
+          sudo chmod +x /usr/local/bin/chromedriver
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Validate required secrets
+        run: |
+          set -euo pipefail
+          for var in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY SUPABASE_BUCKET SUPABASE_COOKIES_ACCOUNT4_PATH; do
+            if [ -z "${!var:-}" ]; then
+              echo "Missing required secret: $var"
+              exit 1
+            fi
+          done
+
+      - name: Download account4 cookies from Supabase
+        run: |
+          set -euo pipefail
+          mkdir -p data
+          COOKIE_URL="${SUPABASE_URL%/}/storage/v1/object/${SUPABASE_BUCKET}/${SUPABASE_COOKIES_ACCOUNT4_PATH}"
+          curl -fsS -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+               -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+               -o data/cookies_account4.pkl \
+               "$COOKIE_URL"
+
+      - name: Run daily moderation for created_subreddits.json
+        run: |
+          export CHROME_BIN="${CHROME_PATH:-/usr/bin/google-chrome}"
+          export CHROMEDRIVER_PATH="${CHROMEDRIVER:-/usr/local/bin/chromedriver}"
+          python apps/cli/cli.py moderation -- --account account4 --all --daily --headless
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-moderation-logs
+          path: |
+            logs/
+            scripts/moderation/history/
