@@ -1820,7 +1820,6 @@ class MCRDSEPostScheduler(RedditAutomationBase):
     def check_due_posts(self) -> List[Dict]:
         """Check for posts that are due to be posted"""
         schedule_data = self.load_schedule()
-        now = datetime.now()
         
         due_posts = []
         for post in schedule_data:
@@ -1831,7 +1830,10 @@ class MCRDSEPostScheduler(RedditAutomationBase):
             
             try:
                 scheduled_time = datetime.fromisoformat(post["scheduled_for"])
-                
+                if scheduled_time.tzinfo:
+                    now = datetime.now(tz=scheduled_time.tzinfo)
+                else:
+                    now = datetime.now()
                 # Check if post is due (within next 5 minutes or past due)
                 if scheduled_time <= now + timedelta(minutes=5):
                     due_posts.append(post)
