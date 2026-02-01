@@ -5,6 +5,7 @@ Schedule and automate posts across MCRDSE subreddits
 """
 
 import json
+import re
 import time
 import logging
 import random
@@ -465,6 +466,167 @@ class MCRDSEPostScheduler(RedditAutomationBase):
             return content + f"\n\nRelated link: {cta_url}"
         return content
 
+    def _select_variable_value(self, var_name: str, options: List[str], subreddit: str, post_type: str) -> str:
+        pools = self.config.get("subreddit_topic_pools", {})
+        subreddit_pool = pools.get(subreddit, {}) if isinstance(pools, dict) else {}
+        if isinstance(subreddit_pool, dict) and subreddit_pool.get(var_name):
+            return random.choice(subreddit_pool[var_name])
+        default_pool = pools.get("default", {}) if isinstance(pools, dict) else {}
+        if isinstance(default_pool, dict) and default_pool.get(var_name):
+            return random.choice(default_pool[var_name])
+        return random.choice(options)
+
+    def _normalize_content(self, content: str) -> str:
+        if not content:
+            return ""
+        while "\n\n\n" in content:
+            content = content.replace("\n\n\n", "\n\n")
+        return content.strip()
+
+    def _remove_placeholder_links(self, content: str) -> str:
+        if not content:
+            return ""
+        lines = []
+        for line in content.split("\n"):
+            lower = line.lower()
+            if "example.org" in lower:
+                continue
+            lines.append(line)
+        return self._normalize_content("\n".join(lines))
+
+    def _randomize_bullets(self, content: str) -> str:
+        lines = content.split("\n")
+        out = []
+        block = []
+        def flush_block():
+            nonlocal block
+            if not block:
+                return
+            if len(block) == 1:
+                out.extend(block)
+            else:
+                random.shuffle(block)
+                keep = random.randint(1, min(2, len(block)))
+                out.extend(block[:keep])
+            block = []
+        for line in lines:
+            if line.strip().startswith("- "):
+                block.append(line)
+            else:
+                flush_block()
+                out.append(line)
+        flush_block()
+        return self._normalize_content("\n".join(out))
+
+    def _append_signoff(self, content: str) -> str:
+        signoffs = [
+            "Thanks in advance for thoughtful takes.",
+            "Appreciate any careful, evidence-based perspectives.",
+            "Grateful for grounded insights here.",
+            "Would love concise, experience-based notes.",
+        ]
+        emojis = ["", "", "", " :)", " :-)", " :']"]
+        if random.random() < 0.7:
+            signoff = random.choice(signoffs) + random.choice(emojis)
+            return self._normalize_content(content + "\n\n" + signoff)
+        return self._normalize_content(content)
+
+    def _sanitize_post_text(self, title: str, content: str) -> Tuple[str, str]:
+        forbidden = [
+            "buy", "sell", "vendor", "dealer", "dm me", "ship",
+            "prescribe", "diagnose", "treatment", "cure", "you should take",
+        ]
+        safe_title = title
+        for word in forbidden:
+            if word in safe_title.lower():
+                safe_title = re.sub(re.escape(word), "guidance", safe_title, flags=re.IGNORECASE)
+        cleaned_lines = []
+        for line in content.split("\n"):
+            lowered = line.lower()
+            if any(word in lowered for word in forbidden):
+                continue
+            cleaned_lines.append(line)
+        return safe_title.strip(), self._normalize_content("\n".join(cleaned_lines))
+
+    def _strip_unapproved_links(self, content: str) -> Tuple[str, int]:
+        """
+        Remove links that are not in the allowed domain list.
+        Returns (sanitized_content, removed_count).
+        """
+        if not content:
+            return "", 0
+        import re
+        allowed = set(d.lower() for d in self.config.get("allowed_link_domains", []))
+        removed = 0
+        def repl(match):
+            nonlocal removed
+            url = match.group(0)
+            host = url.split("//",1)[-1].split("/",1)[0].split("?",1)[0].lower()
+            if host.startswith("www."):
+                host = host[4:]
+            if host in allowed:
+                return url
+            removed += 1
+            return ""
+        cleaned = re.sub(r"https?://[^\s)]+", repl, content)
+        cleaned = "\n".join([line for line in cleaned.split("\n") if line.strip()]).strip()
+        return cleaned, removed
+
+    def _final_link_scrub(self, post: Dict) -> Dict:
+        """Final guard before submit: strip disallowed links again."""
+        title, content = post.get("title",""), post.get("content","")
+        content, removed = self._strip_unapproved_links(content)
+        post["content"] = content
+        post["link_policy_removed"] = post.get("link_policy_removed", 0) + removed
+        return post
+
+    def _cta_for_subreddit(self, subreddit: Optional[str]) -> Tuple[str, Optional[str]]:
+        default_text = self.config.get("cta_text", "Take the MCRDSE Movement Quiz")
+        default_url = self.config.get("cta_url")
+        cta_map = self.config.get("cta_per_subreddit", {}) or {}
+        if subreddit and subreddit in cta_map:
+            entry = cta_map.get(subreddit, {}) or {}
+            text = entry.get("text") or default_text
+            url = entry.get("url") or default_url
+            return text, url
+        return default_text, default_url
+
+    def _maybe_llm_rewrite(self, title: str, content: str, subreddit: str, post_type: str) -> Tuple[str, str, bool]:
+        llm_cfg = self.config.get("llm", {}) if isinstance(self.config, dict) else {}
+        if not llm_cfg or not llm_cfg.get("enabled", False):
+            return title, content, False
+        if not llm_cfg.get("safety_mode", True):
+            return title, content, False
+        env_flag = llm_cfg.get("require_env", "ENABLE_LLM_POSTS")
+        if os.getenv(env_flag, "").strip().lower() not in ("1", "true", "yes"):
+            return title, content, False
+        provider = llm_cfg.get("provider")
+        model = llm_cfg.get("model")
+        if not provider or not model:
+            logger.warning("LLM enabled but provider/model not configured; skipping rewrite")
+            return title, content, False
+        # Placeholder for future integration. Keep original content in safe mode.
+        logger.info("LLM rewrite requested (provider=%s, model=%s) but not configured; using templates", provider, model)
+        return title, content, True
+
+    def _enforce_length_limits(self, content: str) -> str:
+        min_len = int(self.config.get("content_strategy", {}).get("min_post_length", 100))
+        max_len = int(self.config.get("content_strategy", {}).get("max_post_length", 5000))
+        content = self._normalize_content(content)
+        if len(content) < min_len:
+            fillers = [
+                "If you’ve seen high-quality sources on this, please share them.",
+                "What would you want validated in future research?",
+                "Any careful counterpoints are welcome.",
+                "If you’ve tested this yourself, what did you notice?",
+            ]
+            while len(content) < min_len and fillers:
+                content += "\n\n" + fillers.pop(0)
+                content = self._normalize_content(content)
+        if len(content) > max_len:
+            content = content[:max_len].rsplit("\n", 1)[0]
+        return self._normalize_content(content)
+
     def _apply_timing_variant(self, scheduled: datetime, variant: str) -> datetime:
         windows = {
             "morning": ("09:00", "11:00"),
@@ -603,20 +765,25 @@ class MCRDSEPostScheduler(RedditAutomationBase):
         """Generate a post from templates"""
         if post_type not in self.post_templates:
             post_type = random.choice(list(self.post_templates.keys()))
-        
+
         template_group = self.post_templates[post_type]
         template = random.choice(template_group["templates"])
         template_id = template.get("template_id")
         template_ai_assisted = template.get("ai_assisted")
+
+        # Select subreddit before variable fill so we can use subreddit topic pools
+        if not subreddit:
+            subreddit = self.select_subreddit_for_post(post_type)
         
         # Fill variables
         title = template["title"]
         content = template["content"]
         
         for var_name, options in template.get("variables", {}).items():
-            replacement = random.choice(options)
+            replacement = self._select_variable_value(var_name, options, subreddit, post_type)
             title = title.replace(f"{{{var_name}}}", replacement)
             content = content.replace(f"{{{var_name}}}", replacement)
+        content = self._remove_placeholder_links(self._normalize_content(content))
         
         # Apply A/B variants (before CTA)
         ab_variants = self._choose_ab_variants()
@@ -625,6 +792,7 @@ class MCRDSEPostScheduler(RedditAutomationBase):
         title = self._apply_seo_title_keywords(title)
         if ab_variants.get("content_length"):
             content = self._apply_length_variant(content, ab_variants["content_length"])
+        content = self._randomize_bullets(content)
         
         # Optional ML/heuristic optimization
         if self.optimizer and getattr(self.optimizer, "enabled", False):
@@ -633,41 +801,47 @@ class MCRDSEPostScheduler(RedditAutomationBase):
             if suggestions:
                 content += "\n\nSuggestions:\n" + "\n".join([f"- {s}" for s in suggestions[:2]])
 
-        # Select subreddit if not specified
-        if not subreddit:
-            subreddit = self.select_subreddit_for_post(post_type)
-        
         # Generate scheduled time
         scheduled_time = self.generate_scheduled_time()
         if ab_variants.get("post_timing"):
             scheduled_time = self._apply_timing_variant(scheduled_time, ab_variants["post_timing"])
 
         # Apply media inclusion variants (CTA can act as link)
-        cta_url = self.config.get("cta_url")
+        cta_text, cta_url = self._cta_for_subreddit(subreddit)
         if ab_variants.get("media_inclusion"):
             content = self._apply_media_variant(content, ab_variants["media_inclusion"], cta_url)
 
         # Add CTA if configured (inline URL in sentence)
-        cta_text = self.config.get("cta_text", "Take the MCRDSE Movement Quiz")
         if cta_url:
             content += f"\n\nIf this topic resonates, {cta_text} at {cta_url}."
         else:
             if random.random() < 0.3:  # 30% chance
                 content += "\n\nFor research-based resources, check out the MCRDSE research portal."
+        content = self._append_signoff(content)
+        title, content, llm_used = self._maybe_llm_rewrite(title, content, subreddit, post_type)
+        title, content = self._sanitize_post_text(title, content)
+        content, removed_links = self._strip_unapproved_links(content)
+        content = self._enforce_length_limits(content)
         quality_score = min(1.0, max(0.0, len(content) / 500.0))
         
         if template_ai_assisted is None:
             ai_assisted_default = self.config.get("ai_assisted_default", True)
         else:
             ai_assisted_default = bool(template_ai_assisted)
+        llm_cfg = self.config.get("llm", {}) if isinstance(self.config, dict) else {}
+        require_review = bool(llm_cfg.get("require_manual_review", False)) and llm_used
+        if removed_links > 0 and self.config.get("links_require_review", False):
+            require_review = True
+        status_value = "pending_review" if require_review else "scheduled"
         post = {
             "id": f"post_{int(time.time())}_{random.randint(1000, 9999)}",
             "type": post_type,
             "subreddit": subreddit,
             "title": title,
             "content": content,
-            "ai_assisted": bool(ai_assisted_default),
-            "status": "scheduled",
+            "ai_assisted": bool(ai_assisted_default or llm_used),
+            "status": status_value,
+            "review_required": require_review,
             "created_at": datetime.now().isoformat(),
             "scheduled_for": scheduled_time.isoformat(),
             "account": self.account_name,
@@ -678,6 +852,7 @@ class MCRDSEPostScheduler(RedditAutomationBase):
             "error": None,
             "quality_score": round(quality_score, 2),
             "ab_test": ab_variants,
+            "link_policy_removed": removed_links,
             "metrics": {
                 "views": None,
                 "upvotes": None,
@@ -1137,7 +1312,20 @@ class MCRDSEPostScheduler(RedditAutomationBase):
                         exists,
                         counts,
                     )
-                    if exists == "composer_missing" and not self.headless:
+                    # Fallback: try rich text contenteditable if markdown textarea missing
+                    try:
+                        rte = self._query_selector_deep("div[contenteditable='true']")
+                        if rte:
+                            self.driver.execute_script(
+                                "arguments[0].innerText = arguments[1];", rte, content
+                            )
+                            textarea = rte  # mark as filled to skip error
+                            logger.warning("Used rich-text fallback composer")
+                    except Exception:
+                        pass
+
+                    # If fallback succeeded, skip manual prompt
+                    if exists == "composer_missing" and not self.headless and not textarea:
                         try:
                             input("Markdown editor not found. Please switch to Markdown manually, then press Enter...")
                         except Exception:
@@ -1638,7 +1826,7 @@ class MCRDSEPostScheduler(RedditAutomationBase):
         for post in schedule_data:
             if post.get("account") and post.get("account") != self.account_name:
                 continue
-            if post["status"] != "scheduled":
+            if post.get("status") != "scheduled":
                 continue
             
             try:
@@ -1684,6 +1872,9 @@ class MCRDSEPostScheduler(RedditAutomationBase):
                 post["attempts"] = post.get("attempts", 0) + 1
                 post["last_attempt"] = datetime.now().isoformat()
                 
+                # Final scrub of disallowed links before submit
+                post = self._final_link_scrub(post)
+                
                 # Submit post
                 action_result = self.execute_safely(
                     lambda: self.submit_post(post),
@@ -1723,13 +1914,6 @@ class MCRDSEPostScheduler(RedditAutomationBase):
                 # Save schedule after each post
                 self.update_post_in_schedule(post)
                 
-                # Delay between posts
-                delay = random.randint(
-                    self.config["posting_settings"]["min_time_between_posts_minutes"],
-                    self.config["posting_settings"]["min_time_between_posts_minutes"] * 2
-                )
-                logger.info(f"Waiting {delay} minutes before next post...")
-                time.sleep(delay * 60)
                 
             except Exception as e:
                 logger.error(f"Error processing post {post.get('id', 'unknown')}: {e}")
@@ -1739,6 +1923,22 @@ class MCRDSEPostScheduler(RedditAutomationBase):
                 continue
         
         return success_count
+
+    def approve_pending_posts(self, ids: Optional[List[str]] = None) -> int:
+        """Approve pending_review posts so they can be scheduled/posted"""
+        schedule_data = self.load_schedule()
+        approved = 0
+        for post in schedule_data:
+            if post.get("status") != "pending_review":
+                continue
+            if ids and post.get("id") not in ids:
+                continue
+            post["status"] = "scheduled"
+            post["review_required"] = False
+            approved += 1
+        if approved:
+            self.save_schedule(schedule_data)
+        return approved
     
     def update_post_in_schedule(self, updated_post: Dict):
         """Update a post in the schedule"""
@@ -1989,6 +2189,8 @@ def main():
     parser.add_argument("--start-daemon", action="store_true", help="Start scheduler daemon")
     parser.add_argument("--stop-daemon", action="store_true", help="Stop scheduler daemon")
     parser.add_argument("--process", action="store_true", help="Process due posts once")
+    parser.add_argument("--approve-pending", action="store_true", help="Approve all pending_review posts so they can be posted")
+    parser.add_argument("--pending-ids", help="Comma-separated post IDs to approve (optional)")
     parser.add_argument("--cleanup", action="store_true", help="Cleanup old schedule")
     parser.add_argument("--headless", action="store_true", help="Run browser in background")
     parser.add_argument("--dry-run", action="store_true", help="Simulate actions without executing")
@@ -2126,7 +2328,7 @@ def main():
                 
                 if post.get("error"):
                     logger.info(f"   Error: {post['error'][:80]}...")
-                logger.info()
+                logger.info("")  # blank line for spacing
     
     elif args.summary:
         logger.info("\nSchedule Summary:")
@@ -2188,6 +2390,14 @@ def main():
         
         if scheduler.driver:
             scheduler.cleanup()
+
+    elif args.approve_pending:
+        logger.info("\nApproving pending_review posts...")
+        ids = None
+        if args.pending_ids:
+            ids = [p.strip() for p in args.pending_ids.split(",") if p.strip()]
+        count = scheduler.approve_pending_posts(ids)
+        logger.info(f"✓ Approved {count} pending posts")
     
     elif args.cleanup:
         logger.info("\nCleaning up old schedule...")

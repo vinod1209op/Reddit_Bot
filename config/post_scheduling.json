@@ -1,7 +1,112 @@
 {
   "cta_url": "https://quiz.mcrdsemovement.com/mcrdse-funnel",
   "cta_text": "Take the MCRDSE Movement Quiz",
+  "cta_per_subreddit": {
+    "ClinicalMicrodosingHu": {
+      "text": "Read the clinical microdosing guide",
+      "url": "https://mcrdse.com/clinical-guide"
+    },
+    "MagicWellness": {
+      "text": "Try the wellbeing micro-routine checklist",
+      "url": "https://mcrdse.com/wellness-checklist"
+    },
+    "MindWellBeing": {
+      "text": "Download the mood-tracking template",
+      "url": "https://mcrdse.com/mood-tracker"
+    }
+  },
   "ai_assisted_default": false,
+  "llm": {
+    "enabled": false,
+    "safety_mode": true,
+    "require_env": "ENABLE_LLM_POSTS",
+    "require_manual_review": true,
+    "provider": "",
+    "model": ""
+  },
+  "links_require_review": true,
+  "allowed_link_domains": [
+    "mcrdse.com",
+    "quiz.mcrdsemovement.com",
+    "pubmed.ncbi.nlm.nih.gov",
+    "doi.org",
+    "clinicaltrials.gov",
+    "nature.com",
+    "nejm.org",
+    "thelancet.com",
+    "sciencedirect.com",
+    "jamanetwork.com"
+  ],
+  "subreddit_topic_pools": {
+    "ClinicalMicrodosingHu": {
+      "topic": [
+        "clinical protocol adherence",
+        "outcome measurement in trials",
+        "patient-reported outcomes",
+        "dose timing in supervised settings"
+      ],
+      "theme": [
+        "clinical integration routines",
+        "tracking treatment response",
+        "patient safety monitoring",
+        "long-term follow-up"
+      ],
+      "development": [
+        "trial design improvements",
+        "measurement advances",
+        "safety monitoring practices",
+        "long-term follow-up findings"
+      ]
+    },
+    "MagicWellness": {
+      "topic": [
+        "wellbeing routines",
+        "stress regulation habits",
+        "sleep consistency",
+        "everyday integration"
+      ],
+      "theme": [
+        "habit-building",
+        "gentle self-observation",
+        "sustainable routines",
+        "balancing expectations"
+      ],
+      "development": [
+        "new wellbeing studies",
+        "long-term routine findings",
+        "measurement updates",
+        "replication efforts"
+      ]
+    },
+    "MindWellBeing": {
+      "topic": [
+        "mental clarity routines",
+        "mood stability tracking",
+        "focus consistency",
+        "self-regulation practices"
+      ],
+      "theme": [
+        "self-observation",
+        "integration work",
+        "building consistency",
+        "managing expectations"
+      ],
+      "development": [
+        "measurement advances",
+        "long-term outcomes",
+        "reporting standards",
+        "methodology updates"
+      ]
+    },
+    "default": {
+      "topic": [
+        "harm reduction practices",
+        "integration routines",
+        "tracking outcomes",
+        "long-term consistency"
+      ]
+    }
+  },
   "subreddit_distribution": {
     "primary_focus": ["MindWellBeing", "Mental_Health_Hub"],
     "secondary_focus": ["ClinicalMicrodosingHu"],

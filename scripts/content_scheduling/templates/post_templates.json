@@ -3,7 +3,7 @@
     "templates": [
       {
         "title": "Perspective check: {topic}",
-        "content": "We\u2019re reviewing how this community thinks about {topic}.\n\nContext:\n- What has changed recently?\n- What\u2019s still unclear or debated?\n\nOpen questions:\n- What should we prioritize next?\n- Which claims deserve stronger evidence?",
+        "content": "{opener}\n\n{micro_story}\n\nWe’re reviewing how this community thinks about {topic}.\n\nContext:\n- What has changed recently?\n- What’s still unclear or debated?\n\nOpen questions:\n- What should we prioritize next?\n- Which claims deserve stronger evidence?",
         "variables": {
           "topic": [
             "microdosing protocols",
@@ -11,6 +11,19 @@
             "harm reduction practices",
             "neuroplasticity research",
             "therapeutic applications"
+          ],
+          "opener": [
+            "Quick thought:",
+            "Something I’ve been reflecting on:",
+            "Putting this out for the group:",
+            "Sharing a lens that helped me:",
+            ""
+          ],
+          "micro_story": [
+            "This week I noticed how differently people frame progress depending on what they track.",
+            "I tried explaining this to a friend and realized how many assumptions I was making.",
+            "A small shift in routine changed what I paid attention to most.",
+            ""
           ]
         },
         "template_id": "discussion_1",
@@ -18,17 +31,182 @@
       },
       {
         "title": "Community input needed: {topic}",
-        "content": "We\u2019re gathering practical perspectives on {topic}.\n\nWhy this matters:\n- It shapes how people make decisions\n- It affects what gets studied next\n\nWhat we\u2019d value from you:\n- One insight you trust\n- One misconception you keep seeing",
+        "content": "{opener}\n\n{micro_story}\n\nWe’re gathering practical perspectives on {topic}.\n\nWhy this matters:\n- It shapes how people make decisions\n- It affects what gets studied next\n\nWhat we’d value from you:\n- One insight you trust\n- One misconception you keep seeing",
         "variables": {
           "topic": [
             "integration practices",
             "tracking outcomes",
             "dosage consistency",
             "safety routines",
-            "long\u2011term effects"
+            "long-term effects"
+          ],
+          "opener": [
+            "Quick check-in:",
+            "Small prompt for today:",
+            "I’m collecting grounded takes:",
+            "Would love a reality check:",
+            ""
+          ],
+          "micro_story": [
+            "I keep seeing strong opinions here, but not always the evidence behind them.",
+            "I realized my own view changed after I tracked a single variable for a month.",
+            "A simple question from a mod made me rethink my assumptions.",
+            ""
           ]
         },
         "template_id": "discussion_2",
+        "ai_assisted": false
+      },
+      {
+        "title": "Let’s map what we know about {topic}",
+        "content": "{opener}\n\n{micro_story}\n\nI’d love a short, evidence-minded snapshot of where we are on {topic}.\n\nIf you can, share:\n- A finding or trend you consider reliable\n- A gap that still needs attention\n- A resource that clarified your view",
+        "variables": {
+          "topic": [
+            "tolerance patterns",
+            "integration routines",
+            "measurement and tracking",
+            "habit formation",
+            "expectation management"
+          ],
+          "opener": [
+            "Opening a thread for clarity:",
+            "Trying to build a shared map:",
+            "Here’s a prompt I keep returning to:",
+            ""
+          ],
+          "micro_story": [
+            "I went looking for consensus and found a lot of scattered signals.",
+            "A recent thread convinced me we need cleaner definitions.",
+            "I realized I’ve been mixing anecdotes with evidence without noticing.",
+            ""
+          ]
+        },
+        "template_id": "discussion_3",
+        "ai_assisted": false
+      },
+      {
+        "title": "Tradeoffs to consider: {topic}",
+        "content": "{opener}\n\n{micro_story}\n\nWhen people discuss {topic}, the tradeoffs often get lost.\n\nCould we surface:\n- One benefit that seems consistent\n- One cost or constraint that deserves more attention\n- One nuance that most summaries miss?",
+        "variables": {
+          "topic": [
+            "long-term routines",
+            "stacking practices",
+            "tracking mood changes",
+            "integration after sessions",
+            "community norms"
+          ],
+          "opener": [
+            "Realistically speaking:",
+            "Trying to balance the picture:",
+            "Here’s a careful prompt:",
+            ""
+          ],
+          "micro_story": [
+            "I’ve seen people focus on benefits and skip the tradeoffs entirely.",
+            "After a few months, the constraints became more obvious to me.",
+            "The same practice can help or hurt depending on context.",
+            ""
+          ]
+        },
+        "template_id": "discussion_4",
+        "ai_assisted": false
+      },
+      {
+        "title": "How do you keep {topic} grounded?",
+        "content": "{opener}\n\n{micro_story}\n\nI’m curious how you keep conversations about {topic} grounded in real signals.\n\nCould you share:\n- One signal you trust\n- One common distraction you ignore\n- One way you sanity-check claims?",
+        "variables": {
+          "topic": [
+            "integration planning",
+            "daily routines",
+            "tracking change",
+            "safety practices",
+            "expectation setting"
+          ],
+          "opener": [
+            "Quick community prompt:",
+            "Curious how others keep this practical:",
+            "Looking for grounded takes:",
+            ""
+          ],
+          "micro_story": [
+            "I’ve caught myself chasing shiny ideas instead of reliable signals.",
+            "A mentor told me to define one metric before any discussion.",
+            ""
+          ]
+        },
+        "template_id": "discussion_5",
+        "ai_assisted": false
+      },
+      {
+        "title": "Small-but-useful practice: {topic}",
+        "content": "{opener}\n\n{micro_story}\n\nWhat’s one small practice around {topic} that actually held up over time?\n\nUseful to share:\n- The routine\n- How you measure it\n- When it stops working",
+        "variables": {
+          "topic": [
+            "integration journaling",
+            "sleep tracking",
+            "mood check-ins",
+            "expectation setting"
+          ],
+          "opener": [
+            "Quick share:",
+            "Mini prompt:",
+            ""
+          ],
+          "micro_story": [
+            "One tiny habit stuck longer than the big ones.",
+            "I thought this was trivial, but it became my anchor.",
+            ""
+          ]
+        },
+        "template_id": "discussion_6",
+        "ai_assisted": false
+      },
+      {
+        "title": "What changed your mind about {topic}?",
+        "content": "{opener}\n\n{micro_story}\n\nIf your view on {topic} shifted, what triggered it?\n\nIf you can, share:\n- The before/after view\n- The evidence or moment that moved you\n- What you still want to validate",
+        "variables": {
+          "topic": [
+            "dose timing",
+            "integration length",
+            "tracking metrics",
+            "community guidelines"
+          ],
+          "opener": [
+            "Perspective shift:",
+            "Story time:",
+            ""
+          ],
+          "micro_story": [
+            "I realized I was anchoring on the wrong signal.",
+            "A single chart changed how I think about this.",
+            ""
+          ]
+        },
+        "template_id": "discussion_7",
+        "ai_assisted": false
+      },
+      {
+        "title": "If you could make one norm for {topic}, what would it be?",
+        "content": "{opener}\n\n{micro_story}\n\nImagine everyone here followed one norm around {topic}.\n\nWhat would it be and why?\n- The norm\n- The benefit\n- The tradeoff",
+        "variables": {
+          "topic": [
+            "harm reduction",
+            "sharing experiences",
+            "reporting outcomes",
+            "flagging risks"
+          ],
+          "opener": [
+            "Norms question:",
+            "Community prompt:",
+            ""
+          ],
+          "micro_story": [
+            "I saw one simple norm calm an entire community.",
+            "A tiny guideline reduced confusion in another forum.",
+            ""
+          ]
+        },
+        "template_id": "discussion_8",
         "ai_assisted": false
       }
     ]
@@ -37,16 +215,198 @@
     "templates": [
       {
         "title": "Question for experienced members: {topic}",
-        "content": "We\u2019re looking for grounded, experience\u2011based guidance on {topic}.\n\nKey questions:\n- What are the top considerations you\u2019d flag?\n- What resources or references actually helped?\n- What would you do differently in hindsight?",
+        "content": "{opener}\n\n{micro_story}\n\nWe’re looking for grounded, experience-based guidance on {topic}.\n\nKey questions:\n- What are the top considerations you’d flag?\n- What resources or references actually helped?\n- What would you do differently in hindsight?",
         "variables": {
           "topic": [
             "starting a microdosing protocol",
-            "psychedelic integration practices",
+            "integration practices",
             "tracking cognitive changes",
             "balancing routine and flexibility"
+          ],
+          "opener": [
+            "Quick question:",
+            "Looking for practical wisdom:",
+            "If you’ve been at this a while:",
+            ""
+          ],
+          "micro_story": [
+            "I’m trying to separate what’s intuition from what’s been validated.",
+            "I wrote down my assumptions and realized half weren’t based on evidence.",
+            "The more I read, the more I want a grounded checklist.",
+            ""
           ]
         },
         "template_id": "question_1",
+        "ai_assisted": false
+      },
+      {
+        "title": "What’s your most reliable metric for {topic}?",
+        "content": "{opener}\n\n{micro_story}\n\nFor those who track outcomes, what has been the most reliable signal for {topic}?\n\nHelpful to share:\n- The metric you track\n- The time horizon you consider\n- One limitation you’ve noticed",
+        "variables": {
+          "topic": [
+            "mood stability",
+            "focus and attention",
+            "sleep quality",
+            "habit consistency"
+          ],
+          "opener": [
+            "Short question:",
+            "Trying to compare notes:",
+            "Looking for concrete signals:",
+            ""
+          ],
+          "micro_story": [
+            "I tried tracking too many things and ended up with noise.",
+            "One metric surprised me by being more stable than I expected.",
+            ""
+          ]
+        },
+        "template_id": "question_2",
+        "ai_assisted": false
+      },
+      {
+        "title": "If you had to simplify {topic}, what would you say?",
+        "content": "{opener}\n\n{micro_story}\n\nImagine explaining {topic} to someone new.\n\nWhat would you highlight?\n- The 1–2 most important ideas\n- A common mistake to avoid\n- One resource you’d trust",
+        "variables": {
+          "topic": [
+            "harm reduction",
+            "integration",
+            "tracking outcomes",
+            "building consistency"
+          ],
+          "opener": [
+            "Crowdsourcing clarity:",
+            "Trying to keep this simple:",
+            "Looking for the clearest framing:",
+            ""
+          ],
+          "micro_story": [
+            "I keep overcomplicating this when I explain it to friends.",
+            "I noticed beginners latch onto the wrong details.",
+            ""
+          ]
+        },
+        "template_id": "question_3",
+        "ai_assisted": false
+      },
+      {
+        "title": "What would you test next about {topic}?",
+        "content": "{opener}\n\n{micro_story}\n\nIf you could run one careful study or experiment about {topic}, what would it be?\n\nIf possible, include:\n- The outcome you’d measure\n- The time window that matters\n- What would change your mind",
+        "variables": {
+          "topic": [
+            "integration routines",
+            "habit formation",
+            "dose timing strategies",
+            "long-term consistency"
+          ],
+          "opener": [
+            "A forward-looking question:",
+            "Thinking about next steps:",
+            ""
+          ],
+          "micro_story": [
+            "I keep seeing correlations but not clean causal tests.",
+            "If I could fund one study, it would focus on real-world outcomes.",
+            ""
+          ]
+        },
+        "template_id": "question_4",
+        "ai_assisted": false
+      },
+      {
+        "title": "What’s the quiet signal for {topic} that people miss?",
+        "content": "{opener}\n\n{micro_story}\n\nSometimes the most reliable signals are the quiet ones. For {topic}, what do you watch for?\n\nIdeas:\n- A small pattern you’ve noticed\n- How you separate noise from signal\n- One thing you stopped tracking",
+        "variables": {
+          "topic": [
+            "integration progress",
+            "sleep effects",
+            "mood shifts",
+            "attention changes"
+          ],
+          "opener": [
+            "Subtle-signal question:",
+            "For the careful observers:",
+            ""
+          ],
+          "micro_story": [
+            "I realized the loudest signals weren’t the most useful.",
+            "A tiny pattern turned out to be the best indicator for me.",
+            ""
+          ]
+        },
+        "template_id": "question_5",
+        "ai_assisted": false
+      },
+      {
+        "title": "What’s the first thing you test when adjusting {topic}?",
+        "content": "{opener}\n\n{micro_story}\n\nWhen you tweak {topic}, what’s the first test you run to see if it’s working?\n\nHelpful to include:\n- The tweak\n- The first check\n- How long you wait",
+        "variables": {
+          "topic": [
+            "dose timing",
+            "integration structure",
+            "tracking cadence",
+            "sleep alignment"
+          ],
+          "opener": [
+            "Testing question:",
+            "Fast feedback prompt:",
+            ""
+          ],
+          "micro_story": [
+            "I learned to look at the earliest signal, not the loudest.",
+            "A 24-hour check saved me from chasing noise.",
+            ""
+          ]
+        },
+        "template_id": "question_6",
+        "ai_assisted": false
+      },
+      {
+        "title": "If you had to warn a newcomer about {topic}, what’s the one liner?",
+        "content": "{opener}\n\n{micro_story}\n\nFor someone new to {topic}, what’s the one-sentence caution you’d give?\n\nOptional extras:\n- A resource to back it up\n- A common misconception\n- What to watch in week one",
+        "variables": {
+          "topic": [
+            "microdosing schedules",
+            "integration pacing",
+            "self-tracking",
+            "setting expectations"
+          ],
+          "opener": [
+            "Safety prompt:",
+            "Quick caution:",
+            ""
+          ],
+          "micro_story": [
+            "I wish I’d heard a simple caution early on.",
+            "One sentence changed how I approached this.",
+            ""
+          ]
+        },
+        "template_id": "question_7",
+        "ai_assisted": false
+      },
+      {
+        "title": "What would make you stop or pause with {topic}?",
+        "content": "{opener}\n\n{micro_story}\n\nIf you had to set a stop-condition for {topic}, what would it be?\n\nConsider sharing:\n- The red flag\n- How you’d detect it\n- What you’d do next",
+        "variables": {
+          "topic": [
+            "any protocol change",
+            "integration routines",
+            "tracking experiments",
+            "habit stacking"
+          ],
+          "opener": [
+            "Red-flag check:",
+            "Safety line prompt:",
+            ""
+          ],
+          "micro_story": [
+            "Having a stop-condition kept me out of trouble once.",
+            "I realized I needed clearer pause rules.",
+            ""
+          ]
+        },
+        "template_id": "question_8",
         "ai_assisted": false
       }
     ]
@@ -55,16 +415,192 @@
     "templates": [
       {
         "title": "Resource roundup: {topic}",
-        "content": "We\u2019re curating a practical list of resources on {topic}.\n\nIf you have strong references, please share:\n- Peer\u2011reviewed studies\n- Clear, evidence\u2011based explainers\n- Reputable tools or frameworks",
+        "content": "{opener}\n\n{micro_story}\n\nWe’re curating a practical list of resources on {topic}.\n\nIf you have strong references, please share:\n- Peer-reviewed studies\n- Clear, evidence-based explainers\n- Reputable tools or frameworks",
         "variables": {
           "topic": [
             "neuroplasticity exercises",
             "integration frameworks",
             "harm reduction guides",
             "outcome tracking methods"
+          ],
+          "opener": [
+            "Collecting sources:",
+            "Resource ask:",
+            ""
+          ],
+          "micro_story": [
+            "I’m rebuilding my reading list and want the highest-signal items.",
+            "A resource shared here recently helped me reframe this topic.",
+            ""
           ]
         },
         "template_id": "resource_1",
+        "ai_assisted": false
+      },
+      {
+        "title": "What’s the best primer on {topic}?",
+        "content": "{opener}\n\n{micro_story}\n\nIf someone asked you for a reliable primer on {topic}, what would you send?\n\nIdeal shares:\n- One high-signal article or paper\n- One practical guide\n- One caveat or limitation",
+        "variables": {
+          "topic": [
+            "integration practices",
+            "harm reduction basics",
+            "measuring outcomes",
+            "long-term routines"
+          ],
+          "opener": [
+            "Looking for go-to resources:",
+            "Crowdsourcing a mini reading list:",
+            ""
+          ],
+          "micro_story": [
+            "I keep sending the same two links and wonder if I’m missing better ones.",
+            "I want a short list I can trust under pressure.",
+            ""
+          ]
+        },
+        "template_id": "resource_2",
+        "ai_assisted": false
+      },
+      {
+        "title": "Tools check: {topic}",
+        "content": "{opener}\n\n{micro_story}\n\nWhat tools or frameworks have helped you with {topic}?\n\nHelpful details:\n- Why you trust it\n- The context it works in\n- One limitation you’ve noticed",
+        "variables": {
+          "topic": [
+            "tracking mood",
+            "journaling routines",
+            "integration planning",
+            "habit consistency"
+          ],
+          "opener": [
+            "Tools thread:",
+            "Quick resource check:",
+            ""
+          ],
+          "micro_story": [
+            "I tried a few trackers and most felt too heavy.",
+            "One tool finally made it easy to stay consistent.",
+            ""
+          ]
+        },
+        "template_id": "resource_3",
+        "ai_assisted": false
+      },
+      {
+        "title": "Share one resource that changed how you think about {topic}",
+        "content": "{opener}\n\n{micro_story}\n\nIf one resource shifted your perspective on {topic}, I’d love to see it.\n\nInclude if you can:\n- Link title or citation\n- The key takeaway\n- Who it’s best for",
+        "variables": {
+          "topic": [
+            "neuroplasticity",
+            "integration",
+            "harm reduction",
+            "outcome tracking"
+          ],
+          "opener": [
+            "Looking for high-signal shares:",
+            ""
+          ],
+          "micro_story": [
+            "I’m trying to update my mental model on this topic.",
+            "A well-written explainer can change everything.",
+            ""
+          ]
+        },
+        "template_id": "resource_4",
+        "ai_assisted": false
+      },
+      {
+        "title": "Resource check: what’s missing on {topic}?",
+        "content": "{opener}\n\n{micro_story}\n\nIf you had to fill one gap in resources for {topic}, what would you add?\n\nAdd if you can:\n- A source that’s close but not perfect\n- One thing you still can’t find\n- A format that would help (guide, visual, checklist)",
+        "variables": {
+          "topic": [
+            "harm reduction",
+            "integration",
+            "tracking outcomes",
+            "long-term consistency"
+          ],
+          "opener": [
+            "Gap-spotting prompt:",
+            "Resource wishlist:",
+            ""
+          ],
+          "micro_story": [
+            "I keep looking for a concise, trustworthy guide and end up piecing it together.",
+            ""
+          ]
+        },
+        "template_id": "resource_5",
+        "ai_assisted": false
+      },
+      {
+        "title": "One-page guide to {topic}: what belongs on it?",
+        "content": "{opener}\n\n{micro_story}\n\nIf we made a one-page guide on {topic}, what must be on it?\n\nUseful suggestions:\n- A core concept\n- A single caution\n- A reference worth linking",
+        "variables": {
+          "topic": [
+            "harm reduction basics",
+            "integration routines",
+            "tracking outcomes",
+            "expectation management"
+          ],
+          "opener": [
+            "Designing a guide:",
+            "Cheat-sheet prompt:",
+            ""
+          ],
+          "micro_story": [
+            "I keep rewriting my own cheat-sheet on this.",
+            "The best guides I’ve used were short and concrete.",
+            ""
+          ]
+        },
+        "template_id": "resource_6",
+        "ai_assisted": false
+      },
+      {
+        "title": "If you could standardize one resource for {topic}, what is it?",
+        "content": "{opener}\n\n{micro_story}\n\nWhat resource would you standardize for {topic}?\n\nShare if possible:\n- The format (checklist, template, explainer)\n- Who it helps most\n- One limitation",
+        "variables": {
+          "topic": [
+            "integration planning",
+            "data tracking",
+            "safety screening",
+            "session prep"
+          ],
+          "opener": [
+            "Standardization prompt:",
+            "Resource design question:",
+            ""
+          ],
+          "micro_story": [
+            "Standardizing one doc reduced confusion in our group.",
+            "A simple template made collaboration easier.",
+            ""
+          ]
+        },
+        "template_id": "resource_7",
+        "ai_assisted": false
+      },
+      {
+        "title": "Best ‘starter pack’ for {topic}?",
+        "content": "{opener}\n\n{micro_story}\n\nIf someone asked for a starter pack on {topic}, what would you include?\n\nIdeas:\n- One explainer\n- One tool\n- One community reference",
+        "variables": {
+          "topic": [
+            "integration",
+            "harm reduction",
+            "tracking",
+            "habit building"
+          ],
+          "opener": [
+            "Starter-pack prompt:",
+            "Curating the basics:",
+            ""
+          ],
+          "micro_story": [
+            "A short starter pack has helped onboard new folks fast.",
+            "I’m trying to keep my recommendations minimal and solid.",
+            ""
+          ]
+        },
+        "template_id": "resource_8",
         "ai_assisted": false
       }
     ]
@@ -73,16 +609,192 @@
     "templates": [
       {
         "title": "Reflection: {theme}",
-        "content": "Sharing a structured reflection for anyone thinking about {theme}.\n\nWhat stood out to me:\n- One practical takeaway\n- One risk or constraint\n- One question I\u2019m still exploring",
+        "content": "{opener}\n\n{micro_story}\n\nSharing a structured reflection for anyone thinking about {theme}.\n\nWhat stood out to me:\n- One practical takeaway\n- One risk or constraint\n- One question I’m still exploring",
         "variables": {
           "theme": [
             "personal growth work",
             "integration routines",
-            "long\u2011term consistency",
+            "long-term consistency",
             "balancing expectations"
+          ],
+          "opener": [
+            "A short reflection:",
+            "Sharing a personal note:",
+            ""
+          ],
+          "micro_story": [
+            "I kept notes for a month and one pattern surprised me.",
+            "I underestimated how much consistency mattered here.",
+            ""
           ]
         },
         "template_id": "experience_1",
+        "ai_assisted": false
+      },
+      {
+        "title": "What I learned about {theme}",
+        "content": "{opener}\n\n{micro_story}\n\nHere’s a brief takeaway on {theme} from recent weeks.\n\nThree pieces that stuck:\n- A habit that helped\n- A small adjustment that mattered\n- A question I still have",
+        "variables": {
+          "theme": [
+            "integration planning",
+            "tracking outcomes",
+            "setting expectations",
+            "building routines"
+          ],
+          "opener": [
+            "Personal note:",
+            "Reflecting out loud:",
+            ""
+          ],
+          "micro_story": [
+            "One small change had a bigger effect than I expected.",
+            "I stopped chasing novelty and noticed steadier results.",
+            ""
+          ]
+        },
+        "template_id": "experience_2",
+        "ai_assisted": false
+      },
+      {
+        "title": "A small insight on {theme}",
+        "content": "{opener}\n\n{micro_story}\n\nI noticed something about {theme} that might be useful.\n\nIf this resonates, add yours:\n- What helped most\n- What didn’t help\n- What you’d try next",
+        "variables": {
+          "theme": [
+            "consistency",
+            "integration",
+            "self-observation",
+            "expectation management"
+          ],
+          "opener": [
+            "Quick reflection:",
+            ""
+          ],
+          "micro_story": [
+            "I didn’t expect the smallest habit to be the most stabilizing.",
+            "A single prompt changed how I reviewed my week.",
+            ""
+          ]
+        },
+        "template_id": "experience_3",
+        "ai_assisted": false
+      },
+      {
+        "title": "Weekly reflection: {theme}",
+        "content": "{opener}\n\n{micro_story}\n\nIf you’re doing {theme}, what’s been true lately?\n\nYou can share:\n- A win\n- A sticking point\n- One question you’re holding",
+        "variables": {
+          "theme": [
+            "integration work",
+            "habit building",
+            "tracking change",
+            "balancing routines"
+          ],
+          "opener": [
+            "Weekly check-in:",
+            ""
+          ],
+          "micro_story": [
+            "This week felt steadier and I’m trying to understand why.",
+            "A small tweak to routine made things smoother.",
+            ""
+          ]
+        },
+        "template_id": "experience_4",
+        "ai_assisted": false
+      },
+      {
+        "title": "How {theme} shifted for me this month",
+        "content": "{opener}\n\n{micro_story}\n\nOver the last few weeks, {theme} felt different.\n\nSharing briefly:\n- What improved\n- What regressed\n- What I’ll try next month",
+        "variables": {
+          "theme": [
+            "integration routines",
+            "sleep consistency",
+            "mood stability",
+            "focus habits"
+          ],
+          "opener": [
+            "Monthly check-in:",
+            "Personal update:",
+            ""
+          ],
+          "micro_story": [
+            "One small habit change had an outsized effect.",
+            "I spotted a pattern only after reviewing my notes.",
+            ""
+          ]
+        },
+        "template_id": "experience_5",
+        "ai_assisted": false
+      },
+      {
+        "title": "One unexpected friction in {theme}",
+        "content": "{opener}\n\n{micro_story}\n\nWhat friction did you not expect in {theme}?\n\nShare:\n- The friction\n- How you handled it\n- What you’d try now",
+        "variables": {
+          "theme": [
+            "integration work",
+            "routine building",
+            "tracking habits",
+            "expectation setting"
+          ],
+          "opener": [
+            "Quick friction note:",
+            "A snag I hit:",
+            ""
+          ],
+          "micro_story": [
+            "A tiny friction almost derailed my routine.",
+            "The blocker wasn’t where I thought it would be.",
+            ""
+          ]
+        },
+        "template_id": "experience_6",
+        "ai_assisted": false
+      },
+      {
+        "title": "If you restarted {theme}, what would you do first?",
+        "content": "{opener}\n\n{micro_story}\n\nImagine restarting your approach to {theme}.\n\nYou’d start with:\n- First action\n- First checkpoint\n- One thing you’d skip",
+        "variables": {
+          "theme": [
+            "integration routines",
+            "sleep stabilizing",
+            "mood tracking",
+            "habit stacking"
+          ],
+          "opener": [
+            "Reset prompt:",
+            "If I had a do-over:",
+            ""
+          ],
+          "micro_story": [
+            "Knowing what I know now, I’d start smaller.",
+            "The first checkpoint matters more than I expected.",
+            ""
+          ]
+        },
+        "template_id": "experience_7",
+        "ai_assisted": false
+      },
+      {
+        "title": "A micro-check-in on {theme}",
+        "content": "{opener}\n\n{micro_story}\n\nMicro check-in: how is {theme} going this week?\n\nYou can drop:\n- One win\n- One wobble\n- One tweak you’re testing",
+        "variables": {
+          "theme": [
+            "integration",
+            "consistency",
+            "self-observation",
+            "expectation management"
+          ],
+          "opener": [
+            "Quick check-in:",
+            "Weekly micro-update:",
+            ""
+          ],
+          "micro_story": [
+            "Short check-ins kept me honest.",
+            "I learned more from small updates than big reviews.",
+            ""
+          ]
+        },
+        "template_id": "experience_8",
         "ai_assisted": false
       }
     ]
@@ -91,7 +803,7 @@
     "templates": [
       {
         "title": "Update: {development} in psychedelic research",
-        "content": "Quick summary we\u2019re tracking: {summary}.\n\nWhy it matters:\n- {significance}\n\nIf you have primary sources or critiques, please add them below.",
+        "content": "{opener}\n\n{micro_story}\n\nQuick summary we’re tracking: {summary}.\n\nWhy it matters:\n- {significance}\n\nIf you have primary sources or critiques, please add them below.",
         "variables": {
           "development": [
             "new clinical trial results",
@@ -110,9 +822,220 @@
             "it may shift how future studies are designed",
             "it strengthens the evidence base",
             "it helps clarify risks and benefits"
+          ],
+          "opener": [
+            "Quick update:",
+            "News check-in:",
+            ""
+          ],
+          "micro_story": [
+            "I bookmarked this because it touches a question we keep circling back to.",
+            "It’s early, but the framing here feels more rigorous than usual.",
+            ""
           ]
         },
         "template_id": "news_1",
+        "ai_assisted": false
+      },
+      {
+        "title": "Research note: {development}",
+        "content": "{opener}\n\n{micro_story}\n\nHere’s a short note on {development}.\n\nWhat stood out:\n- {significance}\n\nIf you’ve read the primary source, I’d appreciate your take.",
+        "variables": {
+          "development": [
+            "trial design improvements",
+            "measurement advances",
+            "safety monitoring practices",
+            "long-term follow-up findings"
+          ],
+          "significance": [
+            "it may reduce bias in future studies",
+            "it could improve real-world applicability",
+            "it offers clearer guardrails",
+            "it highlights gaps worth exploring"
+          ],
+          "opener": [
+            "Quick research note:",
+            ""
+          ],
+          "micro_story": [
+            "This touches a concern I’ve heard from several people in this community.",
+            "I’m curious how others interpret this signal.",
+            ""
+          ]
+        },
+        "template_id": "news_2",
+        "ai_assisted": false
+      },
+      {
+        "title": "Signal worth tracking: {development}",
+        "content": "{opener}\n\n{micro_story}\n\nWhy I’m paying attention to {development}:\n- {significance}\n\nIf you have alternative interpretations, please add them.",
+        "variables": {
+          "development": [
+            "new outcome measures",
+            "improved reporting standards",
+            "methodology updates",
+            "replication efforts"
+          ],
+          "significance": [
+            "it clarifies how effects are measured",
+            "it improves comparability across studies",
+            "it strengthens reliability",
+            "it reduces noise in conclusions"
+          ],
+          "opener": [
+            "Signal check:",
+            ""
+          ],
+          "micro_story": [
+            "I used to skim these updates, but this one feels more consequential.",
+            "I’m trying to track signals instead of headlines.",
+            ""
+          ]
+        },
+        "template_id": "news_3",
+        "ai_assisted": false
+      },
+      {
+        "title": "Study spotlight: {development}",
+        "content": "{opener}\n\n{micro_story}\n\nIf you’ve read anything on {development}, I’d love to hear:\n- The key takeaway\n- A limitation worth noting\n- What you’d like to see next",
+        "variables": {
+          "development": [
+            "mechanism research",
+            "long-term outcomes",
+            "comparative studies",
+            "safety findings"
+          ],
+          "opener": [
+            "Study spotlight:",
+            ""
+          ],
+          "micro_story": [
+            "I’m hoping someone here has read the full paper and can sanity-check it.",
+            "I’m collecting a shortlist of studies worth deeper review.",
+            ""
+          ]
+        },
+        "template_id": "news_4",
+        "ai_assisted": false
+      },
+      {
+        "title": "Early signal: {development}",
+        "content": "{opener}\n\n{micro_story}\n\nFlagging an early signal on {development}.\n\nWhy it might matter:\n- {significance}\n\nIf you’ve seen stronger sources or contrary data, please drop them.",
+        "variables": {
+          "development": [
+            "small-n clinical signals",
+            "pilot study outcomes",
+            "new measurement tools",
+            "design tweaks in recent trials"
+          ],
+          "significance": [
+            "it could inform how we design future studies",
+            "it might tighten how we interpret early results",
+            "it highlights where to be cautious",
+            "it suggests a promising direction to validate"
+          ],
+          "opener": [
+            "Early read:",
+            "Signal watch:",
+            ""
+          ],
+          "micro_story": [
+            "Saw this mentioned in a footnote and it caught my eye.",
+            "Noticed this while scanning recent abstracts.",
+            ""
+          ]
+        },
+        "template_id": "news_5",
+        "ai_assisted": false
+      },
+      {
+        "title": "Methodology tweak: {development}",
+        "content": "{opener}\n\n{micro_story}\n\nThere’s a methodology update related to {development}.\n\nWorth noting:\n- {significance}\n\nIf you’ve read the underlying methods, what stands out?",
+        "variables": {
+          "development": [
+            "blinding approaches",
+            "outcome measures",
+            "adverse event reporting",
+            "longitudinal follow-up"
+          ],
+          "significance": [
+            "it could improve data quality",
+            "it may reduce bias",
+            "it might tighten safety monitoring",
+            "it could make comparisons clearer"
+          ],
+          "opener": [
+            "Methods note:",
+            "Design tweak:",
+            ""
+          ],
+          "micro_story": [
+            "A tiny methods change can shift how we read results.",
+            "Noticing more studies iterating on design.",
+            ""
+          ]
+        },
+        "template_id": "news_6",
+        "ai_assisted": false
+      },
+      {
+        "title": "Replication watch: {development}",
+        "content": "{opener}\n\n{micro_story}\n\nTracking replication attempts for {development}.\n\nWhy it matters:\n- {significance}\n\nIf you’ve seen replication successes or failures, please add them.",
+        "variables": {
+          "development": [
+            "key outcome findings",
+            "self-report measures",
+            "biomarker signals",
+            "long-term effects"
+          ],
+          "significance": [
+            "it tests robustness",
+            "it clarifies generalizability",
+            "it may surface boundary conditions",
+            "it helps prioritize future studies"
+          ],
+          "opener": [
+            "Replication thread:",
+            "Consistency check:",
+            ""
+          ],
+          "micro_story": [
+            "I’m watching how often these findings replicate.",
+            "Replication stories often hide in the footnotes.",
+            ""
+          ]
+        },
+        "template_id": "news_7",
+        "ai_assisted": false
+      },
+      {
+        "title": "Guidance update: {development}",
+        "content": "{opener}\n\n{micro_story}\n\nNoting a guidance/policy shift around {development}.\n\nWhy it matters:\n- {significance}\n\nIf you have primary sources or official links, please share.",
+        "variables": {
+          "development": [
+            "regulatory guidance",
+            "ethics recommendations",
+            "safety advisories",
+            "clinical practice notes"
+          ],
+          "significance": [
+            "it could change how protocols are approved",
+            "it may affect clinician decisions",
+            "it sets expectations for safety reporting",
+            "it shapes future study design"
+          ],
+          "opener": [
+            "Policy note:",
+            "Guidance update:",
+            ""
+          ],
+          "micro_story": [
+            "Guidance shifts often signal where scrutiny is heading.",
+            "A small wording change can alter practice.",
+            ""
+          ]
+        },
+        "template_id": "news_8",
         "ai_assisted": false
       }
     ]

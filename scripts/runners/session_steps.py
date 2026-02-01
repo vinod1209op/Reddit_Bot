@@ -6,6 +6,7 @@ Keeps one browser/login session alive until you exit.
 import argparse
 import sys
 from pathlib import Path
+from datetime import datetime
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -125,7 +126,24 @@ def main() -> None:
                         count = int(count_raw) if count_raw else 5
                         days = int(days_raw) if days_raw else 7
                         scheduler.generate_scheduled_posts(count, days)
-                    scheduler.process_due_posts()
+                    # Check if anything is due; if not, optionally fast-forward earliest post
+                    due = scheduler.check_due_posts()
+                    if not due:
+                        earliest = min(
+                            schedule,
+                            key=lambda p: p.get("scheduled_for", "9999-12-31"),
+                            default=None,
+                        )
+                        if earliest:
+                            ans = input("No posts are due. Make the next scheduled post due now and process? (y/N): ").strip().lower()
+                            if ans == "y":
+                                earliest["scheduled_for"] = datetime.now().isoformat()
+                                scheduler.save_schedule(schedule)
+                                print(f"Fast-forwarded {earliest.get('id','?')} to now.")
+                        else:
+                            print("No posts scheduled; nothing to process.")
+                    processed = scheduler.process_due_posts()
+                    print(f"Processed {processed} post(s).")
                 elif post_choice == "2":
                     subreddit = input("Subreddit (blank = auto): ").strip() or None
                     post_type = input("Post type (discussion/question/resource/experience/news): ").strip().lower() or "discussion"
