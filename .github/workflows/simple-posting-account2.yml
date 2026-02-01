@@ -1,38 +1,15 @@
-name: Simple Template Posting
+name: Simple Template Posting (account2)
 
 on:
   workflow_dispatch:
   schedule:
-    # account1: 17:00 UTC (09:00 PT)
-    - cron: "0 17 * * *"
-    # account2: 10:00 UTC (10:00 UK)
-    - cron: "0 10 * * *"
-    # account3: 09:00 UTC (10:00 CET-1)
-    - cron: "0 9 * * *"
-    # account4: 14:00 UTC (09:00 ET)
-    - cron: "0 14 * * *"
+    - cron: "0 10 * * *"  # 10:00 UTC (10:00 UK)
 
 jobs:
   simple-posting:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' ||
-            (github.event_name == 'schedule' && github.event.schedule == '0 17 * * *' && matrix.account == 'account1') ||
-            (github.event_name == 'schedule' && github.event.schedule == '0 10 * * *' && matrix.account == 'account2') ||
-            (github.event_name == 'schedule' && github.event.schedule == '0 9 * * *'  && matrix.account == 'account3') ||
-            (github.event_name == 'schedule' && github.event.schedule == '0 14 * * *' && matrix.account == 'account4') }}
-    strategy:
-      matrix:
-        include:
-          - account: account1
-            cookie_secret: SUPABASE_COOKIES_ACCOUNT1_PATH
-          - account: account2
-            cookie_secret: SUPABASE_COOKIES_ACCOUNT2_PATH
-          - account: account3
-            cookie_secret: SUPABASE_COOKIES_ACCOUNT3_PATH
-          - account: account4
-            cookie_secret: SUPABASE_COOKIES_ACCOUNT4_PATH
     concurrency:
-      group: simple-posting-${{ matrix.account }}
+      group: simple-posting-account2
       cancel-in-progress: false
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -75,59 +52,55 @@ jobs:
       - name: Validate required secrets
         run: |
           set -euo pipefail
-          for var in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY SUPABASE_BUCKET SUPABASE_POST_SCHEDULE_PATH; do
+          for var in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY SUPABASE_BUCKET SUPABASE_POST_SCHEDULE_PATH SUPABASE_COOKIES_ACCOUNT2_PATH; do
             if [ -z "${!var:-}" ]; then
               echo "Missing required secret: $var"
               exit 1
             fi
           done
-          if [ -z "${{ secrets[matrix.cookie_secret] }}" ]; then
-            echo "Missing cookie secret for ${{ matrix.account }}"
-            exit 1
-          fi
 
-      - name: Download account cookies from Supabase
+      - name: Download account2 cookies from Supabase
         run: |
           set -euo pipefail
           mkdir -p data
-          COOKIE_URL="${SUPABASE_URL%/}/storage/v1/object/${SUPABASE_BUCKET}/${{ secrets[matrix.cookie_secret] }}"
+          COOKIE_URL="${SUPABASE_URL%/}/storage/v1/object/${SUPABASE_BUCKET}/${SUPABASE_COOKIES_ACCOUNT2_PATH}"
           curl -fsS -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
                -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
-               -o data/cookies_${{ matrix.account }}.pkl \
+               -o data/cookies_account2.pkl \
                "$COOKIE_URL"
 
       - name: Download post schedule from Supabase (if present)
         run: |
           set -euo pipefail
           mkdir -p scripts/content_scheduling/schedule
-          SCHEDULE_URL="${SUPABASE_URL%/}/storage/v1/object/${SUPABASE_BUCKET}/${SUPABASE_POST_SCHEDULE_PATH%/}/post_schedule_${{ matrix.account }}.json"
+          SCHEDULE_URL="${SUPABASE_URL%/}/storage/v1/object/${SUPABASE_BUCKET}/${SUPABASE_POST_SCHEDULE_PATH%/}/post_schedule_account2.json"
           if curl -fSL -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
                       -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
-                      -o scripts/content_scheduling/schedule/post_schedule_${{ matrix.account }}.json \
+                      -o scripts/content_scheduling/schedule/post_schedule_account2.json \
                       "$SCHEDULE_URL"; then
             echo "Schedule downloaded."
           else
             echo "No existing schedule; starting fresh."
-            echo "[]" > scripts/content_scheduling/schedule/post_schedule_${{ matrix.account }}.json
+            echo "[]" > scripts/content_scheduling/schedule/post_schedule_account2.json
           fi
 
       - name: Run simple posting (templates only)
         run: |
           export CHROME_BIN="${CHROME_PATH:-/usr/bin/google-chrome}"
           export CHROMEDRIVER_PATH="${CHROMEDRIVER:-/usr/local/bin/chromedriver}"
-          python scripts/content_scheduling/simple_posting.py --accounts ${{ matrix.account }} --headless --target 6 --days 3 --supabase-prefix "${SUPABASE_POST_SCHEDULE_PATH%/}"
+          python scripts/content_scheduling/simple_posting.py --accounts account2 --headless --target 6 --days 3 --supabase-prefix "${SUPABASE_POST_SCHEDULE_PATH%/}"
 
       - name: Upload post schedule to Supabase
         if: always()
         run: |
           set -euo pipefail
-          if [ -f scripts/content_scheduling/schedule/post_schedule_${{ matrix.account }}.json ]; then
-            SCHEDULE_URL="${SUPABASE_URL%/}/storage/v1/object/${SUPABASE_BUCKET}/${SUPABASE_POST_SCHEDULE_PATH%/}/post_schedule_${{ matrix.account }}.json"
+          if [ -f scripts/content_scheduling/schedule/post_schedule_account2.json ]; then
+            SCHEDULE_URL="${SUPABASE_URL%/}/storage/v1/object/${SUPABASE_BUCKET}/${SUPABASE_POST_SCHEDULE_PATH%/}/post_schedule_account2.json"
             curl -fSL -X PUT \
                  -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
                  -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
                  -H "Content-Type: application/json" \
-                 --data-binary @scripts/content_scheduling/schedule/post_schedule_${{ matrix.account }}.json \
+                 --data-binary @scripts/content_scheduling/schedule/post_schedule_account2.json \
                  "$SCHEDULE_URL"
           fi
 
@@ -135,7 +108,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: simple-posting-logs-${{ matrix.account }}-${{ github.run_attempt }}
+          name: simple-posting-logs-account2-${{ github.run_attempt }}
           path: |
             logs/
-            scripts/content_scheduling/schedule/post_schedule_${{ matrix.account }}.json
+            scripts/content_scheduling/schedule/post_schedule_account2.json
